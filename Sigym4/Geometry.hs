@@ -11,16 +11,26 @@
 module Sigym4.Geometry (
     Geometry (..)
   , GeometryType (..)
-  , Feature
+  , Feature (..)
+  , IsVertex
+  , Vertex
+  , Pixel (..)
+  , Size (..)
+  , Extent (..)
   , SpatialReference (..)
   , GeoReference
-  , northUpGeoTransform
+  , mkGeoReference
+  , vertexOffset
+  , scalarSize
+  , grScalarSize
+  , grSize
   , forward
   , backward
   , module V2
   , module V3
 ) where
 
+import Prelude hiding (product)
 import Control.Applicative (Applicative, pure)
 import Control.Lens
 import Linear.Trace (Trace)
@@ -31,6 +41,7 @@ import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
 import Linear.Epsilon (Epsilon)
 import Data.Typeable
+import Data.Foldable (product)
 
 type Coord = Double
 type Vertex v = v Coord
@@ -43,15 +54,26 @@ class ( Num (Vertex v), Eq (Vertex v), Show (Vertex v), Fractional (Vertex v)
       ,Applicative v, Additive v, Foldable v, Trace v)
   => IsVertex v
   where
-    inv :: SqMatrix v -> Maybe (SqMatrix v)
-    eye :: SqMatrix v
+    inv       :: SqMatrix v -> Maybe (SqMatrix v)
+    eye       :: SqMatrix v
+    linOffset :: Size v -> Pixel v -> Int
 
 instance IsVertex V2 where
     inv = inv22
     eye = eye2
+    linOffset s p = p'^._y * s'^._x
+                  + p'^._x
+      where p' = fmap truncate $ unPx p
+            s' = fmap ceiling  $ unSize s
+
 instance IsVertex V3 where
     inv = inv33
     eye = eye3
+    linOffset s p = p'^._z * (s'^._x * s'^._y)
+                  + p'^._y * s'^._x
+                  + p'^._x
+      where p' = fmap truncate $ unPx p
+            s' = fmap ceiling  $ unSize s
 
 
 -- | An enumeration of geometry types
@@ -77,13 +99,29 @@ deriving instance Eq (Extent v)
 deriving instance Show (Extent v)
 deriving instance Typeable Extent
 
--- | A pixel is a newtype around a vertex
+-- | A pixel is a pseudo-newtype around a vertex
 data Pixel v where
     Pixel :: forall v. IsVertex v =>
       {unPx :: !(Vertex v)} -> Pixel v
+
 deriving instance Eq (Pixel v)
 deriving instance Show (Pixel v)
 deriving instance Typeable Pixel
+
+-- | A shape is a pseudo-newtype around a vertex, it represents an array of
+--   dimensions (v1,..,vn)
+data Size v where
+    Size :: forall v. IsVertex v =>
+      {unSize :: !(Vertex v)} -> Size v
+
+deriving instance Eq (Size v)
+deriving instance Show (Size v)
+deriving instance Typeable Size
+
+scalarSize :: IsVertex v => Size v -> Int
+scalarSize = product . fmap ceiling . unSize
+
+-- integralSize = fmap ceiling . unSize
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
 data Feature t v d = Feature {
@@ -113,36 +151,34 @@ deriving instance Typeable GeoTransform
 -- northUpGeoTransform :: Extent V2 -> Pixel V2 -> Either String (GeoTransform V2)
 northUpGeoTransform ::
   (IsVertex v, R2 v, Eq (v Bool)) =>
-  Extent v -> Pixel v -> Either String (GeoTransform v)
+  Extent v -> Size v -> Either String (GeoTransform v)
 northUpGeoTransform e s
   | not isValidBox   = Left "northUpGeoTransform: invalid extent"
-  | not isValidShape = Left "northUpGeoTransform: invalid shape"
+  | not isValidSize = Left "northUpGeoTransform: invalid shape"
   | otherwise        = Right $ GeoTransform matrix origin
   where
-    isValidBox     = fmap (> 0) (eMax e - eMin e)  == pure True
-    isValidShape   = fmap (> 0) (unPx s)           == pure True
-    origin         = (eMin e) & _y .~ ((eMax e)^._y)
-    s'             = unPx s
-    dPx            = (eMax e - eMin e)/s' & _y %~ negate
-    matrix         = pure dPx * eye
+    isValidBox  = fmap (> 0) (eMax e - eMin e)  == pure True
+    isValidSize = fmap (> 0) s'                 == pure True
+    origin      = (eMin e) & _y .~ ((eMax e)^._y)
+    s'          = unSize s
+    dPx         = (eMax e - eMin e)/s' & _y %~ negate
+    matrix      = pure dPx * eye
 
-forward :: IsVertex v => GeoTransform v -> Vertex v -> Pixel v
-forward gt v = Pixel $ m !* (v-v0)
-  where Just m  = inv $ gtMatrix gt
-        v0      = gtOrigin gt
-{-# INLINE forward #-}
+forwardGT :: IsVertex v => GeoTransform v -> Vertex v -> Pixel v
+forwardGT gt v = Pixel $ m !* (v-v0)
+  where Just m = inv $ gtMatrix gt
+        v0     = gtOrigin gt
 
 
-backward :: IsVertex v => GeoTransform v -> Pixel v -> Vertex v
-backward gt p = v0 + (unPx p) *! m
-  where m   = gtMatrix gt
-        v0  = gtOrigin gt
-{-# INLINE backward #-}
+backwardGT :: IsVertex v => GeoTransform v -> Pixel v -> Vertex v
+backwardGT gt p = v0 + (unPx p) *! m
+  where m  = gtMatrix gt
+        v0 = gtOrigin gt
 
 data GeoReference v where
   GeoReference :: forall v. IsVertex v =>
       { grTransform :: GeoTransform v
-      , grShape     :: Pixel v
+      , grSize      :: Size v
       , grSrs       :: SpatialReference
       } -> GeoReference v
 
@@ -150,15 +186,25 @@ deriving instance Eq (GeoReference v)
 deriving instance Show (GeoReference v)
 deriving instance Typeable GeoReference
 
-{-
-mkGeoReference :: (IsVertex v, Eq (v Bool))
-  => Extent v -> Pixel v -> SpatialReference
-  -> Either String (GeoReference v)
-mkGeoReference e s srs
-  | not isValidBox   = Left "mkGeoReference: invalid extent"
-  | not isValidShape = Left "mkGeoReference: invalid shape"
-  | otherwise        = Right $ GeoReference e s srs
-  where
-    isValidBox   =  fmap (> 0) (eMax e - eMin e)  == pure True
-    isValidShape =  fmap (> 0) (unPx s)           == pure True
--}
+grScalarSize :: IsVertex v => GeoReference v -> Int
+grScalarSize = scalarSize . grSize
+
+
+vertexOffset :: IsVertex v => GeoReference v -> Vertex v -> Int
+vertexOffset gr =  linOffset (grSize gr) . forward gr
+{-# SPECIALIZE INLINE vertexOffset :: GeoReference V2 -> Vertex V2 -> Int #-}
+
+forward :: IsVertex v => GeoReference v -> Vertex v -> Pixel v
+forward gr = forwardGT (grTransform gr)
+{-# INLINE forward #-}
+
+backward :: IsVertex v => GeoReference v -> Pixel v -> Vertex v
+backward gr = backwardGT (grTransform gr)
+{-# INLINE backward #-}
+
+
+mkGeoReference ::
+  (IsVertex v, R2 v, Eq (v Bool)) =>
+  Extent v -> Size v -> SpatialReference -> Either String (GeoReference v)
+mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
+                              (northUpGeoTransform e s)
