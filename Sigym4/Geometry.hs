@@ -1,4 +1,6 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE TemplateHaskell
+           , GeneralizedNewtypeDeriving
            , StandaloneDeriving
            , FlexibleContexts
            , FlexibleInstances
@@ -39,16 +41,20 @@ module Sigym4.Geometry (
 import Prelude hiding (product)
 import Control.Applicative (Applicative, pure)
 import Control.Lens
-import Linear.Trace (Trace)
-import Linear.Vector (Additive)
 import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
+import Data.Typeable
+import Data.Foldable (product)
+import Data.Vector.Generic.Base (Vector(..))
+import Data.Vector.Generic.Mutable (MVector(..))
+import Data.Vector.Unboxed (Unbox)
+import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
 import Linear.Epsilon (Epsilon)
-import Data.Typeable
-import Data.Foldable (product)
+import Linear.Trace (Trace)
+import Linear.Vector (Additive)
 
 -- | A squared Matrix
 type SqMatrix v a = v (v a)
@@ -240,3 +246,25 @@ mkGeoReference ::
   Extent v -> Size v -> SpatialReference -> Either String (GeoReference v)
 mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
                               (northUpGeoTransform e s)
+
+derivingUnbox "V2"
+    [t| Unbox a => V2 a -> (a,a) |]
+    [| \(V2 a b) -> (a, b) |]
+    [| \(a,b) -> V2 a b |]
+
+derivingUnbox "V3"
+    [t| Unbox a => V3 a -> (a,a,a) |]
+    [| \(V3 a b c) -> (a,b,c) |]
+    [| \(a,b,c) -> V3 a b c|]
+
+derivingUnbox "GeometryPoint"
+    [t| (IsVertex v Double, Unbox (v Double))
+         => Geometry Point v -> v Double |]
+    [| \(MkPoint v) -> v |]
+    [| \v -> MkPoint v|]
+
+derivingUnbox "FeaturePoint"
+    [t| (IsVertex v Double, Unbox (v Double), Unbox d)
+         => Feature Point v d -> (Geometry Point v, d) |]
+    [| \(Feature p d) -> (p,d) |]
+    [| \(p,d) -> Feature p d |]
