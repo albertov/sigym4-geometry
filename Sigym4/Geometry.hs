@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE TemplateHaskell
+{-# LANGUAGE CPP
+           , TemplateHaskell
            , GeneralizedNewtypeDeriving
            , StandaloneDeriving
            , FlexibleContexts
@@ -11,10 +12,18 @@
            , DataKinds
            , DeriveDataTypeable
            #-}
+#define UNDECIDABLE
+#ifdef UNDECIDABLE
+{-# LANGUAGE UndecidableInstances #-}
+#endif
+
 module Sigym4.Geometry (
-    Geometry (..)
-  , Point
+    Point
+  , Geometry (..)
+  , pVertex
   , Feature (..)
+  , fData
+  , fGeom
   , IsVertex
   , HasOffset
   , Pixel (..)
@@ -94,6 +103,16 @@ instance HasOffset V2 RowMajor where
             p' = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
+instance HasOffset V2 ColumnMajor where
+    toOffset s p
+      | between (pure 0) s' p' = Just (Offset o)
+      | otherwise              = Nothing
+      where o  = p'^._x * s'^._y
+               + p'^._y
+            s' = unSize s
+            p' = fmap floor $ unPx p
+    {-# INLINE toOffset #-}
+
 between :: (Applicative v, Ord a, Num (v a), Num a, Eq (v Bool))
   => v a -> v a -> v a -> Bool
 between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
@@ -114,22 +133,18 @@ instance HasOffset V3 RowMajor where
             p' = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
+instance HasOffset V3 ColumnMajor where
+    toOffset s p
+      | between (pure 0) s' p' = Just (Offset o)
+      | otherwise              = Nothing
+      where o  = p'^._x * (s'^._z * s'^._y)
+               + p'^._y * s'^._z
+               + p'^._z
+            s' = unSize s
+            p' = fmap floor $ unPx p
+    {-# INLINE toOffset #-}
 
--- | An enumeration of geometry types
-data GeometryType = Point
-    deriving (Show, Eq, Enum)
 
-type Point = 'Point
-deriving instance Typeable Point
-
--- | A GADT used to represent different geometry types, each constructor returns
---   a geometry type indexed by 'GeometryType'
-data Geometry (t :: GeometryType) v where
-    MkPoint :: forall v. IsVertex v Double =>
-      {pVertex :: !(v Double)} -> Geometry Point v
-deriving instance Eq (Geometry t v)
-deriving instance Show (Geometry t v)
-deriving instance Typeable Geometry
 
 -- | An extent in v space is a pair of minimum and maximum vertices
 data Extent v where
@@ -142,6 +157,12 @@ deriving instance Typeable Extent
 -- | A pixel is a newtype around a vertex
 newtype Pixel v = Pixel {unPx :: v Double}
 
+#ifdef UNDECIDABLE
+instance Show (v Double) => Show (Pixel v) where
+    show p = "Pixel (" ++ show (unPx p) ++ ")"
+instance Eq (v Double) => Eq (Pixel v) where
+    Pixel v == Pixel v' = v==v'
+#endif
 
 -- | A Size is a pseudo-newtype around a vector, it represents the dimensions
 --  of an array of shape (v1,..,vn)
@@ -156,11 +177,6 @@ deriving instance Typeable Size
 scalarSize :: IsVertex v Double => Size v -> Int
 scalarSize = product . unSize
 
--- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data Feature t v d = Feature {
-    fGeom :: Geometry t v
-  , fData :: d
-  } deriving (Eq, Show, Typeable)
 
 -- A Spatial reference system
 data SpatialReference = SrsProj4 String
@@ -246,6 +262,36 @@ mkGeoReference ::
   Extent v -> Size v -> SpatialReference -> Either String (GeoReference v)
 mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
                               (northUpGeoTransform e s)
+
+-- | An enumeration of geometry types
+data GeometryType = Point
+    deriving (Show, Eq, Enum)
+
+type Point = 'Point
+deriving instance Typeable Point
+
+-- | A GADT used to represent different geometry types, each constructor returns
+--   a geometry type indexed by 'GeometryType'
+data Geometry (t :: GeometryType) v where
+    MkPoint :: forall v. IsVertex v Double =>
+      {_pVertex :: !(v Double)} -> Geometry Point v
+deriving instance Eq (Geometry t v)
+deriving instance Show (Geometry t v)
+deriving instance Typeable Geometry
+
+pVertex :: IsVertex v Double => Lens' (Geometry Point v) (v Double)
+pVertex = lens _pVertex (\point v -> point { _pVertex = v })
+{-# INLINE pVertex #-}
+
+-- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
+data Feature t v d = Feature {
+    _fGeom :: Geometry t v
+  , _fData :: d
+  } deriving (Eq, Show, Typeable)
+makeLenses ''Feature
+
+instance Functor (Feature t v) where
+   fmap f (Feature g d) = Feature g (f d)
 
 derivingUnbox "V2"
     [t| Unbox a => V2 a -> (a,a) |]
