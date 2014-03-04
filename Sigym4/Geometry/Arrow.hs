@@ -4,6 +4,7 @@ module Sigym4.Geometry.Arrow (
   , mkPureFA
   , mkFA
   , runFA
+  , mapFA
 ) where
 
 import Prelude hiding ((.), id)
@@ -50,3 +51,7 @@ mkFA f = FeatureArrow $ Kleisli (\a -> f <$> ask <*> pure a)
 runFA :: FeatureArrow t v a b -> Feature t v a -> Feature t v b
 runFA (FeatureArrow f) feat
   = fmap (\v -> runGeometryM (_fGeom feat) (runKleisli f v)) feat
+
+-- | Maps a 'FeatureArrow' over a list
+mapFA ::FeatureArrow t v a b -> [Feature t v a] -> [Feature t v b] 
+mapFA = map . runFA 
