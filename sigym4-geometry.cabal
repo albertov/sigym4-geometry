@@ -23,8 +23,8 @@ library
                     , Sigym4.Geometry.Rasterize
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base     >= 4.7 && <4.8
-                     , linear   >= 1.6
+  build-depends:       base     >= 4.6 && <4.8
+                     , linear   >= 1.10
                      , lens
                      , mtl
                      , vector
