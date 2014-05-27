@@ -24,8 +24,17 @@ instance (Arbitrary (v Double), IsVertex v Double) =>
     arbitrary = fmap MkPoint arbitrary
 
 instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry MultiPoint v) where
+    arbitrary = fmap (MkMultiPoint . V.fromList) arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (Geometry LineString v) where
     arbitrary = fmap MkLineString arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry MultiLineString v) where
+    arbitrary = fmap (MkMultiLineString . V.fromList) arbitrary
+
 
 instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (LinearRing v) where
@@ -34,3 +43,7 @@ instance (Arbitrary (v Double), IsVertex v Double) =>
 instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (Geometry Polygon v) where
     arbitrary = fmap (MkPolygon . V.fromList) arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry MultiPolygon v) where
+    arbitrary = fmap (MkMultiPolygon . V.fromList) arbitrary

@@ -17,6 +17,9 @@ module Sigym4.Geometry.Types (
     Point
   , LineString
   , Polygon
+  , MultiPoint
+  , MultiLineString
+  , MultiPolygon
   , LinearRing
   , Geometry (..)
   , GeometryType (..)
@@ -279,14 +282,23 @@ mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
 data GeometryType = Point
                   | LineString
                   | Polygon
+                  | MultiPoint
+                  | MultiLineString
+                  | MultiPolygon
     deriving (Show, Eq, Enum)
 
 type Point = 'Point
 deriving instance Typeable Point
+type MultiPoint = 'MultiPoint
+deriving instance Typeable MultiPoint
 type LineString = 'LineString
 deriving instance Typeable LineString
+type MultiLineString = 'MultiLineString
+deriving instance Typeable MultiLineString
 type Polygon = 'Polygon
 deriving instance Typeable Polygon
+type MultiPolygon = 'MultiPolygon
+deriving instance Typeable MultiPolygon
 
 type LinearRing v = U.Vector (v Double)
 
@@ -295,10 +307,17 @@ type LinearRing v = U.Vector (v Double)
 data Geometry (t :: GeometryType) v where
     MkPoint :: forall v. IsVertex v Double =>
       {_pVertex :: !(v Double)} -> Geometry Point v
+    MkMultiPoint :: forall v. IsVertex v Double =>
+      {_mpPoints :: V.Vector (Geometry Point v)} -> Geometry MultiPoint v
     MkLineString :: forall v. IsVertex v Double =>
       {_lsVertices :: LinearRing v} -> Geometry LineString v
+    MkMultiLineString :: forall v. IsVertex v Double =>
+      {_mlLineStrings :: V.Vector (Geometry LineString v)}
+      -> Geometry MultiLineString v
     MkPolygon :: forall v. IsVertex v Double =>
       {_pRings :: V.Vector (LinearRing v)} -> Geometry Polygon v
+    MkMultiPolygon :: forall v. IsVertex v Double =>
+      {_mpPolygons :: V.Vector (Geometry Polygon v)} -> Geometry MultiPolygon v
 
 deriving instance Eq (Geometry t v)
 deriving instance Show (Geometry t v)
