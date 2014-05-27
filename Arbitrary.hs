@@ -5,6 +5,7 @@ module Arbitrary where
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 import Data.Vector.Unboxed as U (fromList)
+import Data.Vector as V (fromList)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Binary (ByteOrder(..))
@@ -24,4 +25,12 @@ instance (Arbitrary (v Double), IsVertex v Double) =>
 
 instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (Geometry LineString v) where
-    arbitrary = fmap (MkLineString . U.fromList) arbitrary
+    arbitrary = fmap MkLineString arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (LinearRing v) where
+    arbitrary = fmap U.fromList arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry Polygon v) where
+    arbitrary = fmap (MkPolygon . V.fromList) arbitrary

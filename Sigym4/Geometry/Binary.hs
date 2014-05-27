@@ -19,6 +19,7 @@ import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
 import Data.Binary.Get (Get, runGetOrFail, getWord8, isEmpty, getWord32le, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32le, putWord32be)
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as V (fromList, length, mapM_)
 
 import Sigym4.Geometry.Types
 
@@ -32,24 +33,37 @@ putGeometry bo (MkPoint v)
  >> putVertex bo v
 putGeometry bo (MkLineString vs)
   = putGeomType bo (card (Proxy :: Proxy (v Double))) LineString
- >> putIntBo bo (U.length vs)
- >> U.mapM_ (putVertex bo) vs
+ >> putLinearRing bo vs
+putGeometry bo (MkPolygon rings)
+  = putGeomType bo (card (Proxy :: Proxy (v Double))) Polygon
+ >> putIntBo bo (V.length rings)
+ >> V.mapM_ (putLinearRing bo) rings
+
+putLinearRing bo vs = putIntBo bo (U.length vs)
+                   >> U.mapM_ (putVertex bo) vs
 
 putGeomType :: ByteOrder -> Int -> GeometryType -> Put
-putGeomType bo card' = putIntBo bo . geomTypeCardToInt card'
+putGeomType bo card' gtype = putIntBo bo $ geomTypeCardToInt gtype card'
 
-geomTypeCardToInt 2 Point = 1
-geomTypeCardToInt 3 Point = 1001
-geomTypeCardToInt 2 LineString = 2
-geomTypeCardToInt 3 LineString = 1002
+geomTypeCardToInt :: GeometryType -> Int -> Int
+geomTypeCardToInt Point 2 = 1
+geomTypeCardToInt Point 3 = 1001
+geomTypeCardToInt LineString 2 = 2
+geomTypeCardToInt LineString  3 = 1002
+geomTypeCardToInt Polygon 2 = 3
+geomTypeCardToInt Polygon  3 = 1003
 geomTypeCardToInt _ _ = error "unknown geometry type code"
 
+intToGeomType :: Int -> GeometryType
 intToGeomType 1    = Point
 intToGeomType 1001 = Point
 intToGeomType 2    = LineString
 intToGeomType 1002 = LineString
+intToGeomType 3    = Polygon
+intToGeomType 1003 = Polygon
 intToGeomType _ = error "unknown geometry type code"
 
+intToGeomCard :: Int -> Int
 intToGeomCard n | n<1000 = 2
 intToGeomCard n | n<2000 = 3
 intToGeomCard _ = error "unknown geometry type code"
@@ -114,10 +128,19 @@ instance Decodable 'Point where
 
 instance Decodable 'LineString where
   geomtype _ = LineString
-  decodeBody bo = runGet' $ do
-    nPoints <- getIntBo bo
-    MkLineString . U.fromList  <$> replicateM nPoints (getVertex bo)
+  decodeBody = runGet' . fmap MkLineString . decodeLinearRing
 
+
+decodeLinearRing :: IsVertex v Double => ByteOrder -> Get (LinearRing v)
+decodeLinearRing bo = do
+  nPoints <- getIntBo bo
+  U.fromList  <$> replicateM nPoints (getVertex bo)
+
+instance Decodable 'Polygon where
+  geomtype _ = Polygon
+  decodeBody bo = runGet' $ do
+    nRings <- getIntBo bo
+    MkPolygon . V.fromList  <$> replicateM nRings (decodeLinearRing bo)
 
  
 

@@ -17,6 +17,7 @@ module Sigym4.Geometry.Types (
     Point
   , LineString
   , Polygon
+  , LinearRing
   , Geometry (..)
   , GeometryType (..)
   , pVertex
@@ -53,6 +54,7 @@ import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
 import Data.Typeable
 import Data.Foldable (product)
+import Data.Vector as V (Vector)
 import Data.Vector.Unboxed as U (Vector, Unbox)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
@@ -286,13 +288,17 @@ deriving instance Typeable LineString
 type Polygon = 'Polygon
 deriving instance Typeable Polygon
 
+type LinearRing v = U.Vector (v Double)
+
 -- | A GADT used to represent different geometry types, each constructor returns
 --   a geometry type indexed by 'GeometryType'
 data Geometry (t :: GeometryType) v where
     MkPoint :: forall v. IsVertex v Double =>
       {_pVertex :: !(v Double)} -> Geometry Point v
     MkLineString :: forall v. IsVertex v Double =>
-      {_lsVertices :: U.Vector (v Double)} -> Geometry LineString v
+      {_lsVertices :: LinearRing v} -> Geometry LineString v
+    MkPolygon :: forall v. IsVertex v Double =>
+      {_pRings :: V.Vector (LinearRing v)} -> Geometry Polygon v
 
 deriving instance Eq (Geometry t v)
 deriving instance Show (Geometry t v)
