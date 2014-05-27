@@ -19,6 +19,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:    Sigym4.Geometry
                     , Sigym4.Geometry.Types
+                    , Sigym4.Geometry.Binary
                     , Sigym4.Geometry.Arrow
                     , Sigym4.Geometry.Rasterize
   -- other-modules:       

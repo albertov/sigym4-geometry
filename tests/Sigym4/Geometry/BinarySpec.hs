@@ -57,6 +57,4 @@ spec = do
       it "deserializes the same thing it serializes" $ property $
         (encodeDecodeIsId :: (ByteOrder, Geometry MultiPolygon V3) -> Bool)
 
-encodeDecodeIsId :: (Decodable t, IsVertex v Double)
-  => (ByteOrder, Geometry t v) -> Bool
 encodeDecodeIsId (bo,o) = (wkbDecode . wkbEncode bo $ o) == Right o

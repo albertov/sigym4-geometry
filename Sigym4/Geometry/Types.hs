@@ -79,8 +79,6 @@ class ( U.Unbox (v a), Num a, Eq a, Show a, Epsilon a, Floating a
   where
     inv :: SqMatrix v a -> Maybe (SqMatrix v a)
     eye :: SqMatrix v a
-    coords :: v a -> [a]
-    fromVertices :: Monad m => [a] -> m (v a)
     card :: Proxy (v a) -> Int
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
@@ -98,9 +96,6 @@ instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
   => IsVertex V2 a where
     inv = inv22
     eye = eye2
-    coords (V2 x y) = [x, y]
-    fromVertices [x,y] = return $! V2 x y
-    fromVertices _     = fail "fromVertices<V2>: expected list of 2"
     card _ = 2
 
 instance HasOffset V2 RowMajor where
@@ -132,10 +127,7 @@ instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
   => IsVertex V3 a where
     inv = inv33
     eye = eye3
-    coords (V3 x y z) = [x, y, z]
     card _ = 3
-    fromVertices [x,y,z] = return $! V3 x y z
-    fromVertices _     = fail "fromVertices<V3>: expected list of 3"
 
 instance HasOffset V3 RowMajor where
     toOffset s p
