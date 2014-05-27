@@ -29,6 +29,10 @@ library
                      , mtl
                      , vector
                      , vector-th-unbox
+                     , data-binary-ieee754
+                     , bytestring
+                     , binary
+                     , tagged
   -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -36,3 +40,22 @@ library
                        -fwarn-incomplete-uni-patterns
                        -O2
                        -funbox-strict-fields
+
+test-suite main
+  type:              exitcode-stdio-1.0
+  build-depends:     base
+                   , binary
+                   , linear
+                   , vector-th-unbox
+                   , vector
+                   , mtl
+                   , lens
+                   , hspec
+                   , bytestring
+                   , sigym4-geometry
+                   , data-binary-ieee754
+                   , QuickCheck
+  hs-source-dirs:    tests .
+  main-is:           Spec.hs
+  default-language:  Haskell2010
+  ghc-options:       -Wall -O2

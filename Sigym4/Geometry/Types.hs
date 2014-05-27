@@ -15,12 +15,15 @@
            #-}
 module Sigym4.Geometry.Types (
     Point
+  , LineString
+  , Polygon
   , Geometry (..)
+  , GeometryType (..)
   , pVertex
   , Feature (..)
   , fData
   , fGeom
-  , IsVertex
+  , IsVertex (..)
   , HasOffset
   , Pixel (..)
   , Size (..)
@@ -46,12 +49,11 @@ module Sigym4.Geometry.Types (
 import Prelude hiding (product)
 import Control.Applicative (Applicative, pure)
 import Control.Lens
+import Data.Proxy (Proxy)
 import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
 import Data.Typeable
 import Data.Foldable (product)
-import Data.Vector.Generic.Base (Vector(..))
-import Data.Vector.Generic.Mutable (MVector(..))
 import Data.Vector.Unboxed (Unbox)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
@@ -73,6 +75,9 @@ class ( Num a, Eq a, Show a, Epsilon a, Floating a
   where
     inv :: SqMatrix v a -> Maybe (SqMatrix v a)
     eye :: SqMatrix v a
+    vertices :: v a -> [a]
+    fromVertices :: Monad m => [a] -> m (v a)
+    card :: Proxy (v a) -> Int
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
   deriving (Eq, Show, Ord, Num)
@@ -88,6 +93,10 @@ class HasOffset v (t :: OffsetType) where
 instance (Num a, Eq a, Show a, Epsilon a, Floating a) => IsVertex V2 a where
     inv = inv22
     eye = eye2
+    vertices (V2 x y) = [x, y]
+    fromVertices [x,y] = return $! V2 x y
+    fromVertices _     = fail "fromVertices<V2>: expected list of 2"
+    card _ = 2
 
 instance HasOffset V2 RowMajor where
     toOffset s p
@@ -117,6 +126,10 @@ between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
 instance (Num a, Eq a, Show a, Epsilon a, Floating a) => IsVertex V3 a where
     inv = inv33
     eye = eye3
+    vertices (V3 x y z) = [x, y, z]
+    card _ = 3
+    fromVertices [x,y,z] = return $! V3 x y z
+    fromVertices _     = fail "fromVertices<V3>: expected list of 3"
 
 instance HasOffset V3 RowMajor where
     toOffset s p
@@ -261,16 +274,23 @@ mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
 
 -- | An enumeration of geometry types
 data GeometryType = Point
+                  | LineString
+                  | Polygon
     deriving (Show, Eq, Enum)
 
 type Point = 'Point
 deriving instance Typeable Point
+type LineString = 'LineString
+deriving instance Typeable LineString
+type Polygon = 'Polygon
+deriving instance Typeable Polygon
 
 -- | A GADT used to represent different geometry types, each constructor returns
 --   a geometry type indexed by 'GeometryType'
 data Geometry (t :: GeometryType) v where
     MkPoint :: forall v. IsVertex v Double =>
       {_pVertex :: !(v Double)} -> Geometry Point v
+
 deriving instance Eq (Geometry t v)
 deriving instance Show (Geometry t v)
 deriving instance Typeable Geometry
