@@ -4,7 +4,7 @@ module Arbitrary where
 
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
-import Control.Monad (replicateM)
+import Data.Vector.Unboxed as U (fromList)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Binary (ByteOrder(..))
@@ -21,3 +21,7 @@ instance Arbitrary t => Arbitrary (V3 t) where
 instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (Geometry Point v) where
     arbitrary = fmap MkPoint arbitrary
+
+instance (Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry LineString v) where
+    arbitrary = fmap (MkLineString . U.fromList) arbitrary

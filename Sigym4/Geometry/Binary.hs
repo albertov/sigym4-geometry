@@ -18,6 +18,7 @@ import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
                            , putFloat64be)
 import Data.Binary.Get (Get, runGetOrFail, getWord8, isEmpty, getWord32le, getWord32be)
 import Data.Binary.Put (Put, runPut, putWord8, putWord32le, putWord32be)
+import qualified Data.Vector.Unboxed as U
 
 import Sigym4.Geometry.Types
 
@@ -25,22 +26,37 @@ import Sigym4.Geometry.Types
 wkbEncode :: ByteOrder -> Geometry t v -> ByteString
 wkbEncode bo g = runPut (put bo >> putGeometry bo g)
 
-putGeometry :: ByteOrder -> Geometry t v -> Put
-putGeometry bo geom
-  = case geom of
-      MkPoint v -> putGeomType bo Point >> putVertex bo v
+putGeometry :: forall v t. ByteOrder -> Geometry t v -> Put
+putGeometry bo (MkPoint v)
+  = putGeomType bo (card (Proxy :: Proxy (v Double))) Point
+ >> putVertex bo v
+putGeometry bo (MkLineString vs)
+  = putGeomType bo (card (Proxy :: Proxy (v Double))) LineString
+ >> putIntBo bo (U.length vs)
+ >> U.mapM_ (putVertex bo) vs
 
-putGeomType :: ByteOrder -> GeometryType -> Put
-putGeomType bo = putIntBo bo . geomTypeToInt
+putGeomType :: ByteOrder -> Int -> GeometryType -> Put
+putGeomType bo card' = putIntBo bo . geomTypeCardToInt card'
 
-geomTypeToInt Point = 1
-intToGeomType 1 = Point
-intToGeomType _ = error "unknown geometry type"
+geomTypeCardToInt 2 Point = 1
+geomTypeCardToInt 3 Point = 1001
+geomTypeCardToInt 2 LineString = 2
+geomTypeCardToInt 3 LineString = 1002
+geomTypeCardToInt _ _ = error "unknown geometry type code"
 
-getGeomType = fmap intToGeomType . getIntBo
+intToGeomType 1    = Point
+intToGeomType 1001 = Point
+intToGeomType 2    = LineString
+intToGeomType 1002 = LineString
+intToGeomType _ = error "unknown geometry type code"
+
+intToGeomCard n | n<1000 = 2
+intToGeomCard n | n<2000 = 3
+intToGeomCard _ = error "unknown geometry type code"
+
 
 putVertex :: IsVertex v Double => ByteOrder -> v Double -> Put
-putVertex bo = mapM_ (putDoubleBo bo) . vertices
+putVertex bo = mapM_ (putDoubleBo bo) . coords
 
 getVertex :: forall v. IsVertex v Double => ByteOrder -> Get (v Double)
 getVertex bo = fromVertices =<<
@@ -61,24 +77,22 @@ getDoubleBo NDR = getFloat64le
 class Decodable (t::GeometryType) where
   decodeBody :: IsVertex v Double =>
                 ByteOrder -> ByteString -> Either String (Geometry t v)
-  dtype      :: Proxy t -> GeometryType
+  geomtype   :: Proxy t -> GeometryType
 
-instance Decodable 'Point where
-  dtype _ = Point
-  decodeBody bo = runGet' (MkPoint  <$> getVertex bo)
 
 wkbDecode :: forall t v. (Decodable t, IsVertex v Double)
   => ByteString -> Either String (Geometry t v)
 wkbDecode bs
   = case runGetOrFail getHeader bs of
-     Right (rest,_,(bo,geomtype))
-       | geomtype == dtype (Proxy :: Proxy t) -> decodeBody bo rest
-       | otherwise -> Left "wkbDecode: unexpected geometry type"
+     Right (rest,_,(bo,gtype,gcard))
+       | gtype == geomtype (Proxy :: Proxy t)
+       , gcard == card (Proxy :: Proxy (v Double)) -> decodeBody bo rest
+       | otherwise -> Left "wkbDecode: unexpected geometry type/dims"
   where
     getHeader = do
       bo <- get
-      geomtype <- getGeomType bo
-      return $! (bo,geomtype)
+      geomCode <- getIntBo bo
+      return $! (bo, intToGeomType geomCode, intToGeomCard geomCode)
 
 runGet' g bs
   = case runGetOrFail g bs of
@@ -93,11 +107,16 @@ instance Binary ByteOrder where
   put NDR = putWord8 1
   get = fmap (\v -> if v==0 then XDR else NDR) getWord8
 
+instance Decodable 'Point where
+  geomtype _ = Point
+  decodeBody bo = runGet' (MkPoint  <$> getVertex bo)
 
 
-
-
-
+instance Decodable 'LineString where
+  geomtype _ = LineString
+  decodeBody bo = runGet' $ do
+    nPoints <- getIntBo bo
+    MkLineString . U.fromList  <$> replicateM nPoints (getVertex bo)
 
 
  

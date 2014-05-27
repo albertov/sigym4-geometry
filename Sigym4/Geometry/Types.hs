@@ -49,12 +49,11 @@ module Sigym4.Geometry.Types (
 import Prelude hiding (product)
 import Control.Applicative (Applicative, pure)
 import Control.Lens
-import Data.Proxy (Proxy)
 import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
 import Data.Typeable
 import Data.Foldable (product)
-import Data.Vector.Unboxed (Unbox)
+import Data.Vector.Unboxed as U (Vector, Unbox)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
@@ -67,7 +66,7 @@ import Linear.Vector (Additive)
 type SqMatrix v a = v (v a)
 
 -- | class for vertex types, used to simplify type signatures
-class ( Num a, Eq a, Show a, Epsilon a, Floating a
+class ( U.Unbox (v a), Num a, Eq a, Show a, Epsilon a, Floating a
       , Num (v a), Eq (v a), Show (v a)
       , Num (SqMatrix v a), Show (SqMatrix v a), Eq (SqMatrix v a)
       ,Applicative v, Additive v, Foldable v, Trace v)
@@ -75,7 +74,7 @@ class ( Num a, Eq a, Show a, Epsilon a, Floating a
   where
     inv :: SqMatrix v a -> Maybe (SqMatrix v a)
     eye :: SqMatrix v a
-    vertices :: v a -> [a]
+    coords :: v a -> [a]
     fromVertices :: Monad m => [a] -> m (v a)
     card :: Proxy (v a) -> Int
 
@@ -90,10 +89,11 @@ type ColumnMajor = 'ColumnMajor
 class HasOffset v (t :: OffsetType) where
     toOffset :: Size v -> Pixel v -> Maybe (Offset t)
 
-instance (Num a, Eq a, Show a, Epsilon a, Floating a) => IsVertex V2 a where
+instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
+  => IsVertex V2 a where
     inv = inv22
     eye = eye2
-    vertices (V2 x y) = [x, y]
+    coords (V2 x y) = [x, y]
     fromVertices [x,y] = return $! V2 x y
     fromVertices _     = fail "fromVertices<V2>: expected list of 2"
     card _ = 2
@@ -123,10 +123,11 @@ between :: (Applicative v, Ord a, Num (v a), Num a, Eq (v Bool))
 between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
                   (fmap (>= 0) (v - lo) == pure True)
 
-instance (Num a, Eq a, Show a, Epsilon a, Floating a) => IsVertex V3 a where
+instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
+  => IsVertex V3 a where
     inv = inv33
     eye = eye3
-    vertices (V3 x y z) = [x, y, z]
+    coords (V3 x y z) = [x, y, z]
     card _ = 3
     fromVertices [x,y,z] = return $! V3 x y z
     fromVertices _     = fail "fromVertices<V3>: expected list of 3"
@@ -290,6 +291,8 @@ deriving instance Typeable Polygon
 data Geometry (t :: GeometryType) v where
     MkPoint :: forall v. IsVertex v Double =>
       {_pVertex :: !(v Double)} -> Geometry Point v
+    MkLineString :: forall v. IsVertex v Double =>
+      {_lsVertices :: U.Vector (v Double)} -> Geometry LineString v
 
 deriving instance Eq (Geometry t v)
 deriving instance Show (Geometry t v)
