@@ -166,7 +166,9 @@ runGet' g bs
       Right (_,_,_)   -> Left "wkbDecode: unconsumed input"
 {-# INLINE runGet' #-}
                   
-data ByteOrder = XDR | NDR deriving (Show)
+data ByteOrder = XDR -- ^ Big endian 
+               | NDR -- ^ Little endian
+  deriving (Show)
 
 instance Binary ByteOrder where
   put XDR = putWord8 0
