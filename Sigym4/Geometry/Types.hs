@@ -21,6 +21,8 @@ module Sigym4.Geometry.Types (
   , MultiLineString
   , MultiPolygon
   , LinearRing
+  , AnyGeometry
+  , GeometryCollection
   , Geometry (..)
   , GeometryType (..)
   , pVertex
@@ -46,6 +48,8 @@ module Sigym4.Geometry.Types (
   , grSrs
   , grForward
   , grBackward
+  , toAnyGeometry
+  , fromAnyGeometry
   , module V2
   , module V3
 ) where
@@ -66,6 +70,7 @@ import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
 import Linear.Epsilon (Epsilon)
 import Linear.Trace (Trace)
 import Linear.Vector (Additive)
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | A squared Matrix
 type SqMatrix v a = v (v a)
@@ -271,14 +276,18 @@ mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
                               (northUpGeoTransform e s)
 
 -- | An enumeration of geometry types
-data GeometryType = Point
+data GeometryType = Geometry
+                  | Point
                   | LineString
                   | Polygon
                   | MultiPoint
                   | MultiLineString
                   | MultiPolygon
-    deriving (Show, Eq, Enum)
+                  | GeometryCollection
+    deriving (Show, Eq, Enum, Bounded, Typeable)
 
+type AnyGeometry = 'Geometry
+deriving instance Typeable AnyGeometry
 type Point = 'Point
 deriving instance Typeable Point
 type MultiPoint = 'MultiPoint
@@ -291,6 +300,8 @@ type Polygon = 'Polygon
 deriving instance Typeable Polygon
 type MultiPolygon = 'MultiPolygon
 deriving instance Typeable MultiPolygon
+type GeometryCollection = 'GeometryCollection
+deriving instance Typeable GeometryCollection
 
 type LinearRing v = U.Vector (v Double)
 
@@ -310,6 +321,24 @@ data Geometry (t :: GeometryType) v where
       {_pRings :: V.Vector (LinearRing v)} -> Geometry Polygon v
     MkMultiPolygon :: forall v. IsVertex v Double =>
       {_mpPolygons :: V.Vector (Geometry Polygon v)} -> Geometry MultiPolygon v
+    MkGeometry :: forall v. IsVertex v Double =>
+      { _geom :: forall t. Geometry t v
+      , _t    :: TypeRep} -> Geometry 'Geometry v
+    MkGeometryCollection :: forall v. IsVertex v Double =>
+      { _geoms :: V.Vector (Geometry AnyGeometry v)} -> Geometry GeometryCollection v
+
+
+fromAnyGeometry :: forall v t. (Typeable v, Typeable t)
+  => Geometry 'Geometry v -> Maybe (Geometry t v)
+fromAnyGeometry (MkGeometry geom tr)
+  = case unsafeCoerce geom of
+      g | typeOf g == tr -> Just g
+        | otherwise      -> Nothing
+
+toAnyGeometry :: (IsVertex v Double, Typeable t, Typeable v) => Geometry t v -> Geometry 'Geometry v
+toAnyGeometry g@(MkGeometry _ _) = g
+toAnyGeometry g = MkGeometry (unsafeCoerce g) (typeOf g)
+    
 
 deriving instance Eq (Geometry t v)
 deriving instance Show (Geometry t v)

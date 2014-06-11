@@ -1,11 +1,12 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables #-}
 module Arbitrary where
 
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 import Data.Vector.Unboxed as U (fromList)
 import Data.Vector as V (fromList)
+import Data.Typeable (Typeable)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Binary (ByteOrder(..))
@@ -47,3 +48,17 @@ instance (Arbitrary (v Double), IsVertex v Double) =>
 instance (Arbitrary (v Double), IsVertex v Double) =>
   Arbitrary (Geometry MultiPolygon v) where
     arbitrary = fmap (MkMultiPolygon . V.fromList) arbitrary
+
+instance (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry GeometryCollection v) where
+    arbitrary = fmap (MkGeometryCollection . V.fromList) arbitrary
+
+instance forall v. (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
+  Arbitrary (Geometry AnyGeometry v) where
+    arbitrary = do
+      type_ <- arbitrary
+      case type_ of
+        Point -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Point v))
+
+instance Arbitrary GeometryType where
+  arbitrary = elements $ [minBound..maxBound]

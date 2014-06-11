@@ -17,6 +17,8 @@ module Sigym4.Geometry.Binary (
 import Control.Applicative ((<$>), liftA2, liftA3)
 import Data.ByteString.Lazy (ByteString)
 
+import Data.Maybe (fromJust)
+import Data.Typeable (Typeable, typeOf)
 import Data.Proxy (Proxy(..))
 import Data.Binary (Binary(..))
 import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
@@ -30,10 +32,10 @@ import Text.Printf (printf)
 import Sigym4.Geometry.Types
 
 
-wkbEncode :: BinaryBO (v Double) => ByteOrder -> Geometry t v -> ByteString
+wkbEncode :: (BinaryBO (v Double), Typeable t, Typeable v) => ByteOrder -> Geometry t v -> ByteString
 wkbEncode bo g = runPut (put bo >> putGeometry bo g)
 
-putGeometry :: forall t v. BinaryBO (v Double) =>
+putGeometry :: forall t v. (BinaryBO (v Double), Typeable t, Typeable v) =>
   ByteOrder -> Geometry t v -> Put
 putGeometry bo (MkPoint v)
   = putGeomType bo (card (Proxy :: Proxy (v Double))) Point
@@ -57,6 +59,14 @@ putGeometry bo (MkMultiPolygon polys)
   = putGeomType bo (card (Proxy :: Proxy (v Double))) MultiPolygon
  >> putIntBo bo (V.length polys)
  >> V.mapM_ (\g -> put bo >> putGeometry bo g) polys
+putGeometry bo (MkGeometryCollection geoms)
+  = putGeomType bo (card (Proxy :: Proxy (v Double))) GeometryCollection
+ >> putIntBo bo (V.length geoms)
+ >> V.mapM_ (\g -> put bo >> putGeometry bo g) geoms
+putGeometry bo g@(MkGeometry _ gt)
+  | gt == typeOf (undefined :: Geometry Point v)
+  = putGeometry bo (fromJust (fromAnyGeometry g) :: Geometry Point v)
+     
 
 putLinearRing :: (BinaryBO (v Double), IsVertex v Double)
   => ByteOrder -> U.Vector (v Double) -> Put
@@ -78,6 +88,8 @@ geomTypeCardToInt MultiLineString 2 = 5
 geomTypeCardToInt MultiLineString  3 = 1005
 geomTypeCardToInt MultiPolygon 2 = 6
 geomTypeCardToInt MultiPolygon  3 = 1006
+geomTypeCardToInt GeometryCollection 2 = 7
+geomTypeCardToInt GeometryCollection  3 = 1007
 geomTypeCardToInt _ _ = error "unknown geometry type code"
 
 intToGeomType :: Int -> GeometryType
@@ -93,6 +105,8 @@ intToGeomType 5    = MultiLineString
 intToGeomType 1005 = MultiLineString
 intToGeomType 6    = MultiPolygon
 intToGeomType 1006 = MultiPolygon
+intToGeomType 1007 = GeometryCollection
+intToGeomType 7    = GeometryCollection
 intToGeomType n = error $ printf "unknown geometry type code: %d" n
 
 intToGeomCard :: Int -> Int
@@ -134,7 +148,7 @@ wkbDecode bs
        | gtype == geomtype (Proxy :: Proxy t)
        , gcard == card (Proxy :: Proxy (v Double)) -> decodeBody bo rest
        | otherwise -> Left "wkbDecode: unexpected geometry type/dims"
-     Left (_,_,e) -> Left e
+     Left (_,_,e)  -> Left e
 
 getHeader :: Get (ByteOrder, GeometryType, Int)
 getHeader = do
@@ -149,7 +163,9 @@ runGet' g bs
       Right ("",_,v)  -> Right v
       Right (_,_,_)   -> Left "wkbDecode: unconsumed input"
                   
-data ByteOrder = XDR | NDR deriving (Show)
+data ByteOrder = XDR -- ^ Big endian 
+               | NDR -- ^ Little endian
+  deriving (Show)
 
 instance Binary ByteOrder where
   put XDR = putWord8 0
@@ -211,7 +227,9 @@ instance Decodable 'MultiPolygon where
       (getHeader >>= \(bo',_,_) -> decodePolygon bo')
 
 
-
+instance Decodable 'GeometryCollection where
+  geomtype _ = GeometryCollection
+  decodeBody bo bs = undefined
 
 
 
