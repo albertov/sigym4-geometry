@@ -74,9 +74,8 @@ putLinearRing bo vs = putIntBo bo (U.length vs)
                    >> U.mapM_ (putBo bo) vs
 
 putGeomType :: ByteOrder -> Int -> GeometryType -> Put
-putGeomType bo card' gtype = putIntBo bo $ geomTypeCardToInt gtype card'
+putGeomType bo card' gtype = putWordBo bo $ geomTypeCardToInt gtype card'
 
-geomTypeCardToInt :: GeometryType -> Int -> Int
 geomTypeCardToInt Point 2 = 1
 geomTypeCardToInt Point 3 = 1001
 geomTypeCardToInt LineString 2 = 2
@@ -118,8 +117,10 @@ intToGeomCard _ = error "unknown geometry type code"
 
 
 putIntBo :: ByteOrder -> Int -> Put
-putIntBo    XDR = putWord32be  . fromIntegral
-putIntBo    NDR = putWord32le  . fromIntegral
+putIntBo bo = putWordBo bo  . fromIntegral
+
+putWordBo    XDR = putWord32be
+putWordBo    NDR = putWord32le
 
 getIntBo :: ByteOrder -> Get Int
 getIntBo    XDR = fmap fromIntegral getWord32be
