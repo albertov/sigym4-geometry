@@ -50,7 +50,7 @@ test-suite main
                    , vector
                    , mtl
                    , lens
-                   , hspec
+                   , hspec >= 1.10.0
                    , bytestring
                    , sigym4-geometry
                    , data-binary-ieee754
