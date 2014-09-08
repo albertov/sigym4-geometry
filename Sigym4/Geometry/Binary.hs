@@ -18,6 +18,7 @@ import Control.Applicative ((<$>), liftA2, liftA3)
 import Data.ByteString.Lazy (ByteString)
 
 import Data.Maybe (fromJust)
+import Data.Word (Word32)
 import Data.Typeable (Typeable, typeOf)
 import Data.Proxy (Proxy(..))
 import Data.Binary (Binary(..))
@@ -76,6 +77,7 @@ putLinearRing bo vs = putIntBo bo (U.length vs)
 putGeomType :: ByteOrder -> Int -> GeometryType -> Put
 putGeomType bo card' gtype = putWordBo bo $ geomTypeCardToInt gtype card'
 
+geomTypeCardToInt :: (Num b, Num a, Eq a) => GeometryType -> a -> b
 geomTypeCardToInt Point 2 = 1
 geomTypeCardToInt Point 3 = 1001
 geomTypeCardToInt LineString 2 = 2
@@ -119,6 +121,7 @@ intToGeomCard _ = error "unknown geometry type code"
 putIntBo :: ByteOrder -> Int -> Put
 putIntBo bo = putWordBo bo  . fromIntegral
 
+putWordBo :: ByteOrder -> Word32 -> Put
 putWordBo    XDR = putWord32be
 putWordBo    NDR = putWord32le
 
