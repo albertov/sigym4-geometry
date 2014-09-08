@@ -85,6 +85,8 @@ class ( U.Unbox (v a), Num a, Eq a, Show a, Epsilon a, Floating a
     inv :: SqMatrix v a -> Maybe (SqMatrix v a)
     eye :: SqMatrix v a
     card :: Proxy (v a) -> Int
+    coords :: v a -> [a]
+    fromCoords :: [a] -> Maybe (v a)
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
   deriving (Eq, Show, Ord, Num)
@@ -102,6 +104,9 @@ instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
     inv = inv22
     eye = eye2
     card _ = 2
+    coords (V2 u v) = [u, v]
+    fromCoords (u:v:[]) = Just (V2 u v)
+    fromCoords _ = Nothing
 
 instance HasOffset V2 RowMajor where
     toOffset s p
@@ -133,6 +138,9 @@ instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
     inv = inv33
     eye = eye3
     card _ = 3
+    coords (V3 u v z) = [u, v, z]
+    fromCoords (u:v:z:[]) = Just (V3 u v z)
+    fromCoords _ = Nothing
 
 instance HasOffset V3 RowMajor where
     toOffset s p

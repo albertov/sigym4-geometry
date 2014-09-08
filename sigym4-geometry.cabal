@@ -20,6 +20,7 @@ library
   exposed-modules:    Sigym4.Geometry
                     , Sigym4.Geometry.Types
                     , Sigym4.Geometry.Binary
+                    , Sigym4.Geometry.Json
                     , Sigym4.Geometry.Arrow
                     , Sigym4.Geometry.Rasterize
   -- other-modules:       
@@ -33,6 +34,7 @@ library
                      , data-binary-ieee754
                      , bytestring
                      , binary
+                     , aeson
   -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -55,6 +57,7 @@ test-suite main
                    , sigym4-geometry
                    , data-binary-ieee754
                    , QuickCheck
+                   , aeson
   hs-source-dirs:    tests .
   main-is:           Spec.hs
   default-language:  Haskell2010
