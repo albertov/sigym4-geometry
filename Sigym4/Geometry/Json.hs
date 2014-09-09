@@ -28,7 +28,7 @@ jsonDecode :: (Typeable t, IsVertex v Double)
            => ByteString -> Either String (Geometry t v)
 jsonDecode bs = do
     anyGeom <- eitherDecode bs
-    maybe (fail "wrong geometry") return $ fromAnyGeometry anyGeom
+    maybe (fail "jsonDecode: wrong geometry") return $ fromAnyGeometry anyGeom
 
 jsonDecodeAny :: FromJSON a => ByteString -> Either String a
 jsonDecodeAny = eitherDecode
