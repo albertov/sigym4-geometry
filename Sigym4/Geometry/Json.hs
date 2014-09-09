@@ -40,13 +40,13 @@ instance (IsVertex v Double, Typeable t)
                  , "coordinates" .= pointCoords p]
     toJSON (MkMultiPoint ps)
         = object [ "type"        .= ("MultiPoint" :: String)
-                 , "coordinates" .= (mkMultiCoords pointCoords $ ps)]
+                 , "coordinates" .= (V.map pointCoords $ ps)]
     toJSON ls@(MkLineString _)
         = object [ "type"        .= ("LineString" :: String)
                  , "coordinates" .= lineStringCords ls]
     toJSON (MkMultiLineString ls)
         = object [ "type"        .= ("MultiLineString" :: String)
-                 , "coordinates" .= (mkMultiCoords lineStringCords $ ls)
+                 , "coordinates" .= (V.map lineStringCords $ ls)
                  ]
     toJSON p@(MkPolygon _)
         = object [ "type"        .= ("Polygon" :: String)
@@ -54,7 +54,7 @@ instance (IsVertex v Double, Typeable t)
                  ]
     toJSON (MkMultiPolygon ps)
         = object [ "type"        .= ("MultiPolygon" :: String)
-                 , "coordinates" .= (mkMultiCoords polygonCoords  $ ps)
+                 , "coordinates" .= (V.map polygonCoords  $ ps)
                  ]
     toJSON g@(MkGeometry _ tr)
         | tr == typeOf (undefined :: Geometry Point v)
@@ -77,7 +77,7 @@ instance (IsVertex v Double, Typeable t)
                               show tr
     toJSON (MkGeometryCollection geoms)
         = object [ "type"       .= ("GeometryCollection" :: String)
-                 , "geometries" .= map toJSON (V.toList geoms)
+                 , "geometries" .= geoms
                  ]
 
 pointCoords :: IsVertex v Double => Geometry Point v -> [Double]
@@ -88,9 +88,6 @@ lineStringCords = map coords . U.toList . _lsVertices
 
 polygonCoords :: IsVertex v Double => Geometry Polygon v -> [[[Double]]]
 polygonCoords = map (map coords . U.toList) . V.toList . _pRings
-
-mkMultiCoords :: (a -> b) -> V.Vector a -> [b]
-mkMultiCoords p = map p . V.toList
 
 instance (IsVertex v Double, Typeable v)
   => FromJSON (Geometry AnyGeometry v) where
@@ -103,38 +100,34 @@ instance (IsVertex v Double, Typeable v)
                     (return . toAnyGeometry . MkPoint)
                     vertex
             "MultiPoint" -> do
-              vertices <- mapM fromCoords <$> v.: "coordinates"
+              vertices <- V.mapM fromCoords <$> v.: "coordinates"
               maybe (fail "parseJson(MultiPoint): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkMultiPoint . V.map MkPoint .
-                     V.fromList)
+                    (return . toAnyGeometry . MkMultiPoint . V.map MkPoint )
                     vertices
             "LineString" -> do
-              vertices <- mapM fromCoords <$> v.: "coordinates"
+              vertices <- V.mapM fromCoords <$> v.: "coordinates"
               maybe (fail "parseJson(LineString): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkLineString . U.fromList )
+                    (return . toAnyGeometry . MkLineString . U.convert )
                     vertices
             "MultiLineString" -> do
-              linestrings <- mapM (mapM fromCoords) <$> v.: "coordinates"
+              linestrings <- V.mapM (V.mapM fromCoords) <$> v.: "coordinates"
               maybe (fail "parseJson(MultiLineString): vertex of wrong dimensions")
                     (return . toAnyGeometry . MkMultiLineString
-                    . V.map (MkLineString . U.fromList) . V.fromList)
+                    . V.map (MkLineString . U.convert))
                     linestrings
             "Polygon" -> do
-              rings <- mapM (mapM fromCoords) <$> v.: "coordinates"
+              rings <- V.mapM (V.mapM fromCoords) <$> v.: "coordinates"
               maybe (fail "parseJson(Polygon): vertex of wrong dimensions")
-                    ( return . toAnyGeometry . MkPolygon . V.map U.fromList
-                    . V.fromList)
+                    (return . toAnyGeometry . MkPolygon . V.map U.convert)
                     rings
             "MultiPolygon" -> do
-              multirings <- mapM (mapM (mapM fromCoords)) <$> v.: "coordinates"
+              multirings <- V.mapM (V.mapM (V.mapM fromCoords)) <$> v.: "coordinates"
               maybe (fail "parseJson(MultiPolygon): vertex of wrong dimensions")
                     ( return . toAnyGeometry . MkMultiPolygon 
-                    . V.map (MkPolygon . V.map U.fromList . V.fromList)
-                    . V.fromList)
+                    . V.map (MkPolygon . V.map U.convert))
                     multirings
             "GeometryCollection" ->
-              toAnyGeometry . MkGeometryCollection . V.fromList <$>
-              v.:"geometries"
+              toAnyGeometry . MkGeometryCollection <$> v.:"geometries"
                     
             _ -> fail $ "parseJson(Geometry): Unsupported Geometry: " ++ typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
