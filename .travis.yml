@@ -3,7 +3,7 @@ matrix:
     - env: GHCVER=head
 
 env:
- - GHCVER=7.8.2
+ - GHCVER=7.8.3
  - GHCVER=head
 
 before_install:
@@ -18,4 +18,4 @@ install:
 
 script:
  - travis_retry cabal-1.20 install -j2 --enable-tests --only-dependencies
- - cabal-1.20 install --enable-tests
+ - ./test.sh
