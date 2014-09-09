@@ -92,14 +92,12 @@ spec = do
     describe "3D AnyGeometry (MultiPolygon)" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsIdAny :: (Geometry MultiPolygon V3) -> Bool)
-    {-
     describe "2D GeometryCollection" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsId :: (Geometry GeometryCollection V2) -> Bool)
     describe "3D GeometryCollection" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsId :: (Geometry GeometryCollection V3) -> Bool)
-     -}
 
 encodeDecodeIsId o = (jsonDecode . jsonEncode $ o) == Right o
 encodeDecodeIsIdAny o = (jsonDecodeAny . jsonEncode $ o') == Right o'

@@ -64,6 +64,8 @@ instance forall v. (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
         MultiLineString -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiLineString v))
         Polygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Polygon v))
         MultiPolygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiPolygon v))
+        GeometryCollection -> toAnyGeometry <$> (arbitrary :: Gen (Geometry GeometryCollection v))
+        Geometry -> arbitrary
 
 instance Arbitrary GeometryType where
-  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon]
+  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon,GeometryCollection,Geometry]

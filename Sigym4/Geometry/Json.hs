@@ -70,10 +70,18 @@ instance (IsVertex v Double, Typeable t)
         = toJSON  (fromAnyGeometry g :: Maybe (Geometry Polygon v))
         | tr == typeOf (undefined :: Geometry MultiPolygon v)
         = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiPolygon v))
-        | otherwise = error "toJSON(MkGeometry): Unsupported geometry"
+        | tr == typeOf (undefined :: Geometry GeometryCollection v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry GeometryCollection v))
+        | tr == typeOf (undefined :: Geometry AnyGeometry v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry AnyGeometry v))
+        | otherwise = error $ "toJSON(MkGeometry): Unsupported geometry: " ++
+                              show tr
+    toJSON (MkGeometryCollection geoms)
+        = object [ "type"       .= ("GeometryCollection" :: String)
+                 , "geometries" .= map toJSON (V.toList geoms)
+                 ]
+        
 
-    toJSON g = error $ "toJSON(Geometry): Unsupported geometry: " ++
-                       show (typeOf g)
 
 pointCoords :: IsVertex v Double => Geometry Point v -> [Double]
 pointCoords = coords . _pVertex
@@ -127,6 +135,10 @@ instance (IsVertex v Double, Typeable v)
                     . V.map (MkPolygon . V.map U.fromList . V.fromList)
                     . V.fromList)
                     multirings
+            "GeometryCollection" ->
+              toAnyGeometry . MkGeometryCollection . V.fromList <$>
+              v.:"geometries"
+                    
             _ -> fail $ "parseJson(Geometry): Unsupported Geometry: " ++ typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
 
