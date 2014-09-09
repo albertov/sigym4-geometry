@@ -13,7 +13,7 @@ main = hspec spec
 
 spec :: Spec
 spec = do
-  describe "Sigym4.Geometry.Binary" $ do
+  describe "Sigym4.Geometry.Json" $ do
     describe "2D Point" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsId :: (Geometry Point V2) -> Bool)
@@ -60,7 +60,7 @@ spec = do
     describe "2D GeometryCollection" $ do
       it "deserializes the same thing it serializes" $ property $
         (encodeDecodeIsId :: (Geometry GeometryCollection V2) -> Bool)
-    describe "3D MultiPolygon" $ do
+    describe "3D GeometryCollection" $ do
       it "deserializes the same thing it serializes" $ property $
         (encodeDecodeIsId :: (Geometry GeometryCollection V3) -> Bool)
     -}

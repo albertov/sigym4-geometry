@@ -79,7 +79,7 @@ type SqMatrix v a = v (v a)
 class ( U.Unbox (v a), Num a, Eq a, Show a, Epsilon a, Floating a
       , Num (v a), Eq (v a), Show (v a)
       , Num (SqMatrix v a), Show (SqMatrix v a), Eq (SqMatrix v a)
-      ,Applicative v, Additive v, Foldable v, Trace v)
+      , Typeable v, Applicative v, Additive v, Foldable v, Trace v)
   => IsVertex v a
   where
     inv :: SqMatrix v a -> Maybe (SqMatrix v a)
