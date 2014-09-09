@@ -59,6 +59,11 @@ instance forall v. (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
       type_ <- arbitrary
       case type_ of
         Point -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Point v))
+        MultiPoint -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiPoint v))
+        LineString -> toAnyGeometry <$> (arbitrary :: Gen (Geometry LineString v))
+        MultiLineString -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiLineString v))
+        Polygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Polygon v))
+        MultiPolygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiPolygon v))
 
 instance Arbitrary GeometryType where
-  arbitrary = elements $ [minBound..maxBound]
+  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon]

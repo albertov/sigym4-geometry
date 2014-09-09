@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleContexts
            , FlexibleInstances
+           , ScopedTypeVariables
            , GADTs
            , OverloadedStrings
            , DataKinds
@@ -8,6 +9,7 @@
 module Sigym4.Geometry.Json (
     jsonEncode
   , jsonDecode
+  , jsonDecodeAny
   ) where
 
 import Control.Applicative
@@ -27,6 +29,10 @@ jsonDecode :: (Typeable t, IsVertex v Double)
 jsonDecode bs = do
     anyGeom <- eitherDecode bs
     maybe (fail "wrong geometry") return $ fromAnyGeometry anyGeom
+
+jsonDecodeAny :: (IsVertex v Double)
+           => ByteString -> Either String (Geometry AnyGeometry v)
+jsonDecodeAny = eitherDecode
 
 instance (IsVertex v Double, Typeable t)
   => ToJSON (Geometry t v) where
@@ -51,7 +57,22 @@ instance (IsVertex v Double, Typeable t)
         = object [ "type"        .= ("MultiPolygon" :: String)
                  , "coordinates" .= (mkMultiCoords polygonCoords  $ ps)
                  ]
-    toJSON g = error $ "toJSON(Geometry): Unsupported geometry" ++
+    toJSON g@(MkGeometry _ tr)
+        | tr == typeOf (undefined :: Geometry Point v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry Point v))
+        | tr == typeOf (undefined :: Geometry MultiPoint v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiPoint v))
+        | tr == typeOf (undefined :: Geometry LineString v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry LineString v))
+        | tr == typeOf (undefined :: Geometry MultiLineString v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiLineString v))
+        | tr == typeOf (undefined :: Geometry Polygon v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry Polygon v))
+        | tr == typeOf (undefined :: Geometry MultiPolygon v)
+        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiPolygon v))
+        | otherwise = error "toJSON(MkGeometry): Unsupported geometry"
+
+    toJSON g = error $ "toJSON(Geometry): Unsupported geometry: " ++
                        show (typeOf g)
 
 pointCoords :: IsVertex v Double => Geometry Point v -> [Double]
@@ -67,7 +88,7 @@ mkMultiCoords :: (a -> b) -> V.Vector a -> [b]
 mkMultiCoords p = map p . V.toList
 
 instance (IsVertex v Double, Typeable v)
-  => FromJSON (Geometry 'Geometry v) where
+  => FromJSON (Geometry AnyGeometry v) where
     parseJSON (Object v) = do
         typ    <- v .: "type"
         case (typ :: String) of

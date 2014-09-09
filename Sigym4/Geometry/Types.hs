@@ -292,7 +292,7 @@ data GeometryType = Geometry
                   | MultiLineString
                   | MultiPolygon
                   | GeometryCollection
-    deriving (Show, Eq, Enum, Bounded, Typeable)
+    deriving (Show, Eq, Typeable)
 
 type AnyGeometry = 'Geometry
 deriving instance Typeable AnyGeometry
@@ -337,7 +337,7 @@ data Geometry (t :: GeometryType) v where
 
 
 fromAnyGeometry :: forall v t. (Typeable v, Typeable t)
-  => Geometry 'Geometry v -> Maybe (Geometry t v)
+  => Geometry AnyGeometry v -> Maybe (Geometry t v)
 fromAnyGeometry (MkGeometry geom tr)
   = case unsafeCoerce geom of
       g | typeOf g == tr -> Just g
