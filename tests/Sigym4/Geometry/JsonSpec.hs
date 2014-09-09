@@ -92,6 +92,7 @@ spec = do
     describe "3D AnyGeometry (MultiPolygon)" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsIdAny :: (Geometry MultiPolygon V3) -> Bool)
+
     describe "2D GeometryCollection" $ do
       prop "deserializes the same thing it serializes" $
         (encodeDecodeIsId :: (Geometry GeometryCollection V2) -> Bool)

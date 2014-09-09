@@ -30,8 +30,7 @@ jsonDecode bs = do
     anyGeom <- eitherDecode bs
     maybe (fail "wrong geometry") return $ fromAnyGeometry anyGeom
 
-jsonDecodeAny :: (IsVertex v Double)
-           => ByteString -> Either String (Geometry AnyGeometry v)
+jsonDecodeAny :: FromJSON a => ByteString -> Either String a
 jsonDecodeAny = eitherDecode
 
 instance (IsVertex v Double, Typeable t)
@@ -80,8 +79,6 @@ instance (IsVertex v Double, Typeable t)
         = object [ "type"       .= ("GeometryCollection" :: String)
                  , "geometries" .= map toJSON (V.toList geoms)
                  ]
-        
-
 
 pointCoords :: IsVertex v Double => Geometry Point v -> [Double]
 pointCoords = coords . _pVertex
@@ -142,3 +139,34 @@ instance (IsVertex v Double, Typeable v)
             _ -> fail $ "parseJson(Geometry): Unsupported Geometry: " ++ typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
 
+        
+
+instance (ToJSON (Geometry t v), ToJSON d) => ToJSON (Feature t v d) where
+    toJSON (Feature g ps) = object [ "type"       .= ("Feature" :: String)
+                                   , "geometry"   .= g
+                                   , "properties" .= ps
+                                   ]
+instance (FromJSON (Geometry t v), FromJSON d) => FromJSON (Feature t v d)
+  where
+    parseJSON (Object o) = do
+        typ <- o .:"type"
+        if typ == "Feature"
+            then Feature <$> o.: "geometry" <*> o.:"properties"
+            else fail $ "parseJSON(Feature): type mismatch: " ++ typ
+    parseJSON _ = fail "parseJSON(Feature): Expected an object"
+
+
+instance (ToJSON d, ToJSON (Feature AnyGeometry v d))
+  => ToJSON (FeatureCollection v d)
+  where
+    toJSON fs = object [ "type"       .= ("FeatureCollection" :: String)
+                       , "features"   .= fs]
+
+instance FromJSON (Feature AnyGeometry v d) => FromJSON (FeatureCollection v d)
+  where
+    parseJSON (Object o) = do
+        typ <- o .:"type"
+        if typ == "FeatureCollection"
+            then o.: "features"
+            else fail $ "parseJSON(FeatureCollection): type mismatch: " ++ typ
+    parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"

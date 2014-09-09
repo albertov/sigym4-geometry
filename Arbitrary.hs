@@ -68,4 +68,4 @@ instance forall v. (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
         Geometry -> arbitrary
 
 instance Arbitrary GeometryType where
-  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon,GeometryCollection,Geometry]
+  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon,GeometryCollection]

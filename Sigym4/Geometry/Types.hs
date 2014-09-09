@@ -27,6 +27,7 @@ module Sigym4.Geometry.Types (
   , GeometryType (..)
   , pVertex
   , Feature (..)
+  , FeatureCollection
   , fData
   , fGeom
   , IsVertex (..)
@@ -362,6 +363,8 @@ data Feature t v d = Feature {
   , _fData :: d
   } deriving (Eq, Show, Typeable)
 makeLenses ''Feature
+
+type FeatureCollection v d = [Feature AnyGeometry v d]
 
 instance Functor (Feature t v) where
    fmap f (Feature g d) = Feature g (f d)

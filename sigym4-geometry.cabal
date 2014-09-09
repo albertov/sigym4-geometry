@@ -33,6 +33,7 @@ library
                      , vector-th-unbox
                      , data-binary-ieee754
                      , bytestring
+                     , bytestring
                      , binary
                      , aeson
   -- hs-source-dirs:      
