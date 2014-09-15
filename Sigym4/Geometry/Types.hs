@@ -27,7 +27,7 @@ module Sigym4.Geometry.Types (
   , GeometryType (..)
   , pVertex
   , Feature (..)
-  , FeatureCollection
+  , FeatureCollection (..)
   , fData
   , fGeom
   , IsVertex (..)
@@ -61,6 +61,7 @@ import Control.Lens
 import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
 import Data.Typeable
+import Data.Monoid (Monoid(..))
 import Data.Foldable (product)
 import Data.Vector as V (Vector)
 import Data.Vector.Unboxed as U (Vector, Unbox)
@@ -364,7 +365,13 @@ data Feature t v d = Feature {
   } deriving (Eq, Show, Typeable)
 makeLenses ''Feature
 
-type FeatureCollection v d = [Feature AnyGeometry v d]
+newtype FeatureCollection v d = FeatureCollection [Feature AnyGeometry v d]
+  deriving (Show)
+
+instance Monoid (FeatureCollection v d) where
+    mempty = FeatureCollection mempty
+    (FeatureCollection as) `mappend` (FeatureCollection bs)
+        = FeatureCollection $ as `mappend` bs
 
 instance Functor (Feature t v) where
    fmap f (Feature g d) = Feature g (f d)

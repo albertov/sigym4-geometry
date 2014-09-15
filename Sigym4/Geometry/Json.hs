@@ -141,25 +141,22 @@ instance (ToJSON (Geometry t v), ToJSON d) => ToJSON (Feature t v d) where
                                    ]
 instance (FromJSON (Geometry t v), FromJSON d) => FromJSON (Feature t v d)
   where
-    parseJSON (Object o) = do
-        typ <- o .:"type"
-        if typ == "Feature"
-            then Feature <$> o.: "geometry" <*> o.:"properties"
-            else fail $ "parseJSON(Feature): type mismatch: " ++ typ
+    parseJSON (Object o) = Feature <$> o.: "geometry" <*> o.:"properties"
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToJSON d, ToJSON (Feature AnyGeometry v d))
+instance (ToJSON d, IsVertex v Double)
   => ToJSON (FeatureCollection v d)
   where
-    toJSON fs = object [ "type"       .= ("FeatureCollection" :: String)
-                       , "features"   .= fs]
+    toJSON (FeatureCollection fs)
+      = object [ "type"       .= ("FeatureCollection" :: String)
+               , "features"   .= fs]
 
-instance FromJSON (Feature AnyGeometry v d) => FromJSON (FeatureCollection v d)
+instance (FromJSON d, IsVertex v Double) => FromJSON (FeatureCollection v d)
   where
     parseJSON (Object o) = do
         typ <- o .:"type"
         if typ == "FeatureCollection"
-            then o.: "features"
+            then FeatureCollection <$> o.: "features"
             else fail $ "parseJSON(FeatureCollection): type mismatch: " ++ typ
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"
