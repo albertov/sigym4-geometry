@@ -42,6 +42,12 @@ module Sigym4.Geometry.Types (
   , GeoTransform (..)
   , GeoReference
   , mkGeoReference
+  , mkPoint
+  , mkMultiPoint
+  , mkLineString
+  , mkMultiLineString
+  , mkPolygon
+  , mkMultiPolygon
   , vertexOffset
   , grScalarSize
   , grSize
@@ -62,9 +68,10 @@ import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
 import Data.Typeable
 import Data.Monoid (Monoid(..))
+import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Vector as V (Vector)
-import Data.Vector.Unboxed as U (Vector, Unbox)
+import Data.Vector as V (Vector, fromList, map)
+import Data.Vector.Unboxed as U (Vector, Unbox, fromList)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
@@ -175,6 +182,16 @@ data Extent v where
 deriving instance Eq (Extent v)
 deriving instance Show (Extent v)
 deriving instance Typeable Extent
+
+instance SG.Semigroup (Extent V2) where
+    Extent (V2 u0 v0) (V2 u1 v1) <> Extent (V2 u0' v0') (V2 u1' v1')
+        = Extent (V2 (min u0 u0') (min v0 v0'))
+                 (V2 (max u1 u1') (max v1 v1'))
+
+instance SG.Semigroup (Extent V3) where
+  Extent (V3 u0 v0 z0) (V3 u1 v1 z1) <> Extent (V3 u0' v0' z0') (V3 u1' v1' z1')
+    = Extent (V3 (min u0 u0') (min v0 v0') (min z0 z0'))
+             (V3 (max u1 u1') (max v1 v1') (max z1 z1'))
 
 -- | A pixel is a newtype around a vertex
 newtype Pixel v = Pixel {unPx :: v Double}
@@ -333,19 +350,42 @@ data Geometry (t :: GeometryType) v where
       {_mpPolygons :: V.Vector (Geometry Polygon v)} -> Geometry MultiPolygon v
     MkGeometry :: forall v. IsVertex v Double =>
       { _geom :: forall t. Geometry t v
-      , _t    :: TypeRep} -> Geometry 'Geometry v
+      , _t    :: TypeRep} -> Geometry AnyGeometry v
     MkGeometryCollection :: forall v. IsVertex v Double =>
       { _geoms :: V.Vector (Geometry AnyGeometry v)} -> Geometry GeometryCollection v
 
+mkPoint :: forall v. IsVertex v Double => v Double -> Geometry Point v
+mkPoint = MkPoint
 
-fromAnyGeometry :: forall v t. (Typeable v, Typeable t)
+mkMultiPoint :: forall v. IsVertex v Double
+    => [Geometry Point v] -> Geometry MultiPoint v
+mkMultiPoint = MkMultiPoint . V.fromList
+
+mkLineString :: forall v. IsVertex v Double
+    => [v Double] -> Geometry LineString v
+mkLineString = MkLineString . U.fromList
+
+mkMultiLineString :: forall v. IsVertex v Double
+    => [Geometry LineString v] -> Geometry MultiLineString v
+mkMultiLineString = MkMultiLineString . V.fromList
+
+mkPolygon :: forall v. IsVertex v Double
+    => [[v Double]] -> Geometry Polygon v
+mkPolygon = MkPolygon . V.map U.fromList . V.fromList
+
+mkMultiPolygon :: forall v. IsVertex v Double
+    => [Geometry Polygon v] -> Geometry MultiPolygon v
+mkMultiPolygon = MkMultiPolygon . V.fromList
+
+fromAnyGeometry :: forall v t. (IsVertex v Double, Typeable t)
   => Geometry AnyGeometry v -> Maybe (Geometry t v)
 fromAnyGeometry (MkGeometry geom tr)
   = case unsafeCoerce geom of
       g | typeOf g == tr -> Just g
         | otherwise      -> Nothing
 
-toAnyGeometry :: (IsVertex v Double, Typeable t, Typeable v) => Geometry t v -> Geometry 'Geometry v
+toAnyGeometry :: (IsVertex v Double, Typeable t)
+  => Geometry t v -> Geometry AnyGeometry v
 toAnyGeometry g@(MkGeometry _ _) = g
 toAnyGeometry g = MkGeometry (unsafeCoerce g) (typeOf g)
     
@@ -365,8 +405,9 @@ data Feature t v d = Feature {
   } deriving (Eq, Show, Typeable)
 makeLenses ''Feature
 
-newtype FeatureCollection v d = FeatureCollection [Feature AnyGeometry v d]
-  deriving (Show)
+newtype FeatureCollection v d = FeatureCollection {
+    _fcFeatures :: [Feature AnyGeometry v d]
+} deriving (Show)
 
 instance Monoid (FeatureCollection v d) where
     mempty = FeatureCollection mempty
