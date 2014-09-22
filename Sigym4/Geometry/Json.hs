@@ -2,157 +2,132 @@
 {-# LANGUAGE FlexibleContexts
            , FlexibleInstances
            , ScopedTypeVariables
-           , GADTs
            , OverloadedStrings
-           , DataKinds
            #-}
 module Sigym4.Geometry.Json (
     jsonEncode
   , jsonDecode
-  , jsonDecodeAny
   ) where
 
 import Control.Applicative
 import Data.Aeson
-import Data.Typeable
+import Data.Text (Text, unpack)
+import Data.Aeson.Types (Parser, Pair)
 import Sigym4.Geometry.Types
 import Data.ByteString.Lazy (ByteString)
-import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
 
-jsonEncode :: (Typeable t, IsVertex v Double)
-           => Geometry t v -> ByteString
+jsonEncode :: (VectorSpace v)
+           => Geometry v -> ByteString
 jsonEncode = encode
 
-jsonDecode :: (Typeable t, IsVertex v Double)
-           => ByteString -> Either String (Geometry t v)
-jsonDecode bs = do
-    anyGeom <- eitherDecode bs
-    maybe (fail "jsonDecode: wrong geometry") return $ fromAnyGeometry anyGeom
+jsonDecode :: (VectorSpace v)
+           => ByteString -> Either String (Geometry v)
+jsonDecode = eitherDecode
 
-jsonDecodeAny :: FromJSON a => ByteString -> Either String a
-jsonDecodeAny = eitherDecode
+instance VectorSpace v => ToJSON (Geometry v) where
+    toJSON (GeoPoint g)
+      = typedObject "Point"
+        ["coordinates" .= pointCoordinates g]
+    toJSON (GeoMultiPoint g)
+      = typedObject "MultiPoint"
+        ["coordinates" .= V.map pointCoordinates g]
+    toJSON (GeoLineString g)
+      = typedObject "LineString"
+        ["coordinates" .= lineStringCoordinates g]
+    toJSON (GeoMultiLineString g)
+      = typedObject "MultiLineString"
+        ["coordinates" .= V.map lineStringCoordinates g]
+    toJSON (GeoPolygon g)
+      = typedObject "Polygon"
+        ["coordinates" .= polygonCoordinates g]
+    toJSON (GeoMultiPolygon g)
+      = typedObject "MultiPolygon"
+        ["coordinates" .= V.map polygonCoordinates g]
+    toJSON (GeoCollection g)
+      = typedObject "GeometryCollection"
+        ["geometries" .= g]
+    {-# SPECIALIZE INLINE toJSON :: Geometry V2 -> Value #-}
+    {-# SPECIALIZE INLINE toJSON :: Geometry V3 -> Value #-}
 
-instance (IsVertex v Double, Typeable t)
-  => ToJSON (Geometry t v) where
-    toJSON p@(MkPoint _)
-        = object [ "type"        .= ("Point" :: String)
-                 , "coordinates" .= pointCoords p]
-    toJSON (MkMultiPoint ps)
-        = object [ "type"        .= ("MultiPoint" :: String)
-                 , "coordinates" .= (V.map pointCoords $ ps)]
-    toJSON ls@(MkLineString _)
-        = object [ "type"        .= ("LineString" :: String)
-                 , "coordinates" .= lineStringCords ls]
-    toJSON (MkMultiLineString ls)
-        = object [ "type"        .= ("MultiLineString" :: String)
-                 , "coordinates" .= (V.map lineStringCords $ ls)
-                 ]
-    toJSON p@(MkPolygon _)
-        = object [ "type"        .= ("Polygon" :: String)
-                 , "coordinates" .= polygonCoords p
-                 ]
-    toJSON (MkMultiPolygon ps)
-        = object [ "type"        .= ("MultiPolygon" :: String)
-                 , "coordinates" .= (V.map polygonCoords  $ ps)
-                 ]
-    toJSON g@(MkGeometry _ tr)
-        | tr == typeOf (undefined :: Geometry Point v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry Point v))
-        | tr == typeOf (undefined :: Geometry MultiPoint v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiPoint v))
-        | tr == typeOf (undefined :: Geometry LineString v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry LineString v))
-        | tr == typeOf (undefined :: Geometry MultiLineString v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiLineString v))
-        | tr == typeOf (undefined :: Geometry Polygon v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry Polygon v))
-        | tr == typeOf (undefined :: Geometry MultiPolygon v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry MultiPolygon v))
-        | tr == typeOf (undefined :: Geometry GeometryCollection v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry GeometryCollection v))
-        | tr == typeOf (undefined :: Geometry AnyGeometry v)
-        = toJSON  (fromAnyGeometry g :: Maybe (Geometry AnyGeometry v))
-        | otherwise = error $ "toJSON(MkGeometry): Unsupported geometry: " ++
-                              show tr
-    toJSON (MkGeometryCollection geoms)
-        = object [ "type"       .= ("GeometryCollection" :: String)
-                 , "geometries" .= geoms
-                 ]
+parsePoint :: VectorSpace v => [Double] -> Parser (Point v)
+parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromList
 
-pointCoords :: IsVertex v Double => Geometry Point v -> [Double]
-pointCoords = coords . _pVertex
+parsePoints :: VectorSpace v => [[Double]] -> Parser (V.Vector (Point v))
+parsePoints = V.mapM parsePoint . V.fromList
 
-lineStringCords :: IsVertex v Double => Geometry LineString v -> [[Double]]
-lineStringCords = map coords . U.toList . _lsVertices
+parseLineString :: VectorSpace v => [[Double]] -> Parser (LineString v)
+parseLineString ps = do
+    points <- mapM parsePoint ps
+    case mkLineString points of
+        Just ls -> return ls
+        Nothing -> fail "parseLineString: Invalid linestring"
 
-polygonCoords :: IsVertex v Double => Geometry Polygon v -> [[[Double]]]
-polygonCoords = map (map coords . U.toList) . V.toList . _pRings
+parseLinearRing :: VectorSpace v => [[Double]] -> Parser (LinearRing v)
+parseLinearRing ps = do
+    points <- mapM parsePoint ps
+    case mkLinearRing points of
+        Just ls -> return ls
+        Nothing -> fail "parseLinearRing: Invalid linear ring"
 
-instance (IsVertex v Double, Typeable v)
-  => FromJSON (Geometry AnyGeometry v) where
-    parseJSON (Object v) = do
-        typ    <- v .: "type"
-        case (typ :: String) of
-            "Point" -> do
-              vertex <- fromCoords <$> v.: "coordinates"
-              maybe (fail "vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkPoint)
-                    vertex
-            "MultiPoint" -> do
-              vertices <- V.mapM fromCoords <$> v.: "coordinates"
-              maybe (fail "parseJson(MultiPoint): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkMultiPoint . V.map MkPoint )
-                    vertices
-            "LineString" -> do
-              vertices <- V.mapM fromCoords <$> v.: "coordinates"
-              maybe (fail "parseJson(LineString): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkLineString . U.convert )
-                    vertices
-            "MultiLineString" -> do
-              linestrings <- V.mapM (V.mapM fromCoords) <$> v.: "coordinates"
-              maybe (fail "parseJson(MultiLineString): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkMultiLineString
-                    . V.map (MkLineString . U.convert))
-                    linestrings
-            "Polygon" -> do
-              rings <- V.mapM (V.mapM fromCoords) <$> v.: "coordinates"
-              maybe (fail "parseJson(Polygon): vertex of wrong dimensions")
-                    (return . toAnyGeometry . MkPolygon . V.map U.convert)
-                    rings
-            "MultiPolygon" -> do
-              multirings <- V.mapM (V.mapM (V.mapM fromCoords)) <$> v.: "coordinates"
-              maybe (fail "parseJson(MultiPolygon): vertex of wrong dimensions")
-                    ( return . toAnyGeometry . MkMultiPolygon 
-                    . V.map (MkPolygon . V.map U.convert))
-                    multirings
+
+parsePolygon :: VectorSpace v => [[[Double]]] -> Parser (Polygon v)
+parsePolygon ps = do
+    rings <- V.mapM parseLinearRing (V.fromList ps)
+    if V.length rings == 0
+       then fail $ "parseJSON(Geometry): Polygon requires at least one linear ring"
+       else return $ Polygon (V.head rings) (V.tail rings)
+
+coords :: FromJSON a => Object -> Parser a
+coords o = o .: "coordinates"
+
+typedObject :: Text -> [Pair] -> Value
+typedObject k = object . ((:) ("type" .= k))
+
+
+
+
+instance VectorSpace v => FromJSON (Geometry v) where
+    parseJSON (Object o) = do
+        typ <- o .: "type"
+        case typ of
+            "Point" ->
+                coords o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v)
+            "MultiPoint" ->
+                coords o >>= fmap GeoMultiPoint . parsePoints
+            "LineString" ->
+                coords o >>= fmap GeoLineString . parseLineString
+            "MultiLineString" ->
+                coords o >>= fmap GeoMultiLineString . V.mapM parseLineString
+            "Polygon" ->
+                coords o >>= fmap GeoPolygon . parsePolygon
+            "MultiPolygon" ->
+                coords o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
             "GeometryCollection" ->
-              toAnyGeometry . MkGeometryCollection <$> v.:"geometries"
-                    
-            _ -> fail $ "parseJson(Geometry): Unsupported Geometry: " ++ typ
+                fmap GeoCollection $ o .: "geometries"
+            _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
+    {-# SPECIALIZE INLINE parseJSON :: Value -> Parser (Geometry V2) #-}
+    {-# SPECIALIZE INLINE parseJSON :: Value -> Parser (Geometry V3) #-}
 
         
 
-instance (ToJSON (Geometry t v), ToJSON d) => ToJSON (Feature t v d) where
-    toJSON (Feature g ps) = object [ "type"       .= ("Feature" :: String)
-                                   , "geometry"   .= g
-                                   , "properties" .= ps
-                                   ]
-instance (FromJSON (Geometry t v), FromJSON d) => FromJSON (Feature t v d)
+instance (ToJSON (Geometry v), ToJSON d) => ToJSON (Feature v d) where
+    toJSON (Feature g ps) = typedObject "Feature" ["geometry"    .= g
+                                                  , "properties" .= ps
+                                                  ]
+instance (FromJSON (Geometry v), FromJSON d) => FromJSON (Feature v d)
   where
     parseJSON (Object o) = Feature <$> o.: "geometry" <*> o.:"properties"
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToJSON d, IsVertex v Double)
-  => ToJSON (FeatureCollection v d)
+instance (ToJSON d, ToJSON (Geometry v)) => ToJSON (FeatureCollection v d)
   where
     toJSON (FeatureCollection fs)
-      = object [ "type"       .= ("FeatureCollection" :: String)
-               , "features"   .= fs]
+      = typedObject "FeatureCollection" ["features" .= fs]
 
-instance (FromJSON d, IsVertex v Double) => FromJSON (FeatureCollection v d)
+instance (FromJSON d, FromJSON (Geometry v)) => FromJSON (FeatureCollection v d)
   where
     parseJSON (Object o) = do
         typ <- o .:"type"

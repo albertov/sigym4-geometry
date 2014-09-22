@@ -1,11 +1,9 @@
 {-# LANGUAGE StandaloneDeriving
-           , DeriveDataTypeable
+           , DataKinds
            , TypeFamilies
            , GeneralizedNewtypeDeriving
            , TemplateHaskell
            , MultiParamTypeClasses
-           , DataKinds
-           , GADTs
            , FlexibleContexts
            , FlexibleInstances
            , TypeSynonymInstances
@@ -14,23 +12,18 @@
            , KindSignatures
            #-}
 module Sigym4.Geometry.Types (
-    Point
-  , LineString
-  , Polygon
-  , MultiPoint
-  , MultiLineString
-  , MultiPolygon
-  , LinearRing
-  , AnyGeometry
-  , GeometryCollection
-  , Geometry (..)
-  , GeometryType (..)
+    Geometry (..)
+  , LineString (..)
+  , LinearRing (..)
+  , Vertex
+  , Point (..)
+  , Polygon (..)
   , pVertex
   , Feature (..)
   , FeatureCollection (..)
   , fData
   , fGeom
-  , IsVertex (..)
+  , VectorSpace (..)
   , HasOffset
   , Pixel (..)
   , Size (..)
@@ -42,12 +35,6 @@ module Sigym4.Geometry.Types (
   , GeoTransform (..)
   , GeoReference
   , mkGeoReference
-  , mkPoint
-  , mkMultiPoint
-  , mkLineString
-  , mkMultiLineString
-  , mkPolygon
-  , mkMultiPolygon
   , vertexOffset
   , grScalarSize
   , grSize
@@ -55,8 +42,15 @@ module Sigym4.Geometry.Types (
   , grSrs
   , grForward
   , grBackward
-  , toAnyGeometry
-  , fromAnyGeometry
+
+  , mkLineString
+  , mkLinearRing
+  , mkPolygon
+
+  , pointCoordinates
+  , lineStringCoordinates
+  , polygonCoordinates
+
   , module V2
   , module V3
 ) where
@@ -64,38 +58,55 @@ module Sigym4.Geometry.Types (
 import Prelude hiding (product)
 import Control.Applicative (Applicative, pure)
 import Control.Lens
+import Data.Proxy (Proxy(..))
 import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
-import Data.Typeable
 import Data.Monoid (Monoid(..))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Vector as V (Vector, fromList, map)
-import Data.Vector.Unboxed as U (Vector, Unbox, fromList)
+import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
-import Linear.Epsilon (Epsilon)
 import Linear.Trace (Trace)
 import Linear.Vector (Additive)
-import Unsafe.Coerce (unsafeCoerce)
 
--- | A squared Matrix
-type SqMatrix v a = v (v a)
+-- | A vertex
+type Vertex v = v Double
 
--- | class for vertex types, used to simplify type signatures
-class ( U.Unbox (v a), Num a, Eq a, Show a, Epsilon a, Floating a
-      , Num (v a), Eq (v a), Show (v a)
-      , Num (SqMatrix v a), Show (SqMatrix v a), Eq (SqMatrix v a)
-      , Typeable v, Applicative v, Additive v, Foldable v, Trace v)
-  => IsVertex v a
-  where
-    inv :: SqMatrix v a -> Maybe (SqMatrix v a)
-    eye :: SqMatrix v a
-    card :: Proxy (v a) -> Int
-    coords :: v a -> [a]
-    fromCoords :: [a] -> Maybe (v a)
+-- | A square Matrix
+type SqMatrix v = v (Vertex v)
+
+-- | A vector space
+class ( Num (Vertex v), Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
+      , Show (v Int), Eq (v Int) --XXX
+      , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
+      , Applicative v, Additive v, Foldable v, Trace v)
+  => VectorSpace v where
+    inv :: SqMatrix v -> Maybe (SqMatrix v)
+    eye :: SqMatrix v 
+    dim :: Proxy v -> Int
+    toList :: Vertex v -> [Double]
+    fromList :: [Double] -> Maybe (Vertex v)
+
+instance VectorSpace V2 where
+    inv = inv22
+    eye = eye2
+    dim _ = 2
+    toList (V2 u v) = [u, v]
+    fromList (u:v:[]) = Just (V2 u v)
+    fromList _ = Nothing
+
+instance VectorSpace V3 where
+    inv = inv33
+    eye = eye3
+    dim _ = 3
+    toList (V3 u v z) = [u, v, z]
+    fromList (u:v:z:[]) = Just (V3 u v z)
+    fromList _ = Nothing
+
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
   deriving (Eq, Show, Ord, Num)
@@ -107,15 +118,6 @@ type ColumnMajor = 'ColumnMajor
 
 class HasOffset v (t :: OffsetType) where
     toOffset :: Size v -> Pixel v -> Maybe (Offset t)
-
-instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
-  => IsVertex V2 a where
-    inv = inv22
-    eye = eye2
-    card _ = 2
-    coords (V2 u v) = [u, v]
-    fromCoords (u:v:[]) = Just (V2 u v)
-    fromCoords _ = Nothing
 
 instance HasOffset V2 RowMajor where
     toOffset s p
@@ -142,15 +144,6 @@ between :: (Applicative v, Ord a, Num (v a), Num a, Eq (v Bool))
 between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
                   (fmap (>= 0) (v - lo) == pure True)
 
-instance (Unbox a, Num a, Eq a, Show a, Epsilon a, Floating a)
-  => IsVertex V3 a where
-    inv = inv33
-    eye = eye3
-    card _ = 3
-    coords (V3 u v z) = [u, v, z]
-    fromCoords (u:v:z:[]) = Just (V3 u v z)
-    fromCoords _ = Nothing
-
 instance HasOffset V3 RowMajor where
     toOffset s p
       | between (pure 0) s' p' = Just (Offset o)
@@ -176,12 +169,9 @@ instance HasOffset V3 ColumnMajor where
 
 
 -- | An extent in v space is a pair of minimum and maximum vertices
-data Extent v where
-    Extent :: forall v. IsVertex v Double =>
-      {eMin :: !(v Double), eMax :: !(v Double)} -> Extent v
-deriving instance Eq (Extent v)
-deriving instance Show (Extent v)
-deriving instance Typeable Extent
+data Extent v = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
+deriving instance VectorSpace v => Eq (Extent v)
+deriving instance VectorSpace v => Show (Extent v)
 
 instance SG.Semigroup (Extent V2) where
     Extent (V2 u0 v0) (V2 u1 v1) <> Extent (V2 u0' v0') (V2 u1' v1')
@@ -194,26 +184,15 @@ instance SG.Semigroup (Extent V3) where
              (V3 (max u1 u1') (max v1 v1') (max z1 z1'))
 
 -- | A pixel is a newtype around a vertex
-newtype Pixel v = Pixel {unPx :: v Double}
+newtype Pixel v = Pixel {unPx :: Vertex v}
+deriving instance VectorSpace v => Show (Pixel v)
+deriving instance VectorSpace v => Eq (Pixel v)
 
-#ifdef UNDECIDABLE
-instance Show (v Double) => Show (Pixel v) where
-    show p = "Pixel (" ++ show (unPx p) ++ ")"
-instance Eq (v Double) => Eq (Pixel v) where
-    Pixel v == Pixel v' = v==v'
-#endif
+newtype Size v = Size {unSize :: v Int}
+deriving instance VectorSpace v => Eq (Size v)
+deriving instance VectorSpace v => Show (Size v)
 
--- | A Size is a pseudo-newtype around a vector, it represents the dimensions
---  of an array of shape (v1,..,vn)
-data Size v where
-    Size :: forall v. (Eq (v Int), Show (v Int)) =>
-      {unSize :: !(v Int)} -> Size v
-
-deriving instance Eq (Size v)
-deriving instance Show (Size v)
-deriving instance Typeable Size
-
-scalarSize :: IsVertex v Double => Size v -> Int
+scalarSize :: VectorSpace v => Size v -> Int
 scalarSize = product . unSize
 
 
@@ -221,24 +200,22 @@ scalarSize = product . unSize
 data SpatialReference = SrsProj4 String
                       | SrsEPSG  Int
                       | SrsWKT   String
-    deriving (Eq,Show,Typeable)
+    deriving (Eq,Show)
 
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
 -- 'Pixel' coordinates and back. gtMatrix *must* be inversible so smart
 -- constructors are provided
-data GeoTransform v  where
-    GeoTransform :: forall v. IsVertex v Double =>
-      { gtMatrix :: !(SqMatrix v Double)
-      , gtOrigin :: !(v Double)
-      } -> GeoTransform v
-deriving instance Eq (GeoTransform v)
-deriving instance Show (GeoTransform v)
-deriving instance Typeable GeoTransform
+data GeoTransform v  = GeoTransform 
+      { gtMatrix :: !(SqMatrix v)
+      , gtOrigin :: !(Vertex v)
+      }
+deriving instance VectorSpace v => Eq (GeoTransform v)
+deriving instance VectorSpace v => Show (GeoTransform v)
 
 -- Makes a standard 'GeoTransform' for north-up images with no rotation
 -- northUpGeoTransform :: Extent V2 -> Pixel V2 -> Either String (GeoTransform V2)
 northUpGeoTransform ::
-  (IsVertex v Double, R2 v, Eq (v Bool), Fractional (v Double))
+  (VectorSpace v, R2 v, Eq (v Bool), Fractional (Vertex v))
   => Extent v -> Size v -> Either String (GeoTransform v)
 northUpGeoTransform e s
   | not isValidBox   = Left "northUpGeoTransform: invalid extent"
@@ -252,161 +229,131 @@ northUpGeoTransform e s
     dPx         = (eMax e - eMin e)/s' & _y %~ negate
     matrix      = pure dPx * eye
 
-gtForward :: IsVertex v Double => GeoTransform v -> v Double -> Pixel v
+gtForward :: VectorSpace v => GeoTransform v -> Vertex v -> Pixel v
 gtForward gt v = Pixel $ m !* (v-v0)
   where m   = fromMaybe (error "gtForward. non-inversible matrix")
                         (inv $ gtMatrix gt)
         v0  = gtOrigin gt
 
 
-gtBackward :: IsVertex v Double => GeoTransform v -> Pixel v -> v Double
+gtBackward :: VectorSpace v => GeoTransform v -> Pixel v -> Vertex v
 gtBackward gt p = v0 + (unPx p) *! m
   where m  = gtMatrix gt
         v0 = gtOrigin gt
 
-data GeoReference v where
-  GeoReference :: forall v. IsVertex v Double =>
+data GeoReference v = GeoReference 
       { grTransform :: GeoTransform v
       , grSize      :: Size v
       , grSrs       :: SpatialReference
-      } -> GeoReference v
+      }
+deriving instance VectorSpace v => Eq (GeoReference v)
+deriving instance VectorSpace v => Show (GeoReference v)
 
-deriving instance Eq (GeoReference v)
-deriving instance Show (GeoReference v)
-deriving instance Typeable GeoReference
 
-grScalarSize :: IsVertex v Double => GeoReference v -> Int
+grScalarSize :: VectorSpace v => GeoReference v -> Int
 grScalarSize = scalarSize . grSize
 
 
-vertexOffset :: (HasOffset v t, IsVertex v Double)
-  => GeoReference v -> v Double -> Maybe (Offset t)
+vertexOffset :: (HasOffset v t, VectorSpace v)
+  => GeoReference v -> Vertex v -> Maybe (Offset t)
 vertexOffset gr =  toOffset (grSize gr) . grForward gr
 {-# SPECIALIZE INLINE
       vertexOffset :: GeoReference V2 -> V2 Double -> Maybe (Offset RowMajor)
       #-}
 
-grForward :: IsVertex v Double => GeoReference v -> v Double -> Pixel v
+grForward :: VectorSpace v => GeoReference v -> Vertex v -> Pixel v
 grForward gr = gtForward (grTransform gr)
 {-# INLINE grForward #-}
 
-grBackward :: IsVertex v Double => GeoReference v -> Pixel v -> v Double
+grBackward :: VectorSpace v => GeoReference v -> Pixel v -> Vertex v
 grBackward gr = gtBackward (grTransform gr)
 {-# INLINE grBackward #-}
 
 
 mkGeoReference ::
-  ( IsVertex v Double, R2 v
-  , Eq (v Bool), Fractional (v Double)) =>
+  ( VectorSpace v, R2 v
+  , Eq (v Bool), Fractional (Vertex v)) =>
   Extent v -> Size v -> SpatialReference -> Either String (GeoReference v)
 mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
                               (northUpGeoTransform e s)
 
--- | An enumeration of geometry types
-data GeometryType = Geometry
-                  | Point
-                  | LineString
-                  | Polygon
-                  | MultiPoint
-                  | MultiLineString
-                  | MultiPolygon
-                  | GeometryCollection
-    deriving (Show, Eq, Typeable)
+newtype Point v = Point {_pVertex:: Vertex v}
+deriving instance VectorSpace v => Show (Point v)
+deriving instance VectorSpace v => Eq (Point v)
 
-type AnyGeometry = 'Geometry
-deriving instance Typeable AnyGeometry
-type Point = 'Point
-deriving instance Typeable Point
-type MultiPoint = 'MultiPoint
-deriving instance Typeable MultiPoint
-type LineString = 'LineString
-deriving instance Typeable LineString
-type MultiLineString = 'MultiLineString
-deriving instance Typeable MultiLineString
-type Polygon = 'Polygon
-deriving instance Typeable Polygon
-type MultiPolygon = 'MultiPolygon
-deriving instance Typeable MultiPolygon
-type GeometryCollection = 'GeometryCollection
-deriving instance Typeable GeometryCollection
+pointCoordinates :: VectorSpace v => Point v -> [Double]
+pointCoordinates = toList . _pVertex
 
-type LinearRing v = U.Vector (v Double)
+derivingUnbox "Point"
+    [t| VectorSpace v => Point v -> Vertex v |]
+    [| \(Point v) -> v |]
+    [| \v -> Point v|]
 
--- | A GADT used to represent different geometry types, each constructor returns
---   a geometry type indexed by 'GeometryType'
-data Geometry (t :: GeometryType) v where
-    MkPoint :: forall v. IsVertex v Double =>
-      {_pVertex :: !(v Double)} -> Geometry Point v
-    MkMultiPoint :: forall v. IsVertex v Double =>
-      {_mpPoints :: V.Vector (Geometry Point v)} -> Geometry MultiPoint v
-    MkLineString :: forall v. IsVertex v Double =>
-      {_lsVertices :: LinearRing v} -> Geometry LineString v
-    MkMultiLineString :: forall v. IsVertex v Double =>
-      {_mlLineStrings :: V.Vector (Geometry LineString v)}
-      -> Geometry MultiLineString v
-    MkPolygon :: forall v. IsVertex v Double =>
-      {_pRings :: V.Vector (LinearRing v)} -> Geometry Polygon v
-    MkMultiPolygon :: forall v. IsVertex v Double =>
-      {_mpPolygons :: V.Vector (Geometry Polygon v)} -> Geometry MultiPolygon v
-    MkGeometry :: forall v. IsVertex v Double =>
-      { _geom :: forall t. Geometry t v
-      , _t    :: TypeRep} -> Geometry AnyGeometry v
-    MkGeometryCollection :: forall v. IsVertex v Double =>
-      { _geoms :: V.Vector (Geometry AnyGeometry v)} -> Geometry GeometryCollection v
+newtype LinearRing v = LinearRing {_lrPoints :: U.Vector (Point v)}
+    deriving (Eq, Show)
 
-mkPoint :: forall v. IsVertex v Double => v Double -> Geometry Point v
-mkPoint = MkPoint
+linearRingCoordinates :: VectorSpace v => LinearRing v -> [[Double]]
+linearRingCoordinates = vectorCoordinates . _lrPoints
 
-mkMultiPoint :: forall v. IsVertex v Double
-    => [Geometry Point v] -> Geometry MultiPoint v
-mkMultiPoint = MkMultiPoint . V.fromList
+newtype LineString v = LineString {_lsPoints :: U.Vector (Point v)}
+    deriving (Eq, Show)
 
-mkLineString :: forall v. IsVertex v Double
-    => [v Double] -> Geometry LineString v
-mkLineString = MkLineString . U.fromList
+lineStringCoordinates :: VectorSpace v => LineString v -> [[Double]]
+lineStringCoordinates = vectorCoordinates . _lsPoints
 
-mkMultiLineString :: forall v. IsVertex v Double
-    => [Geometry LineString v] -> Geometry MultiLineString v
-mkMultiLineString = MkMultiLineString . V.fromList
+data Polygon v = Polygon {
+    _pOuterRing :: LinearRing v
+  , _pRings     :: V.Vector (LinearRing v)
+} deriving (Eq, Show)
 
-mkPolygon :: forall v. IsVertex v Double
-    => [[v Double]] -> Geometry Polygon v
-mkPolygon = MkPolygon . V.map U.fromList . V.fromList
+polygonCoordinates :: VectorSpace v => Polygon v -> [[[Double]]]
+polygonCoordinates (Polygon ir rs)
+  = V.toList . V.cons (linearRingCoordinates ir) $
+    V.map linearRingCoordinates rs
 
-mkMultiPolygon :: forall v. IsVertex v Double
-    => [Geometry Polygon v] -> Geometry MultiPolygon v
-mkMultiPolygon = MkMultiPolygon . V.fromList
+vectorCoordinates :: VectorSpace v => U.Vector (Point v) -> [[Double]]
+vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
-fromAnyGeometry :: forall v t. (IsVertex v Double, Typeable t)
-  => Geometry AnyGeometry v -> Maybe (Geometry t v)
-fromAnyGeometry (MkGeometry geom tr)
-  = case unsafeCoerce geom of
-      g | typeOf g == tr -> Just g
-        | otherwise      -> Nothing
+data Geometry v
+    = GeoPoint (Point v)
+    | GeoMultiPoint (V.Vector (Point v))
+    | GeoLineString (LineString v)
+    | GeoMultiLineString (V.Vector (LineString v))
+    | GeoPolygon (Polygon v)
+    | GeoMultiPolygon (V.Vector (Polygon v))
+    | GeoCollection (V.Vector (Geometry v))
+    deriving (Eq, Show)
 
-toAnyGeometry :: (IsVertex v Double, Typeable t)
-  => Geometry t v -> Geometry AnyGeometry v
-toAnyGeometry g@(MkGeometry _ _) = g
-toAnyGeometry g = MkGeometry (unsafeCoerce g) (typeOf g)
-    
 
-deriving instance Eq (Geometry t v)
-deriving instance Show (Geometry t v)
-deriving instance Typeable Geometry
+mkLineString :: VectorSpace v => [Point v] -> Maybe (LineString v)
+mkLineString ls
+  | U.length v >= 2 = Just $ LineString v
+  | otherwise = Nothing
+  where v = U.fromList ls
 
-pVertex :: IsVertex v Double => Lens' (Geometry Point v) (v Double)
+mkLinearRing :: VectorSpace v => [Point v] -> Maybe (LinearRing v)
+mkLinearRing ls
+  | U.length v >= 4, U.last v == U.head v = Just $ LinearRing v
+  | otherwise = Nothing
+  where v = U.fromList ls
+
+mkPolygon :: [LinearRing v] -> Maybe (Polygon v)
+mkPolygon (oRing:rings) = Just $ Polygon oRing $ V.fromList rings
+mkPolygon _ = Nothing
+
+pVertex :: VectorSpace v => Lens' (Point v) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
 {-# INLINE pVertex #-}
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data Feature t v d = Feature {
-    _fGeom :: Geometry t v
+data Feature v d = Feature {
+    _fGeom :: Geometry v
   , _fData :: d
-  } deriving (Eq, Show, Typeable)
+  } deriving (Eq, Show)
 makeLenses ''Feature
 
 newtype FeatureCollection v d = FeatureCollection {
-    _fcFeatures :: [Feature AnyGeometry v d]
+    _fcFeatures :: [Feature v d]
 } deriving (Show)
 
 instance Monoid (FeatureCollection v d) where
@@ -414,18 +361,5 @@ instance Monoid (FeatureCollection v d) where
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
 
-instance Functor (Feature t v) where
+instance Functor (Feature v) where
    fmap f (Feature g d) = Feature g (f d)
-
-derivingUnbox "GeometryPoint"
-    [t| (IsVertex v Double, Unbox (v Double))
-         => Geometry Point v -> v Double |]
-    [| \(MkPoint v) -> v |]
-    [| \v -> MkPoint v|]
-
-derivingUnbox "FeaturePoint"
-    [t| (IsVertex v Double, Unbox (v Double), Unbox d)
-         => Feature Point v d -> (Geometry Point v, d) |]
-    [| \(Feature p d) -> (p,d) |]
-    [| \(p,d) -> Feature p d |]
-

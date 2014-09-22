@@ -1,18 +1,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables, UndecidableInstances #-}
 module Arbitrary where
 
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
-import Data.Vector.Unboxed as U (fromList)
-import Data.Vector as V (fromList)
-import Data.Typeable (Typeable)
+import Data.Maybe (fromJust)
+import Data.Vector (fromList)
 
-import Sigym4.Geometry
-import Sigym4.Geometry.Binary (ByteOrder(..))
-
-instance Arbitrary ByteOrder where
-  arbitrary = elements [NDR, XDR]
+import Sigym4.Geometry hiding (fromList)
 
 instance Arbitrary t => Arbitrary (V2 t) where
   arbitrary = V2 <$> arbitrary <*> arbitrary
@@ -20,52 +15,32 @@ instance Arbitrary t => Arbitrary (V2 t) where
 instance Arbitrary t => Arbitrary (V3 t) where
   arbitrary = V3 <$> arbitrary <*> arbitrary <*> arbitrary
 
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry Point v) where
-    arbitrary = fmap MkPoint arbitrary
+instance Arbitrary (Vertex v) => Arbitrary (Point v) where
+    arbitrary = fmap Point arbitrary
 
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry MultiPoint v) where
-    arbitrary = fmap (MkMultiPoint . V.fromList) arbitrary
+instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (LinearRing v) where
+    arbitrary = do ps <- (++) <$> vector 3 <*> arbitrary
+                   return . fromJust . mkLinearRing $ ps ++ [head ps]
 
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry LineString v) where
-    arbitrary = fmap MkLineString arbitrary
+instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (LineString v) where
+    arbitrary = fmap (fromJust . mkLineString) $ (++) <$> vector 2 <*> arbitrary
 
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry MultiLineString v) where
-    arbitrary = fmap (MkMultiLineString . V.fromList) arbitrary
+instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (Polygon v) where
+    arbitrary = Polygon <$> arbitrary <*> fmap fromList arbitrary
 
-
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (LinearRing v) where
-    arbitrary = fmap U.fromList arbitrary
-
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry Polygon v) where
-    arbitrary = fmap (MkPolygon . V.fromList) arbitrary
-
-instance (Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry MultiPolygon v) where
-    arbitrary = fmap (MkMultiPolygon . V.fromList) arbitrary
-
-instance (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry GeometryCollection v) where
-    arbitrary = fmap (MkGeometryCollection . V.fromList) arbitrary
-
-instance forall v. (Typeable v, Arbitrary (v Double), IsVertex v Double) =>
-  Arbitrary (Geometry AnyGeometry v) where
-    arbitrary = do
-      type_ <- arbitrary
-      case type_ of
-        Point -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Point v))
-        MultiPoint -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiPoint v))
-        LineString -> toAnyGeometry <$> (arbitrary :: Gen (Geometry LineString v))
-        MultiLineString -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiLineString v))
-        Polygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry Polygon v))
-        MultiPolygon -> toAnyGeometry <$> (arbitrary :: Gen (Geometry MultiPolygon v))
-        GeometryCollection -> toAnyGeometry <$> (arbitrary :: Gen (Geometry GeometryCollection v))
-        Geometry -> arbitrary
-
-instance Arbitrary GeometryType where
-  arbitrary = elements $ [Point,MultiPoint,LineString,MultiLineString,Polygon,MultiPolygon,GeometryCollection]
+instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (Geometry v) where
+    arbitrary = oneof (geometryCollection:geometries)
+        where
+            point = GeoPoint <$> arbitrary
+            multiPoint = GeoMultiPoint <$> fmap fromList arbitrary
+            lineString = GeoLineString <$> arbitrary
+            multiLineString = GeoMultiLineString <$> fmap fromList arbitrary
+            polygon = GeoPolygon <$> arbitrary
+            multiPolygon = GeoMultiPolygon <$> fmap fromList arbitrary
+            geometryCollection = GeoCollection . fromList <$> listOf (oneof geometries)
+            geometries = [ point, multiPoint, lineString, multiLineString
+                         , polygon, multiPolygon ]
