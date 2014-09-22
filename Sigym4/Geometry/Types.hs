@@ -83,6 +83,7 @@ type SqMatrix v = v (Vertex v)
 class ( Num (Vertex v), Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int) --XXX
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
+      , SG.Semigroup (Extent v)
       , Applicative v, Additive v, Foldable v, Trace v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
