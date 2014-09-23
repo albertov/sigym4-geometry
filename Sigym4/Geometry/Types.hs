@@ -72,6 +72,7 @@ import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
 import Linear.Trace (Trace)
 import Linear.Vector (Additive)
+import Linear.Metric (Metric)
 
 -- | A vertex
 type Vertex v = v Double
@@ -84,7 +85,7 @@ class ( Num (Vertex v), Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int) --XXX
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , SG.Semigroup (Extent v)
-      , Applicative v, Additive v, Foldable v, Trace v)
+      , Metric v, Applicative v, Additive v, Foldable v, Trace v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
     eye :: SqMatrix v 
@@ -99,6 +100,8 @@ instance VectorSpace V2 where
     toList (V2 u v) = [u, v]
     fromList (u:v:[]) = Just (V2 u v)
     fromList _ = Nothing
+    {-# INLINE fromList #-}
+    {-# INLINE toList #-}
 
 instance VectorSpace V3 where
     inv = inv33
@@ -107,6 +110,8 @@ instance VectorSpace V3 where
     toList (V3 u v z) = [u, v, z]
     fromList (u:v:z:[]) = Just (V3 u v z)
     fromList _ = Nothing
+    {-# INLINE fromList #-}
+    {-# INLINE toList #-}
 
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}

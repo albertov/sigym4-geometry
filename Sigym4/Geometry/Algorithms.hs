@@ -5,11 +5,19 @@
           #-}
 module Sigym4.Geometry.Algorithms (
     HasExtent(..)
+  , HasDistance(..)
 ) where
 
 import Sigym4.Geometry.Types
 import qualified Data.Vector as V
 import qualified Data.Semigroup as SG
+import qualified Linear.Metric as M
+
+class HasDistance a b where
+    distance :: a -> b -> Double
+
+instance VectorSpace v => HasDistance (Point v) (Point v) where
+    distance (Point a) (Point b) = M.distance a b
 
 class VectorSpace v => HasExtent a v where
     extent :: a -> Extent v

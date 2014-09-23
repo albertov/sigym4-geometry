@@ -29,18 +29,21 @@ instance (VectorSpace v, Arbitrary (Vertex v))
 
 instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (Polygon v) where
-    arbitrary = Polygon <$> arbitrary <*> fmap fromList arbitrary
+    arbitrary = Polygon <$> arbitrary <*> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (Geometry v) where
     arbitrary = oneof (geometryCollection:geometries)
         where
             point = GeoPoint <$> arbitrary
-            multiPoint = GeoMultiPoint <$> fmap fromList arbitrary
+            multiPoint = GeoMultiPoint <$> fmap fromList (resized arbitrary)
             lineString = GeoLineString <$> arbitrary
-            multiLineString = GeoMultiLineString <$> fmap fromList arbitrary
+            multiLineString = GeoMultiLineString <$> fmap fromList (resized arbitrary)
             polygon = GeoPolygon <$> arbitrary
-            multiPolygon = GeoMultiPolygon <$> fmap fromList arbitrary
-            geometryCollection = GeoCollection . fromList <$> listOf (oneof geometries)
+            multiPolygon = GeoMultiPolygon <$> fmap fromList (resized arbitrary)
+            geometryCollection = GeoCollection . fromList <$> (resized $ listOf (oneof geometries))
             geometries = [ point, multiPoint, lineString, multiLineString
                          , polygon, multiPolygon ]
+
+resized :: Gen a -> Gen a
+resized = resize 15
