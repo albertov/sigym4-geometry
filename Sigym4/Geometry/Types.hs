@@ -51,6 +51,9 @@ module Sigym4.Geometry.Types (
   , lineStringCoordinates
   , polygonCoordinates
 
+  , eSize
+  , between
+
   , module V2
   , module V3
 ) where
@@ -81,8 +84,9 @@ type Vertex v = v Double
 type SqMatrix v = v (Vertex v)
 
 -- | A vector space
-class ( Num (Vertex v), Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
-      , Show (v Int), Eq (v Int) --XXX
+class ( Num (Vertex v), Fractional (Vertex v)
+      , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
+      , Show (v Int), Eq (v Int), Eq (v Bool) --XXX
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , SG.Semigroup (Extent v)
       , Metric v, Applicative v, Additive v, Foldable v, Trace v)
@@ -98,7 +102,7 @@ instance VectorSpace V2 where
     eye = eye2
     dim _ = 2
     toList (V2 u v) = [u, v]
-    fromList (u:v:[]) = Just (V2 u v)
+    fromList [u, v] = Just $ V2 u v
     fromList _ = Nothing
     {-# INLINE fromList #-}
     {-# INLINE toList #-}
@@ -108,7 +112,7 @@ instance VectorSpace V3 where
     eye = eye3
     dim _ = 3
     toList (V3 u v z) = [u, v, z]
-    fromList (u:v:z:[]) = Just (V3 u v z)
+    fromList [u, v, z] = Just $ V3 u v z
     fromList _ = Nothing
     {-# INLINE fromList #-}
     {-# INLINE toList #-}
@@ -145,10 +149,13 @@ instance HasOffset V2 ColumnMajor where
             p' = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
-between :: (Applicative v, Ord a, Num (v a), Num a, Eq (v Bool))
-  => v a -> v a -> v a -> Bool
+between :: (Ord a, Num a, Num (v a), VectorSpace v) => v a -> v a -> v a -> Bool
 between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
                   (fmap (>= 0) (v - lo) == pure True)
+{-# SPECIALIZE INLINE between :: V2 Double -> V2 Double -> V2 Double -> Bool #-}
+{-# SPECIALIZE INLINE between :: V3 Double -> V3 Double -> V3 Double -> Bool #-}
+{-# SPECIALIZE INLINE between :: V2 Int -> V2 Int -> V2 Int -> Bool #-}
+{-# SPECIALIZE INLINE between :: V3 Int -> V3 Int -> V3 Int -> Bool #-}
 
 instance HasOffset V3 RowMajor where
     toOffset s p
@@ -178,6 +185,9 @@ instance HasOffset V3 ColumnMajor where
 data Extent v = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
 deriving instance VectorSpace v => Eq (Extent v)
 deriving instance VectorSpace v => Show (Extent v)
+
+eSize :: VectorSpace v => Extent v -> v Double
+eSize e = eMax e - eMin e
 
 instance SG.Semigroup (Extent V2) where
     Extent (V2 u0 v0) (V2 u1 v1) <> Extent (V2 u0' v0') (V2 u1' v1')

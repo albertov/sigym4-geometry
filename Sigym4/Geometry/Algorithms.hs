@@ -6,12 +6,60 @@
 module Sigym4.Geometry.Algorithms (
     HasExtent(..)
   , HasDistance(..)
+  , HasCentroid(..)
+  , HasPredicates(..)
 ) where
 
 import Sigym4.Geometry.Types
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
+
+
+class HasPredicates a b where
+    contains :: a -> b -> Bool
+
+instance VectorSpace v => HasPredicates (Extent v) (Point v) where
+    ext `contains` (Point v) = between (eMin ext) (eMax ext) v
+
+instance VectorSpace v => HasPredicates (Point v) (Extent v) where
+    (Point v) `contains` (Extent lo hi) = v==lo && v==hi
+
+
+instance VectorSpace v => HasPredicates (Extent v) (LinearRing v) where
+    ext `contains` (LinearRing ps) = U.all (contains ext) ps
+
+instance VectorSpace v => HasPredicates (Extent v) (LineString v) where
+    ext `contains` (LineString ps) = U.all (contains ext) ps
+
+instance VectorSpace v => HasPredicates (Extent v) (Polygon v) where
+    ext `contains` (Polygon oRing _) = ext `contains` oRing
+
+instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
+    ext `contains` (GeoPoint g) = ext `contains` g
+    ext `contains` (GeoMultiPoint g) = V.all (contains ext) g
+    ext `contains` (GeoLineString g) = ext `contains` g
+    ext `contains` (GeoMultiLineString g) = V.all (contains ext) g
+    ext `contains` (GeoPolygon g) = ext `contains` g
+    ext `contains` (GeoMultiPolygon g) = V.all (contains ext) g
+    ext `contains` (GeoCollection g) = V.all (contains ext) g
+
+instance VectorSpace v => HasPredicates (Extent v) (Feature v d) where
+    ext `contains`  f = ext `contains`  _fGeom f
+
+instance VectorSpace v => HasPredicates (Extent v) (FeatureCollection v d) where
+    ext `contains` fc = all (contains ext) $ _fcFeatures fc
+
+class VectorSpace v => HasCentroid a v where
+    centroid :: a -> Point v
+
+instance VectorSpace v => HasCentroid (Point v) v where
+    centroid = id
+
+instance VectorSpace v => HasCentroid (Extent v) v where
+    centroid e = Point $ eMin e + (eSize e / 2)
+
 
 class HasDistance a b where
     distance :: a -> b -> Double
