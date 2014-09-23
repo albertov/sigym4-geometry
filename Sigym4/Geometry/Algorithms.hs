@@ -10,6 +10,7 @@ module Sigym4.Geometry.Algorithms (
   , HasPredicates(..)
 ) where
 
+import Control.Applicative (pure)
 import Sigym4.Geometry.Types
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
@@ -21,7 +22,8 @@ class HasPredicates a b where
     contains :: a -> b -> Bool
 
 instance VectorSpace v => HasPredicates (Extent v) (Point v) where
-    ext `contains` (Point v) = between (eMin ext) (eMax ext) v
+    Extent{eMin=l, eMax=h} `contains` (Point v)
+      = (fmap (>= 0) (v - l) == pure True) && (fmap (>= 0) (h - v) == pure True)
 
 instance VectorSpace v => HasPredicates (Point v) (Extent v) where
     (Point v) `contains` (Extent lo hi) = v==lo && v==hi

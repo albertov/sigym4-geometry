@@ -52,14 +52,13 @@ module Sigym4.Geometry.Types (
   , polygonCoordinates
 
   , eSize
-  , between
 
   , module V2
   , module V3
 ) where
 
 import Prelude hiding (product)
-import Control.Applicative (Applicative, pure)
+import Control.Applicative (Applicative, pure, (<$>), (<*>))
 import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Foldable (Foldable)
@@ -152,10 +151,6 @@ instance HasOffset V2 ColumnMajor where
 between :: (Ord a, Num a, Num (v a), VectorSpace v) => v a -> v a -> v a -> Bool
 between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
                   (fmap (>= 0) (v - lo) == pure True)
-{-# SPECIALIZE INLINE between :: V2 Double -> V2 Double -> V2 Double -> Bool #-}
-{-# SPECIALIZE INLINE between :: V3 Double -> V3 Double -> V3 Double -> Bool #-}
-{-# SPECIALIZE INLINE between :: V2 Int -> V2 Int -> V2 Int -> Bool #-}
-{-# SPECIALIZE INLINE between :: V3 Int -> V3 Int -> V3 Int -> Bool #-}
 
 instance HasOffset V3 RowMajor where
     toOffset s p
@@ -189,15 +184,9 @@ deriving instance VectorSpace v => Show (Extent v)
 eSize :: VectorSpace v => Extent v -> v Double
 eSize e = eMax e - eMin e
 
-instance SG.Semigroup (Extent V2) where
-    Extent (V2 u0 v0) (V2 u1 v1) <> Extent (V2 u0' v0') (V2 u1' v1')
-        = Extent (V2 (min u0 u0') (min v0 v0'))
-                 (V2 (max u1 u1') (max v1 v1'))
-
-instance SG.Semigroup (Extent V3) where
-  Extent (V3 u0 v0 z0) (V3 u1 v1 z1) <> Extent (V3 u0' v0' z0') (V3 u1' v1' z1')
-    = Extent (V3 (min u0 u0') (min v0 v0') (min z0 z0'))
-             (V3 (max u1 u1') (max v1 v1') (max z1 z1'))
+instance VectorSpace v => SG.Semigroup (Extent v) where
+    Extent a0 a1 <> Extent b0 b1
+        = Extent (min <$> a0 <*> b0) (max <$> a1 <*> b1)
 
 -- | A pixel is a newtype around a vertex
 newtype Pixel v = Pixel {unPx :: Vertex v}
