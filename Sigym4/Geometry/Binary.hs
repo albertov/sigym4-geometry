@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, LambdaCase, ScopedTypeVariables #-}
+{-# LANGUAGE CPP, LambdaCase, ScopedTypeVariables, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Sigym4.Geometry.Binary (
     ByteOrder (..)
@@ -15,10 +15,12 @@ import Data.ByteString.Lazy (ByteString)
 import qualified Data.Vector.Generic as G
 import Sigym4.Geometry.Types
 import Data.Binary
+import Data.Bits
 import Data.Binary.Put
 import Data.Binary.Get
 import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
                            , putFloat64be)
+import Text.Printf (printf)
 
 data ByteOrder = BigEndian | LittleEndian deriving (Eq, Show, Enum)
 
@@ -29,11 +31,13 @@ nativeEndian = BigEndian
 nativeEndian = LittleEndian
 #endif
 
-wkbEncode :: VectorSpace v => ByteOrder -> Geometry v -> ByteString
+wkbEncode :: (VectorSpace v, KnownNat srid)
+          => ByteOrder -> Geometry v srid -> ByteString
 wkbEncode bo = runPut . flip runReaderT bo . putBO
 {-# INLINEABLE wkbEncode #-}
 
-wkbDecode :: VectorSpace v => ByteString -> Either String (Geometry v)
+wkbDecode :: (VectorSpace v, KnownNat srid)
+          => ByteString -> Either String (Geometry v srid)
 wkbDecode s = case decodeOrFail s of
                 Left  (_,_,e) -> Left e
                 Right (_,_,a) -> Right a
@@ -51,17 +55,24 @@ class BinaryBO a where
 -- Instances
 --
 --
-instance VectorSpace v => Binary (Geometry v) where
+instance (VectorSpace v, KnownNat srid) => Binary (Geometry v srid) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
     {-# INLINEABLE put #-}
     {-# INLINEABLE get #-}
 
+sridFlag, zFlag, mFlag :: Word32
+sridFlag = 0x20000000
+zFlag = 0x80000000
+mFlag = 0x40000000
 
-geomType :: forall v. VectorSpace v => Geometry v -> Word32
+geomType :: forall v srid. (VectorSpace v, KnownNat srid)
+  => Geometry v srid -> Word32
 geomType g
-  = let summand = if dim (Proxy :: Proxy v) == 3 then 1000 else 0
-    in summand + case g of
+  = let flags = (if dim (Proxy :: Proxy v) >= 3 then zFlag else 0)
+              + (if dim (Proxy :: Proxy v) == 4 then mFlag else 0)
+              + (if hasSrid g then sridFlag else 0)
+    in flags + case g of
                     GeoPoint _ -> 1
                     GeoLineString _ -> 2
                     GeoPolygon _ -> 3
@@ -73,45 +84,52 @@ geomType g
                     GeoPolyhedralSurface _ -> 15
                     GeoTIN _ -> 16
 
-instance forall v. VectorSpace v => BinaryBO (Geometry v) where
+instance forall v srid. (VectorSpace v, KnownNat srid)
+  => BinaryBO (Geometry v srid) where
     putBO g = do
         ask >>= lift . put
         putBO $ geomType g
+        when (hasSrid g) $
+            putWord32bo $ fromIntegral (gSrid g)
         case g of
             GeoPoint g' -> putBO g'
             GeoLineString g' ->  putBO g'
             GeoPolygon g' -> putBO g'
             GeoTriangle g' -> putBO g'
-            GeoMultiPoint g' -> putVectorBo (G.map GeoPoint g')
-            GeoMultiLineString g' -> putVectorBo (G.map GeoLineString g')
-            GeoMultiPolygon g' -> putVectorBo (G.map GeoPolygon g')
+            GeoMultiPoint g' -> putVectorBo (G.map mkGeoPoint g')
+            GeoMultiLineString g' -> putVectorBo (G.map mkGeoLineString g')
+            GeoMultiPolygon g' -> putVectorBo (G.map mkGeoPolygon g')
             GeoCollection g' ->  putVectorBo g'
             GeoPolyhedralSurface g' -> putBO g'
             GeoTIN g' -> putBO g'
+      where
+        mkGeoPoint :: Point v -> Geometry v srid
+        mkGeoPoint = GeoPoint
+        mkGeoLineString :: LineString v -> Geometry v srid
+        mkGeoLineString = GeoLineString
+        mkGeoPolygon :: Polygon v -> Geometry v srid
+        mkGeoPolygon = GeoPolygon
 
-    getBO = getWord32bo
-        >>= \t -> case (t,dim (Proxy::Proxy v)) of
-                    (1,2)    -> geoPoint
-                    (2,2)    -> geoLineString
-                    (3,2)    -> geoPolygon
-                    (17,2)   -> geoTriangle
-                    (4,2)    -> geoMultiPoint
-                    (5,2)    -> geoMultiLineString
-                    (6,2)    -> geoMultiPolygon
-                    (7,2)    -> geoCollection
-                    (15,2)   -> geoPolyhedralSurface
-                    (16,2)   -> geoTIN
-                    (1001,3) -> geoPoint
-                    (1002,3) -> geoLineString
-                    (1003,3) -> geoPolygon
-                    (1017,3) -> geoTriangle
-                    (1004,3) -> geoMultiPoint
-                    (1005,3) -> geoMultiLineString
-                    (1006,3) -> geoMultiPolygon
-                    (1007,3) -> geoCollection
-                    (1015,3) -> geoPolyhedralSurface
-                    (1016,3) -> geoTIN
-                    _        -> fail "get(Geometry): wrong dimension"
+    getBO = do
+        type_ <- getWord32bo
+        let testFlag f = type_ .&. f /= 0
+        when (testFlag sridFlag) $ do
+            srid <- fmap fromIntegral getWord32bo
+            let srid' = gSrid (undefined :: Geometry v srid)
+            when (srid /= srid') $
+                fail $ printf "getBO(Geometry): srid mismatch: %d /= %d" srid srid'
+        case type_ .&. 0x000000ff of
+           1  -> geoPoint
+           2  -> geoLineString
+           3  -> geoPolygon
+           17 -> geoTriangle
+           4  -> geoMultiPoint
+           5  -> geoMultiLineString
+           6  -> geoMultiPolygon
+           7  -> geoCollection
+           15 -> geoPolyhedralSurface
+           16 -> geoTIN
+           _  -> fail "get(Geometry): wrong geometry type"
       where
         unPoint (GeoPoint g) = Just g
         unPoint _            = Nothing
@@ -131,6 +149,10 @@ instance forall v. VectorSpace v => BinaryBO (Geometry v) where
         geoCollection = GeoCollection <$> getVector (lift  get)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
+        unwrapGeo :: ( G.Vector vec a
+                     , G.Vector vec (Maybe a)
+                     , G.Vector vec (Geometry v srid))
+                  => String -> (Geometry v srid -> Maybe a) -> GetBO (vec a)
         unwrapGeo msg f = justOrFail msg
                       =<< fmap (G.sequence . G.map f) (getVector (lift get))
 

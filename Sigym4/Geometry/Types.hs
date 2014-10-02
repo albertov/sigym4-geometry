@@ -10,7 +10,7 @@
            , RankNTypes
            , CPP
            , KindSignatures
-           , BangPatterns
+           , DataKinds
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -58,8 +58,13 @@ module Sigym4.Geometry.Types (
   , polygonRings
   , triangleCoordinates
 
+  , gSrid
+  , hasSrid
+
   , eSize
 
+  -- re-exports
+  , KnownNat
   , module V2
   , module V3
 ) where
@@ -82,6 +87,7 @@ import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
 import Linear.Trace (Trace)
 import Linear.Vector (Additive)
 import Linear.Metric (Metric)
+import GHC.TypeLits
 
 -- | A vertex
 type Vertex v = v Double
@@ -327,7 +333,7 @@ newtype TIN v = TIN {
     _tinTriangles :: U.Vector (Triangle v)
 } deriving (Eq, Show)
 
-data Geometry v
+data Geometry v (srid::Nat)
     = GeoPoint (Point v)
     | GeoMultiPoint (V.Vector (Point v))
     | GeoLineString (LineString v)
@@ -337,9 +343,15 @@ data Geometry v
     | GeoTriangle (Triangle v)
     | GeoPolyhedralSurface (PolyhedralSurface v)
     | GeoTIN (TIN v)
-    | GeoCollection (V.Vector (Geometry v))
+    | GeoCollection (V.Vector (Geometry v srid))
     deriving (Eq, Show)
 
+
+gSrid :: KnownNat srid => Geometry v srid -> Integer
+gSrid = natVal
+
+hasSrid :: KnownNat srid => Geometry v srid -> Bool
+hasSrid = (/= 0) . gSrid
 
 mkLineString :: VectorSpace v => [Point v] -> Maybe (LineString v)
 mkLineString ls
@@ -388,20 +400,20 @@ vectorCoordinates :: VectorSpace v => U.Vector (Point v) -> [[Double]]
 vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data Feature v d = Feature {
-    _fGeom :: Geometry v
+data Feature v (srid::Nat) d = Feature {
+    _fGeom :: Geometry v srid
   , _fData :: d
   } deriving (Eq, Show)
 makeLenses ''Feature
 
-newtype FeatureCollection v d = FeatureCollection {
-    _fcFeatures :: [Feature v d]
+newtype FeatureCollection v (srid::Nat) d = FeatureCollection {
+    _fcFeatures :: [Feature v srid d]
 } deriving (Show)
 
-instance Monoid (FeatureCollection v d) where
+instance Monoid (FeatureCollection v srid d) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
 
-instance Functor (Feature v) where
+instance Functor (Feature v srid) where
    fmap f (Feature g d) = Feature g (f d)

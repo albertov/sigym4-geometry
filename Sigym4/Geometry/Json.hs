@@ -19,14 +19,14 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 
 jsonEncode :: (VectorSpace v)
-           => Geometry v -> ByteString
+           => Geometry v srid -> ByteString
 jsonEncode = encode
 
 jsonDecode :: (VectorSpace v)
-           => ByteString -> Either String (Geometry v)
+           => ByteString -> Either String (Geometry v srid)
 jsonDecode = eitherDecode
 
-instance VectorSpace v => ToJSON (Geometry v) where
+instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoPoint g)
       = typedObject "Point"
         ["coordinates" .= pointCoordinates g]
@@ -59,8 +59,7 @@ instance VectorSpace v => ToJSON (Geometry v) where
     toJSON (GeoCollection g)
       = typedObject "GeometryCollection"
         ["geometries" .= g]
-    {-# SPECIALIZE INLINE toJSON :: Geometry V2 -> Value #-}
-    {-# SPECIALIZE INLINE toJSON :: Geometry V3 -> Value #-}
+    {-# INLINEABLE toJSON  #-}
 
 parsePoint :: VectorSpace v => [Double] -> Parser (Point v)
 parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromList
@@ -104,12 +103,12 @@ typedObject k = object . ((:) ("type" .= k))
 
 
 
-instance VectorSpace v => FromJSON (Geometry v) where
+instance VectorSpace v => FromJSON (Geometry v srid) where
     parseJSON (Object o) = do
         typ <- o .: "type"
         case typ of
             "Point" ->
-                coords o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v)
+                coords o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v srid)
             "MultiPoint" ->
                 coords o >>= fmap GeoMultiPoint . parsePoints
             "LineString" ->
@@ -132,27 +131,28 @@ instance VectorSpace v => FromJSON (Geometry v) where
                 fmap GeoCollection $ o .: "geometries"
             _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
-    {-# SPECIALIZE INLINE parseJSON :: Value -> Parser (Geometry V2) #-}
-    {-# SPECIALIZE INLINE parseJSON :: Value -> Parser (Geometry V3) #-}
+    {-# INLINEABLE parseJSON  #-}
 
         
 
-instance (ToJSON (Geometry v), ToJSON d) => ToJSON (Feature v d) where
+instance (ToJSON (Geometry v srid), ToJSON d) => ToJSON (Feature v srid d) where
     toJSON (Feature g ps) = typedObject "Feature" ["geometry"    .= g
                                                   , "properties" .= ps
                                                   ]
-instance (FromJSON (Geometry v), FromJSON d) => FromJSON (Feature v d)
+instance (FromJSON (Geometry v srid), FromJSON d) => FromJSON (Feature v srid d)
   where
     parseJSON (Object o) = Feature <$> o.: "geometry" <*> o.:"properties"
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToJSON d, ToJSON (Geometry v)) => ToJSON (FeatureCollection v d)
+instance (ToJSON d, ToJSON (Geometry v srid))
+  => ToJSON (FeatureCollection v srid d)
   where
     toJSON (FeatureCollection fs)
       = typedObject "FeatureCollection" ["features" .= fs]
 
-instance (FromJSON d, FromJSON (Geometry v)) => FromJSON (FeatureCollection v d)
+instance (FromJSON d, FromJSON (Geometry v srid))
+  => FromJSON (FeatureCollection v srid d)
   where
     parseJSON (Object o) = do
         typ <- o .:"type"

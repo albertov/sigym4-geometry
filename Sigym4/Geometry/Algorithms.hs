@@ -49,7 +49,7 @@ instance VectorSpace v => HasPredicates (Extent v) (PolyhedralSurface v) where
 instance VectorSpace v => HasPredicates (Extent v) (TIN v) where
     ext `contains` (TIN ts) = U.all (contains ext) ts
 
-instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
+instance VectorSpace v => HasPredicates (Extent v) (Geometry v srid) where
     ext `contains` (GeoPoint g) = ext `contains` g
     ext `contains` (GeoMultiPoint g) = V.all (contains ext) g
     ext `contains` (GeoLineString g) = ext `contains` g
@@ -61,10 +61,10 @@ instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
     ext `contains` (GeoTIN g) = ext `contains` g
     ext `contains` (GeoCollection g) = V.all (contains ext) g
 
-instance VectorSpace v => HasPredicates (Extent v) (Feature v d) where
+instance VectorSpace v => HasPredicates (Extent v) (Feature v srid d) where
     ext `contains`  f = ext `contains`  _fGeom f
 
-instance VectorSpace v => HasPredicates (Extent v) (FeatureCollection v d) where
+instance VectorSpace v => HasPredicates (Extent v) (FeatureCollection v srid d) where
     ext `contains` fc = all (contains ext) $ _fcFeatures fc
 
 class VectorSpace v => HasCentroid a v where
@@ -110,7 +110,7 @@ instance VectorSpace v => HasExtent (PolyhedralSurface v) v where
 instance VectorSpace v => HasExtent (TIN v) v where
     extent = extentFromVector . V.convert . _tinTriangles
 
-instance VectorSpace v => HasExtent (Geometry v) v where
+instance VectorSpace v => HasExtent (Geometry v srid) v where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extentFromVector g
     extent (GeoLineString g) = extent g
@@ -126,8 +126,8 @@ extentFromVector :: (HasExtent a v, VectorSpace v) => V.Vector a -> Extent v
 extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)
     where es = V.map extent v
 
-instance VectorSpace v => HasExtent (Feature v d) v where
+instance VectorSpace v => HasExtent (Feature v srid d) v where
     extent = extent . _fGeom
 
-instance VectorSpace v => HasExtent (FeatureCollection v d) v where
+instance VectorSpace v => HasExtent (FeatureCollection v srid d) v where
     extent = extentFromVector . V.map _fGeom . V.fromList . _fcFeatures

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, OverloadedStrings, DataKinds #-}
 
 module Sigym4.Geometry.JsonSpec (main, spec) where
 
@@ -15,8 +15,8 @@ spec :: Spec
 spec = do
   describe "Sigym4.Geometry.Json" $ do
     describe "Geometry V2" $ do
-      prop "deserializes the same thing it serializes" $ \(g :: Geometry V2) ->
+      prop "deserializes the same thing it serializes" $ \(g :: Geometry V2 0) ->
         (jsonDecode . jsonEncode $ g) == Right g
     describe "Geometry V3" $ do
-      prop "deserializes the same thing it serializes" $ \(g :: Geometry V3) ->
+      prop "deserializes the same thing it serializes" $ \(g :: Geometry V3 0) ->
         (jsonDecode . jsonEncode $ g) == Right g

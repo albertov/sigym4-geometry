@@ -48,7 +48,7 @@ instance (VectorSpace v, Arbitrary (Vertex v))
 
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Geometry v) where
+  => Arbitrary (Geometry v srid) where
     arbitrary = oneof (geometryCollection:geometries)
         where
             geometryCollection =
