@@ -35,7 +35,6 @@ module Sigym4.Geometry.Types (
   , RowMajor
   , ColumnMajor
   , Extent (..)
-  , SpatialReference (..)
   , GeoTransform (..)
   , GeoReference
   , mkGeoReference
@@ -43,7 +42,6 @@ module Sigym4.Geometry.Types (
   , grScalarSize
   , grSize
   , grTransform
-  , grSrs
   , grForward
   , grBackward
 
@@ -100,7 +98,6 @@ class ( Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int), Eq (v Bool) --XXX
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
-      , SG.Semigroup (Extent v)
       , Metric v, Applicative v, Additive v, Foldable v, Trace v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
@@ -192,14 +189,14 @@ instance HasOffset V3 ColumnMajor where
 
 
 -- | An extent in v space is a pair of minimum and maximum vertices
-data Extent v = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
-deriving instance VectorSpace v => Eq (Extent v)
-deriving instance VectorSpace v => Show (Extent v)
+data Extent v (srid :: Nat) = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
+deriving instance VectorSpace v => Eq (Extent v srid)
+deriving instance VectorSpace v => Show (Extent v srid)
 
-eSize :: VectorSpace v => Extent v -> v Double
+eSize :: VectorSpace v => Extent v srid -> Vertex v
 eSize e = eMax e - eMin e
 
-instance VectorSpace v => SG.Semigroup (Extent v) where
+instance VectorSpace v => SG.Semigroup (Extent v srid) where
     Extent a0 a1 <> Extent b0 b1
         = Extent (min <$> a0 <*> b0) (max <$> a1 <*> b1)
 
@@ -216,27 +213,18 @@ scalarSize :: VectorSpace v => Size v -> Int
 scalarSize = product . unSize
 
 
--- A Spatial reference system
-data SpatialReference = SrsProj4 String
-                      | SrsEPSG  Int
-                      | SrsWKT   String
-    deriving (Eq,Show)
-
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
 -- 'Pixel' coordinates and back. gtMatrix *must* be inversible so smart
 -- constructors are provided
-data GeoTransform v  = GeoTransform 
+data GeoTransform v (srid :: Nat) = GeoTransform 
       { gtMatrix :: !(SqMatrix v)
       , gtOrigin :: !(Vertex v)
       }
-deriving instance VectorSpace v => Eq (GeoTransform v)
-deriving instance VectorSpace v => Show (GeoTransform v)
+deriving instance VectorSpace v => Eq (GeoTransform v srid)
+deriving instance VectorSpace v => Show (GeoTransform v srid)
 
--- Makes a standard 'GeoTransform' for north-up images with no rotation
--- northUpGeoTransform :: Extent V2 -> Pixel V2 -> Either String (GeoTransform V2)
-northUpGeoTransform ::
-  (VectorSpace v, R2 v, Eq (v Bool), Fractional (Vertex v))
-  => Extent v -> Size v -> Either String (GeoTransform v)
+northUpGeoTransform :: Extent V2 srid -> Size V2
+                    -> Either String (GeoTransform V2 srid)
 northUpGeoTransform e s
   | not isValidBox   = Left "northUpGeoTransform: invalid extent"
   | not isValidSize  = Left "northUpGeoTransform: invalid size"
@@ -249,154 +237,147 @@ northUpGeoTransform e s
     dPx         = (eMax e - eMin e)/s' & _y %~ negate
     matrix      = pure dPx * eye
 
-gtForward :: VectorSpace v => GeoTransform v -> Vertex v -> Pixel v
-gtForward gt v = Pixel $ m !* (v-v0)
+gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
+gtForward gt (Point v) = Pixel $ m !* (v-v0)
   where m   = fromMaybe (error "gtForward. non-inversible matrix")
                         (inv $ gtMatrix gt)
         v0  = gtOrigin gt
 
 
-gtBackward :: VectorSpace v => GeoTransform v -> Pixel v -> Vertex v
-gtBackward gt p = v0 + (unPx p) *! m
+gtBackward :: VectorSpace v => GeoTransform v srid -> Pixel v -> Point v srid
+gtBackward gt p = Point $ v0 + (unPx p) *! m
   where m  = gtMatrix gt
         v0 = gtOrigin gt
 
-data GeoReference v = GeoReference 
-      { grTransform :: GeoTransform v
+data GeoReference v srid = GeoReference 
+      { grTransform :: GeoTransform v srid
       , grSize      :: Size v
-      , grSrs       :: SpatialReference
       }
-deriving instance VectorSpace v => Eq (GeoReference v)
-deriving instance VectorSpace v => Show (GeoReference v)
+deriving instance VectorSpace v => Eq (GeoReference v srid)
+deriving instance VectorSpace v => Show (GeoReference v srid)
 
 
-grScalarSize :: VectorSpace v => GeoReference v -> Int
+grScalarSize :: VectorSpace v => GeoReference v srid -> Int
 grScalarSize = scalarSize . grSize
 
 
 vertexOffset :: (HasOffset v t, VectorSpace v)
-  => GeoReference v -> Vertex v -> Maybe (Offset t)
+  => GeoReference v srid -> Point v srid -> Maybe (Offset t)
 vertexOffset gr =  toOffset (grSize gr) . grForward gr
-{-# SPECIALIZE INLINE
-      vertexOffset :: GeoReference V2 -> V2 Double -> Maybe (Offset RowMajor)
-      #-}
+{-# INLINEABLE vertexOffset #-}
 
-grForward :: VectorSpace v => GeoReference v -> Vertex v -> Pixel v
+grForward :: VectorSpace v => GeoReference v srid -> Point v srid -> Pixel v
 grForward gr = gtForward (grTransform gr)
 {-# INLINE grForward #-}
 
-grBackward :: VectorSpace v => GeoReference v -> Pixel v -> Vertex v
+grBackward :: VectorSpace v => GeoReference v srid -> Pixel v -> Point v srid
 grBackward gr = gtBackward (grTransform gr)
 {-# INLINE grBackward #-}
 
 
-mkGeoReference ::
-  ( VectorSpace v, R2 v
-  , Eq (v Bool), Fractional (Vertex v)) =>
-  Extent v -> Size v -> SpatialReference -> Either String (GeoReference v)
-mkGeoReference e s srs = fmap (\gt -> GeoReference gt s srs)
-                              (northUpGeoTransform e s)
+mkGeoReference :: Extent V2 srid -> Size V2 -> Either String (GeoReference V2 srid)
+mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
-newtype Point v = Point {_pVertex:: Vertex v}
-deriving instance VectorSpace v => Show (Point v)
-deriving instance VectorSpace v => Eq (Point v)
+newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
+deriving instance VectorSpace v => Show (Point v srid)
+deriving instance VectorSpace v => Eq (Point v srid)
 
 derivingUnbox "Point"
-    [t| VectorSpace v => Point v -> Vertex v |]
+    [t| VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
     [| \v -> Point v|]
 
-newtype LinearRing v = LinearRing {_lrPoints :: U.Vector (Point v)}
+newtype LinearRing v srid = LinearRing {_lrPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 
-newtype LineString v = LineString {_lsPoints :: U.Vector (Point v)}
+newtype LineString v srid = LineString {_lsPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 
-data Triangle v = Triangle !(Point v) !(Point v) !(Point v)
+data Triangle v srid = Triangle !(Point v srid) !(Point v srid) !(Point v srid)
     deriving (Eq, Show)
 
 derivingUnbox "Triangle"
-    [t| VectorSpace v => Triangle v -> (Point v, Point v, Point v) |]
+    [t| VectorSpace v => Triangle v srid -> (Point v srid, Point v srid, Point v srid) |]
     [| \(Triangle a b c) -> (a, b, c) |]
     [| \(a, b, c) -> Triangle a b c|]
 
-data Polygon v = Polygon {
-    _pOuterRing :: LinearRing v
-  , _pRings     :: V.Vector (LinearRing v)
+data Polygon v srid = Polygon {
+    _pOuterRing :: LinearRing v srid
+  , _pRings     :: V.Vector (LinearRing v srid) 
 } deriving (Eq, Show)
 
-newtype PolyhedralSurface v = PolyhedralSurface {
-    _psPolygons :: V.Vector (Polygon v)
+newtype PolyhedralSurface v srid = PolyhedralSurface {
+    _psPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
 
-newtype TIN v = TIN {
-    _tinTriangles :: U.Vector (Triangle v)
+newtype TIN v srid = TIN {
+    _tinTriangles :: U.Vector (Triangle v srid)
 } deriving (Eq, Show)
 
 data Geometry v (srid::Nat)
-    = GeoPoint (Point v)
-    | GeoMultiPoint (V.Vector (Point v))
-    | GeoLineString (LineString v)
-    | GeoMultiLineString (V.Vector (LineString v))
-    | GeoPolygon (Polygon v)
-    | GeoMultiPolygon (V.Vector (Polygon v))
-    | GeoTriangle (Triangle v)
-    | GeoPolyhedralSurface (PolyhedralSurface v)
-    | GeoTIN (TIN v)
+    = GeoPoint (Point v srid)
+    | GeoMultiPoint (V.Vector (Point v srid))
+    | GeoLineString (LineString v srid)
+    | GeoMultiLineString (V.Vector (LineString v srid))
+    | GeoPolygon (Polygon v srid)
+    | GeoMultiPolygon (V.Vector (Polygon v srid))
+    | GeoTriangle (Triangle v srid)
+    | GeoPolyhedralSurface (PolyhedralSurface v srid)
+    | GeoTIN (TIN v srid)
     | GeoCollection (V.Vector (Geometry v srid))
     deriving (Eq, Show)
 
 
-gSrid :: KnownNat srid => Geometry v srid -> Integer
+gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
 
 hasSrid :: KnownNat srid => Geometry v srid -> Bool
 hasSrid = (/= 0) . gSrid
 
-mkLineString :: VectorSpace v => [Point v] -> Maybe (LineString v)
+mkLineString :: VectorSpace v => [Point v srid] -> Maybe (LineString v srid)
 mkLineString ls
   | U.length v >= 2 = Just $ LineString v
   | otherwise = Nothing
   where v = U.fromList ls
 
-mkLinearRing :: VectorSpace v => [Point v] -> Maybe (LinearRing v)
+mkLinearRing :: VectorSpace v => [Point v srid] -> Maybe (LinearRing v srid)
 mkLinearRing ls
   | U.length v >= 4, U.last v == U.head v = Just $ LinearRing v
   | otherwise = Nothing
   where v = U.fromList ls
 
-mkPolygon :: [LinearRing v] -> Maybe (Polygon v)
+mkPolygon :: [LinearRing v srid] -> Maybe (Polygon v srid)
 mkPolygon (oRing:rings) = Just $ Polygon oRing $ V.fromList rings
 mkPolygon _ = Nothing
 
 mkTriangle :: VectorSpace v
-  => Point v -> Point v -> Point v -> Maybe (Triangle v)
+  => Point v srid -> Point v srid -> Point v srid -> Maybe (Triangle v srid)
 mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
                  | otherwise = Nothing
 
-pVertex :: VectorSpace v => Lens' (Point v) (Vertex v)
+pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
 {-# INLINE pVertex #-}
 
-pointCoordinates :: VectorSpace v => Point v -> [Double]
+pointCoordinates :: VectorSpace v => Point v srid -> [Double]
 pointCoordinates = toList . _pVertex
 
-lineStringCoordinates :: VectorSpace v => LineString v -> [[Double]]
+lineStringCoordinates :: VectorSpace v => LineString v srid -> [[Double]]
 lineStringCoordinates = vectorCoordinates . _lsPoints
 
-linearRingCoordinates :: VectorSpace v => LinearRing v -> [[Double]]
+linearRingCoordinates :: VectorSpace v => LinearRing v srid -> [[Double]]
 linearRingCoordinates = vectorCoordinates . _lrPoints
 
-polygonCoordinates :: VectorSpace v => Polygon v -> [[[Double]]]
+polygonCoordinates :: VectorSpace v => Polygon v srid -> [[[Double]]]
 polygonCoordinates = V.toList . V.map linearRingCoordinates . polygonRings
 
-polygonRings :: Polygon v -> V.Vector (LinearRing v)
+polygonRings :: Polygon v srid -> V.Vector (LinearRing v srid)
 polygonRings (Polygon ir rs) = V.cons ir rs
 
-triangleCoordinates :: VectorSpace v => Triangle v -> [[Double]]
+triangleCoordinates :: VectorSpace v => Triangle v srid -> [[Double]]
 triangleCoordinates (Triangle a b c) = map pointCoordinates [a, b, c, a]
 
-vectorCoordinates :: VectorSpace v => U.Vector (Point v) -> [[Double]]
+vectorCoordinates :: VectorSpace v => U.Vector (Point v srid) -> [[Double]]
 vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'

@@ -16,34 +16,34 @@ instance Arbitrary t => Arbitrary (V2 t) where
 instance Arbitrary t => Arbitrary (V3 t) where
   arbitrary = V3 <$> arbitrary <*> arbitrary <*> arbitrary
 
-instance Arbitrary (Vertex v) => Arbitrary (Point v) where
+instance Arbitrary (Vertex v) => Arbitrary (Point v srid) where
     arbitrary = fmap Point arbitrary
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (LinearRing v) where
+  => Arbitrary (LinearRing v srid) where
     arbitrary = do ps <- (++) <$> vector 3 <*> arbitrary
                    return . fromJust . mkLinearRing $ ps ++ [head ps]
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (LineString v) where
+  => Arbitrary (LineString v srid) where
     arbitrary = fmap (fromJust . mkLineString) $ (++) <$> vector 2 <*> arbitrary
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Polygon v) where
+  => Arbitrary (Polygon v srid) where
     arbitrary = Polygon <$> arbitrary <*> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Triangle v) where
+  => Arbitrary (Triangle v srid) where
     arbitrary = do
         mRet <- mkTriangle <$> arbitrary <*> arbitrary <*> arbitrary
         maybe arbitrary return mRet
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (PolyhedralSurface v) where
+  => Arbitrary (PolyhedralSurface v srid) where
     arbitrary = PolyhedralSurface <$> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (TIN v) where
+  => Arbitrary (TIN v srid) where
     arbitrary = TIN <$> fmap U.fromList (resized arbitrary)
 
 

@@ -61,25 +61,25 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
         ["geometries" .= g]
     {-# INLINEABLE toJSON  #-}
 
-parsePoint :: VectorSpace v => [Double] -> Parser (Point v)
+parsePoint :: VectorSpace v => [Double] -> Parser (Point v srid)
 parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromList
 
-parsePoints :: VectorSpace v => [[Double]] -> Parser (V.Vector (Point v))
+parsePoints :: VectorSpace v => [[Double]] -> Parser (V.Vector (Point v srid))
 parsePoints = V.mapM parsePoint . V.fromList
 
-parseLineString :: VectorSpace v => [[Double]] -> Parser (LineString v)
+parseLineString :: VectorSpace v => [[Double]] -> Parser (LineString v srid)
 parseLineString ps = do
     points <- mapM parsePoint ps
     maybe (fail "parseLineString: Invalid linestring") return
           (mkLineString points)
 
-parseLinearRing :: VectorSpace v => [[Double]] -> Parser (LinearRing v)
+parseLinearRing :: VectorSpace v => [[Double]] -> Parser (LinearRing v srid)
 parseLinearRing ps = do
     points <- mapM parsePoint ps
     maybe (fail "parseLinearRing: Invalid linear ring") return
           (mkLinearRing points)
 
-parseTriangle :: VectorSpace v => [[Double]] -> Parser (Triangle v)
+parseTriangle :: VectorSpace v => [[Double]] -> Parser (Triangle v srid)
 parseTriangle ps = do
     [a,b,c,a'] <- mapM parsePoint ps
     if a/=a' then fail "parseTriangle: last coord must be the same as first"
@@ -87,7 +87,7 @@ parseTriangle ps = do
                         return
                         (mkTriangle a b c)
 
-parsePolygon :: VectorSpace v => [[[Double]]] -> Parser (Polygon v)
+parsePolygon :: VectorSpace v => [[[Double]]] -> Parser (Polygon v srid)
 parsePolygon ps = do
     rings <- V.mapM parseLinearRing (V.fromList ps)
     if V.length rings == 0

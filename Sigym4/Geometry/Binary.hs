@@ -96,19 +96,12 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
             GeoLineString g' ->  putBO g'
             GeoPolygon g' -> putBO g'
             GeoTriangle g' -> putBO g'
-            GeoMultiPoint g' -> putVectorBo (G.map mkGeoPoint g')
-            GeoMultiLineString g' -> putVectorBo (G.map mkGeoLineString g')
-            GeoMultiPolygon g' -> putVectorBo (G.map mkGeoPolygon g')
+            GeoMultiPoint g' -> putVectorBo (G.map GeoPoint g')
+            GeoMultiLineString g' -> putVectorBo (G.map GeoLineString g')
+            GeoMultiPolygon g' -> putVectorBo (G.map GeoPolygon g')
             GeoCollection g' ->  putVectorBo g'
             GeoPolyhedralSurface g' -> putBO g'
             GeoTIN g' -> putBO g'
-      where
-        mkGeoPoint :: Point v -> Geometry v srid
-        mkGeoPoint = GeoPoint
-        mkGeoLineString :: LineString v -> Geometry v srid
-        mkGeoLineString = GeoLineString
-        mkGeoPolygon :: Polygon v -> Geometry v srid
-        mkGeoPolygon = GeoPolygon
 
     getBO = do
         type_ <- getWord32bo
@@ -156,24 +149,24 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
         unwrapGeo msg f = justOrFail msg
                       =<< fmap (G.sequence . G.map f) (getVector (lift get))
 
-instance forall v. VectorSpace v => BinaryBO (Point v) where
+instance forall v srid. VectorSpace v => BinaryBO (Point v srid) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromList
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
     putBO = mapM_ putBO . toList . _pVertex
 
-instance forall v. VectorSpace v => BinaryBO (LineString v) where
+instance forall v srid. VectorSpace v => BinaryBO (LineString v srid) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
     putBO = putVectorBo . _lsPoints
 
-instance forall v. VectorSpace v => BinaryBO (LinearRing v) where
+instance forall v srid. VectorSpace v => BinaryBO (LinearRing v srid) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
     putBO = putVectorBo . _lrPoints
 
-instance forall v. VectorSpace v => BinaryBO (Polygon v) where
+instance forall v srid. VectorSpace v => BinaryBO (Polygon v srid) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
     putBO = putVectorBo . polygonRings
 
-instance forall v. VectorSpace v => BinaryBO (Triangle v) where
+instance forall v srid. VectorSpace v => BinaryBO (Triangle v srid) where
     getBO = do
         nRings <- getWord32bo
         when (nRings/=1) $ fail "getBO(Triangle): expected a single ring"
@@ -185,11 +178,11 @@ instance forall v. VectorSpace v => BinaryBO (Triangle v) where
     putBO (Triangle a b c) = putWord32bo 1 >> putWord32bo 4
                           >> putBO a >> putBO b >> putBO c >> putBO a
 
-instance forall v. VectorSpace v => BinaryBO (PolyhedralSurface v) where
+instance forall v srid. VectorSpace v => BinaryBO (PolyhedralSurface v srid) where
     getBO = PolyhedralSurface <$> getVector getBO
     putBO = putVectorBo . _psPolygons
 
-instance forall v. VectorSpace v => BinaryBO (TIN v) where
+instance forall v srid. VectorSpace v => BinaryBO (TIN v srid) where
     getBO = TIN <$> getVector getBO
     putBO = putVectorBo . _tinTriangles
 
