@@ -10,6 +10,7 @@
            , RankNTypes
            , CPP
            , KindSignatures
+           , BangPatterns
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -18,6 +19,7 @@ module Sigym4.Geometry.Types (
   , Vertex
   , Point (..)
   , Polygon (..)
+  , Triangle (..)
   , pVertex
   , Feature (..)
   , FeatureCollection (..)
@@ -46,10 +48,12 @@ module Sigym4.Geometry.Types (
   , mkLineString
   , mkLinearRing
   , mkPolygon
+  , mkTriangle
 
   , pointCoordinates
   , lineStringCoordinates
   , polygonCoordinates
+  , triangleCoordinates
 
   , eSize
 
@@ -286,9 +290,6 @@ newtype Point v = Point {_pVertex:: Vertex v}
 deriving instance VectorSpace v => Show (Point v)
 deriving instance VectorSpace v => Eq (Point v)
 
-pointCoordinates :: VectorSpace v => Point v -> [Double]
-pointCoordinates = toList . _pVertex
-
 derivingUnbox "Point"
     [t| VectorSpace v => Point v -> Vertex v |]
     [| \(Point v) -> v |]
@@ -297,27 +298,16 @@ derivingUnbox "Point"
 newtype LinearRing v = LinearRing {_lrPoints :: U.Vector (Point v)}
     deriving (Eq, Show)
 
-linearRingCoordinates :: VectorSpace v => LinearRing v -> [[Double]]
-linearRingCoordinates = vectorCoordinates . _lrPoints
-
 newtype LineString v = LineString {_lsPoints :: U.Vector (Point v)}
     deriving (Eq, Show)
 
-lineStringCoordinates :: VectorSpace v => LineString v -> [[Double]]
-lineStringCoordinates = vectorCoordinates . _lsPoints
+data Triangle v = Triangle !(Point v) !(Point v) !(Point v)
+    deriving (Eq, Show)
 
 data Polygon v = Polygon {
     _pOuterRing :: LinearRing v
   , _pRings     :: V.Vector (LinearRing v)
 } deriving (Eq, Show)
-
-polygonCoordinates :: VectorSpace v => Polygon v -> [[[Double]]]
-polygonCoordinates (Polygon ir rs)
-  = V.toList . V.cons (linearRingCoordinates ir) $
-    V.map linearRingCoordinates rs
-
-vectorCoordinates :: VectorSpace v => U.Vector (Point v) -> [[Double]]
-vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
 data Geometry v
     = GeoPoint (Point v)
@@ -326,6 +316,7 @@ data Geometry v
     | GeoMultiLineString (V.Vector (LineString v))
     | GeoPolygon (Polygon v)
     | GeoMultiPolygon (V.Vector (Polygon v))
+    | GeoTriangle (Triangle v)
     | GeoCollection (V.Vector (Geometry v))
     deriving (Eq, Show)
 
@@ -346,9 +337,34 @@ mkPolygon :: [LinearRing v] -> Maybe (Polygon v)
 mkPolygon (oRing:rings) = Just $ Polygon oRing $ V.fromList rings
 mkPolygon _ = Nothing
 
+mkTriangle :: VectorSpace v
+  => Point v -> Point v -> Point v -> Maybe (Triangle v)
+mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
+                 | otherwise = Nothing
+
 pVertex :: VectorSpace v => Lens' (Point v) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
 {-# INLINE pVertex #-}
+
+pointCoordinates :: VectorSpace v => Point v -> [Double]
+pointCoordinates = toList . _pVertex
+
+lineStringCoordinates :: VectorSpace v => LineString v -> [[Double]]
+lineStringCoordinates = vectorCoordinates . _lsPoints
+
+linearRingCoordinates :: VectorSpace v => LinearRing v -> [[Double]]
+linearRingCoordinates = vectorCoordinates . _lrPoints
+
+polygonCoordinates :: VectorSpace v => Polygon v -> [[[Double]]]
+polygonCoordinates (Polygon ir rs)
+  = V.toList . V.cons (linearRingCoordinates ir) $
+    V.map linearRingCoordinates rs
+
+triangleCoordinates :: VectorSpace v => Triangle v -> [[Double]]
+triangleCoordinates (Triangle a b c) = map pointCoordinates [a, b, c, a]
+
+vectorCoordinates :: VectorSpace v => U.Vector (Point v) -> [[Double]]
+vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
 data Feature v d = Feature {

@@ -44,6 +44,11 @@ instance VectorSpace v => ToJSON (Geometry v) where
     toJSON (GeoMultiPolygon g)
       = typedObject "MultiPolygon"
         ["coordinates" .= V.map polygonCoordinates g]
+    -- GeoJson spec does not define Triangle but we define it similar to a
+    -- linering
+    toJSON (GeoTriangle g)
+      = typedObject "Triangle"
+        ["coordinates" .= triangleCoordinates g]
     toJSON (GeoCollection g)
       = typedObject "GeometryCollection"
         ["geometries" .= g]
@@ -59,17 +64,22 @@ parsePoints = V.mapM parsePoint . V.fromList
 parseLineString :: VectorSpace v => [[Double]] -> Parser (LineString v)
 parseLineString ps = do
     points <- mapM parsePoint ps
-    case mkLineString points of
-        Just ls -> return ls
-        Nothing -> fail "parseLineString: Invalid linestring"
+    maybe (fail "parseLineString: Invalid linestring") return
+          (mkLineString points)
 
 parseLinearRing :: VectorSpace v => [[Double]] -> Parser (LinearRing v)
 parseLinearRing ps = do
     points <- mapM parsePoint ps
-    case mkLinearRing points of
-        Just ls -> return ls
-        Nothing -> fail "parseLinearRing: Invalid linear ring"
+    maybe (fail "parseLinearRing: Invalid linear ring") return
+          (mkLinearRing points)
 
+parseTriangle :: VectorSpace v => [[Double]] -> Parser (Triangle v)
+parseTriangle ps = do
+    [a,b,c,a'] <- mapM parsePoint ps
+    if a/=a' then fail "parseTriangle: last coord must be the same as first"
+             else maybe (fail "parseTriangle: invalid triangle")
+                        return
+                        (mkTriangle a b c)
 
 parsePolygon :: VectorSpace v => [[[Double]]] -> Parser (Polygon v)
 parsePolygon ps = do
@@ -103,6 +113,8 @@ instance VectorSpace v => FromJSON (Geometry v) where
                 coords o >>= fmap GeoPolygon . parsePolygon
             "MultiPolygon" ->
                 coords o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
+            "Triangle" ->
+                coords o >>= fmap GeoTriangle . parseTriangle
             "GeometryCollection" ->
                 fmap GeoCollection $ o .: "geometries"
             _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ

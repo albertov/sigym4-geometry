@@ -38,6 +38,11 @@ instance VectorSpace v => HasPredicates (Extent v) (LineString v) where
 instance VectorSpace v => HasPredicates (Extent v) (Polygon v) where
     ext `contains` (Polygon oRing _) = ext `contains` oRing
 
+instance VectorSpace v => HasPredicates (Extent v) (Triangle v) where
+    ext `contains` (Triangle a b c) = ext `contains` a &&
+                                      ext `contains` b &&
+                                      ext `contains` c
+
 instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
     ext `contains` (GeoPoint g) = ext `contains` g
     ext `contains` (GeoMultiPoint g) = V.all (contains ext) g
@@ -45,6 +50,7 @@ instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
     ext `contains` (GeoMultiLineString g) = V.all (contains ext) g
     ext `contains` (GeoPolygon g) = ext `contains` g
     ext `contains` (GeoMultiPolygon g) = V.all (contains ext) g
+    ext `contains` (GeoTriangle g) = ext `contains` g
     ext `contains` (GeoCollection g) = V.all (contains ext) g
 
 instance VectorSpace v => HasPredicates (Extent v) (Feature v d) where
@@ -84,6 +90,12 @@ instance VectorSpace v => HasExtent (LineString v) v where
 instance VectorSpace v => HasExtent (Polygon v) v where
     extent = extent . _pOuterRing
 
+instance VectorSpace v => HasExtent (Triangle v) v where
+    extent (Triangle a b c) = a' SG.<> b' SG.<> c'
+        where a' = extent a
+              b' = extent b
+              c' = extent c
+
 instance VectorSpace v => HasExtent (Geometry v) v where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extentFromVector g
@@ -91,6 +103,7 @@ instance VectorSpace v => HasExtent (Geometry v) v where
     extent (GeoMultiLineString g) = extentFromVector g
     extent (GeoPolygon g) = extent g
     extent (GeoMultiPolygon g) = extentFromVector g
+    extent (GeoTriangle g) = extent g
     extent (GeoCollection g) = extentFromVector g
 
 extentFromVector :: (HasExtent a v, VectorSpace v) => V.Vector a -> Extent v
