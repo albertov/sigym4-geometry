@@ -55,6 +55,7 @@ module Sigym4.Geometry.Types (
   , pointCoordinates
   , lineStringCoordinates
   , polygonCoordinates
+  , polygonRings
   , triangleCoordinates
 
   , eSize
@@ -373,9 +374,10 @@ linearRingCoordinates :: VectorSpace v => LinearRing v -> [[Double]]
 linearRingCoordinates = vectorCoordinates . _lrPoints
 
 polygonCoordinates :: VectorSpace v => Polygon v -> [[[Double]]]
-polygonCoordinates (Polygon ir rs)
-  = V.toList . V.cons (linearRingCoordinates ir) $
-    V.map linearRingCoordinates rs
+polygonCoordinates = V.toList . V.map linearRingCoordinates . polygonRings
+
+polygonRings :: Polygon v -> V.Vector (LinearRing v)
+polygonRings (Polygon ir rs) = V.cons ir rs
 
 triangleCoordinates :: VectorSpace v => Triangle v -> [[Double]]
 triangleCoordinates (Triangle a b c) = map pointCoordinates [a, b, c, a]
