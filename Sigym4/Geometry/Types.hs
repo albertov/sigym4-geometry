@@ -20,6 +20,8 @@ module Sigym4.Geometry.Types (
   , Point (..)
   , Polygon (..)
   , Triangle (..)
+  , TIN (..)
+  , PolyhedralSurface (..)
   , pVertex
   , Feature (..)
   , FeatureCollection (..)
@@ -304,9 +306,22 @@ newtype LineString v = LineString {_lsPoints :: U.Vector (Point v)}
 data Triangle v = Triangle !(Point v) !(Point v) !(Point v)
     deriving (Eq, Show)
 
+derivingUnbox "Triangle"
+    [t| VectorSpace v => Triangle v -> (Point v, Point v, Point v) |]
+    [| \(Triangle a b c) -> (a, b, c) |]
+    [| \(a, b, c) -> Triangle a b c|]
+
 data Polygon v = Polygon {
     _pOuterRing :: LinearRing v
   , _pRings     :: V.Vector (LinearRing v)
+} deriving (Eq, Show)
+
+newtype PolyhedralSurface v = PolyhedralSurface {
+    _psPolygons :: V.Vector (Polygon v)
+} deriving (Eq, Show)
+
+newtype TIN v = TIN {
+    _tinTriangles :: U.Vector (Triangle v)
 } deriving (Eq, Show)
 
 data Geometry v
@@ -317,6 +332,8 @@ data Geometry v
     | GeoPolygon (Polygon v)
     | GeoMultiPolygon (V.Vector (Polygon v))
     | GeoTriangle (Triangle v)
+    | GeoPolyhedralSurface (PolyhedralSurface v)
+    | GeoTIN (TIN v)
     | GeoCollection (V.Vector (Geometry v))
     deriving (Eq, Show)
 

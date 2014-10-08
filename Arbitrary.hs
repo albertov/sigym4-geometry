@@ -6,6 +6,7 @@ import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (fromJust)
 import Data.Vector (fromList)
+import qualified Data.Vector.Unboxed as U
 
 import Sigym4.Geometry hiding (fromList)
 
@@ -38,11 +39,22 @@ instance (VectorSpace v, Arbitrary (Vertex v))
         maybe arbitrary return mRet
 
 instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (PolyhedralSurface v) where
+    arbitrary = PolyhedralSurface <$> fmap fromList (resized arbitrary)
+
+instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (TIN v) where
+    arbitrary = TIN <$> fmap U.fromList (resized arbitrary)
+
+
+instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (Geometry v) where
     arbitrary = oneof (geometryCollection:geometries)
         where
             point = GeoPoint <$> arbitrary
             triangle = GeoTriangle <$> arbitrary
+            tin = GeoTIN <$> arbitrary
+            psurface = GeoPolyhedralSurface <$> arbitrary
             multiPoint = GeoMultiPoint <$> fmap fromList (resized arbitrary)
             lineString = GeoLineString <$> arbitrary
             multiLineString = GeoMultiLineString <$> fmap fromList (resized arbitrary)
@@ -50,7 +62,7 @@ instance (VectorSpace v, Arbitrary (Vertex v))
             multiPolygon = GeoMultiPolygon <$> fmap fromList (resized arbitrary)
             geometryCollection = GeoCollection . fromList <$> (resized $ listOf (oneof geometries))
             geometries = [ point, multiPoint, lineString, multiLineString
-                         , polygon, multiPolygon, triangle ]
+                         , polygon, multiPolygon, triangle, psurface, tin ]
 
 resized :: Gen a -> Gen a
 resized = resize 15

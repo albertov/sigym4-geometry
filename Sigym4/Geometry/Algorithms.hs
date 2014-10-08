@@ -43,6 +43,12 @@ instance VectorSpace v => HasPredicates (Extent v) (Triangle v) where
                                       ext `contains` b &&
                                       ext `contains` c
 
+instance VectorSpace v => HasPredicates (Extent v) (PolyhedralSurface v) where
+    ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
+
+instance VectorSpace v => HasPredicates (Extent v) (TIN v) where
+    ext `contains` (TIN ts) = U.all (contains ext) ts
+
 instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
     ext `contains` (GeoPoint g) = ext `contains` g
     ext `contains` (GeoMultiPoint g) = V.all (contains ext) g
@@ -51,6 +57,8 @@ instance VectorSpace v => HasPredicates (Extent v) (Geometry v) where
     ext `contains` (GeoPolygon g) = ext `contains` g
     ext `contains` (GeoMultiPolygon g) = V.all (contains ext) g
     ext `contains` (GeoTriangle g) = ext `contains` g
+    ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
+    ext `contains` (GeoTIN g) = ext `contains` g
     ext `contains` (GeoCollection g) = V.all (contains ext) g
 
 instance VectorSpace v => HasPredicates (Extent v) (Feature v d) where
@@ -96,6 +104,12 @@ instance VectorSpace v => HasExtent (Triangle v) v where
               b' = extent b
               c' = extent c
 
+instance VectorSpace v => HasExtent (PolyhedralSurface v) v where
+    extent = extentFromVector . _psPolygons
+
+instance VectorSpace v => HasExtent (TIN v) v where
+    extent = extentFromVector . V.convert . _tinTriangles
+
 instance VectorSpace v => HasExtent (Geometry v) v where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extentFromVector g
@@ -104,6 +118,8 @@ instance VectorSpace v => HasExtent (Geometry v) v where
     extent (GeoPolygon g) = extent g
     extent (GeoMultiPolygon g) = extentFromVector g
     extent (GeoTriangle g) = extent g
+    extent (GeoPolyhedralSurface g) = extent g
+    extent (GeoTIN g) = extent g
     extent (GeoCollection g) = extentFromVector g
 
 extentFromVector :: (HasExtent a v, VectorSpace v) => V.Vector a -> Extent v

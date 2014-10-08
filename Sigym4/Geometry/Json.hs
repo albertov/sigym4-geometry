@@ -16,6 +16,7 @@ import Data.Aeson.Types (Parser, Pair)
 import Sigym4.Geometry.Types
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 
 jsonEncode :: (VectorSpace v)
            => Geometry v -> ByteString
@@ -44,11 +45,17 @@ instance VectorSpace v => ToJSON (Geometry v) where
     toJSON (GeoMultiPolygon g)
       = typedObject "MultiPolygon"
         ["coordinates" .= V.map polygonCoordinates g]
-    -- GeoJson spec does not define Triangle but we define it similar to a
-    -- linering
+    -- GeoJson spec does not define Triangle, TIN or PolyhedralSurface but we
+    -- define them similarily to linering and multipolygons
     toJSON (GeoTriangle g)
       = typedObject "Triangle"
         ["coordinates" .= triangleCoordinates g]
+    toJSON (GeoPolyhedralSurface (PolyhedralSurface g))
+      = typedObject "PolyhedralSurface"
+        ["coordinates" .= V.map polygonCoordinates g]
+    toJSON (GeoTIN (TIN g))
+      = typedObject "TIN"
+        ["coordinates" .= V.map triangleCoordinates (V.convert g)]
     toJSON (GeoCollection g)
       = typedObject "GeometryCollection"
         ["geometries" .= g]
@@ -115,6 +122,12 @@ instance VectorSpace v => FromJSON (Geometry v) where
                 coords o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
             "Triangle" ->
                 coords o >>= fmap GeoTriangle . parseTriangle
+            "PolyhedralSurface" ->
+                coords o >>= fmap (GeoPolyhedralSurface . PolyhedralSurface)
+                           . V.mapM parsePolygon
+            "TIN" ->
+                coords o >>= fmap (GeoTIN . TIN . U.convert)
+                           . V.mapM parseTriangle
             "GeometryCollection" ->
                 fmap GeoCollection $ o .: "geometries"
             _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
