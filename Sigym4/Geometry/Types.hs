@@ -110,6 +110,7 @@ instance VectorSpace V2 where
     toList (V2 u v) = [u, v]
     fromList [u, v] = Just $ V2 u v
     fromList _ = Nothing
+    {-# INLINE dim #-}
     {-# INLINE fromList #-}
     {-# INLINE toList #-}
 
@@ -120,6 +121,7 @@ instance VectorSpace V3 where
     toList (V3 u v z) = [u, v, z]
     fromList [u, v, z] = Just $ V3 u v z
     fromList _ = Nothing
+    {-# INLINE dim #-}
     {-# INLINE fromList #-}
     {-# INLINE toList #-}
 

@@ -31,11 +31,13 @@ nativeEndian = LittleEndian
 
 wkbEncode :: VectorSpace v => ByteOrder -> Geometry v -> ByteString
 wkbEncode bo = runPut . flip runReaderT bo . putBO
+{-# INLINEABLE wkbEncode #-}
 
 wkbDecode :: VectorSpace v => ByteString -> Either String (Geometry v)
 wkbDecode s = case decodeOrFail s of
                 Left  (_,_,e) -> Left e
                 Right (_,_,a) -> Right a
+{-# INLINEABLE wkbDecode #-}
 
 type PutBO = ReaderT ByteOrder PutM ()
 type GetBO a = ReaderT ByteOrder Get a
@@ -52,6 +54,8 @@ class BinaryBO a where
 instance VectorSpace v => Binary (Geometry v) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
+    {-# INLINEABLE put #-}
+    {-# INLINEABLE get #-}
 
 
 geomType :: forall v. VectorSpace v => Geometry v -> Word32
@@ -84,8 +88,6 @@ instance forall v. VectorSpace v => BinaryBO (Geometry v) where
             GeoCollection g' ->  putVectorBo g'
             GeoPolyhedralSurface g' -> putBO g'
             GeoTIN g' -> putBO g'
-    {-# SPECIALIZE INLINE putBO :: Geometry V2 -> PutBO #-}
-    {-# SPECIALIZE INLINE putBO :: Geometry V3 -> PutBO #-}
 
     getBO = getWord32bo
         >>= \t -> case (t,dim (Proxy::Proxy v)) of
@@ -122,8 +124,6 @@ instance forall v. VectorSpace v => BinaryBO (Geometry v) where
         geoCollection = GeoCollection <$> getVector (lift  get)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
-    {-# SPECIALIZE INLINE getBO :: GetBO (Geometry V2) #-}
-    {-# SPECIALIZE INLINE getBO :: GetBO (Geometry V3) #-}
 
 skipHeader :: GetBO ()
 skipHeader = do _ <- lift get :: GetBO ByteOrder
@@ -133,26 +133,18 @@ skipHeader = do _ <- lift get :: GetBO ByteOrder
 instance forall v. VectorSpace v => BinaryBO (Point v) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromList
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
-    {-# SPECIALIZE INLINE getBO :: GetBO (Point V2) #-}
-    {-# SPECIALIZE INLINE getBO :: GetBO (Point V3) #-}
     putBO = mapM_ putBO . toList . _pVertex
 
 instance forall v. VectorSpace v => BinaryBO (LineString v) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
-    {-# SPECIALIZE INLINE getBO :: GetBO (LineString V2) #-}
-    {-# SPECIALIZE INLINE getBO :: GetBO (LineString V3) #-}
     putBO = putVectorBo . _lsPoints
 
 instance forall v. VectorSpace v => BinaryBO (LinearRing v) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
-    {-# SPECIALIZE INLINE getBO :: GetBO (LinearRing V2) #-}
-    {-# SPECIALIZE INLINE getBO :: GetBO (LinearRing V3) #-}
     putBO = putVectorBo . _lrPoints
 
 instance forall v. VectorSpace v => BinaryBO (Polygon v) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
-    {-# SPECIALIZE INLINE getBO :: GetBO (Polygon V2) #-}
-    {-# SPECIALIZE INLINE getBO :: GetBO (Polygon V3) #-}
     putBO = putVectorBo . polygonRings
 
 instance forall v. VectorSpace v => BinaryBO (Triangle v) where
