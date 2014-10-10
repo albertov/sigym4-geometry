@@ -1,6 +1,4 @@
-{-# LANGUAGE LambdaCase
-           , ScopedTypeVariables
-           #-}
+{-# LANGUAGE CPP, LambdaCase, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Sigym4.Geometry.Binary (
     ByteOrder (..)
@@ -8,11 +6,13 @@ module Sigym4.Geometry.Binary (
   , wkbDecode
 ) where
 
+#include "MachDeps.h"
+
 import Control.Applicative
 import Control.Monad.Reader
 import Data.Proxy (Proxy(Proxy))
 import Data.ByteString.Lazy (ByteString)
-import qualified Data.Vector.Generic as V
+import qualified Data.Vector.Generic as G
 import Sigym4.Geometry.Types
 import Data.Binary
 import Data.Binary.Put
@@ -23,7 +23,11 @@ import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
 data ByteOrder = LittleEndian | BigEndian deriving (Eq, Show)
 
 nativeEndian :: ByteOrder
-nativeEndian = LittleEndian -- TODO: use CPP
+#ifdef WORDS_BIGENDIAN
+nativeEndian = BigEndian
+#else
+nativeEndian = LittleEndian
+#endif
 
 wkbEncode :: VectorSpace v => ByteOrder -> Geometry v -> ByteString
 wkbEncode bo = runPut . flip runReaderT bo . putBO
@@ -49,34 +53,77 @@ instance VectorSpace v => Binary (Geometry v) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
 
+
+geomType :: forall v. VectorSpace v => Geometry v -> Word32
+geomType g
+  = let summand = if dim (Proxy :: Proxy v) == 3 then 1000 else 0
+    in summand + case g of
+                    GeoPoint _ -> 1
+                    GeoLineString _ -> 2
+                    GeoPolygon _ -> 3
+                    GeoTriangle _ -> 17
+                    GeoMultiPoint _ -> 4
+                    GeoMultiLineString _ ->  5
+                    GeoMultiPolygon _ -> 6
+                    GeoCollection _ -> 7
+                    GeoPolyhedralSurface _ -> 15
+                    GeoTIN _ -> 16
+
 instance forall v. VectorSpace v => BinaryBO (Geometry v) where
-    putBO = undefined
+    putBO g = do
+        ask >>= lift . put
+        putBO $ geomType g
+        case g of
+            GeoPoint g' -> putBO g'
+            GeoLineString g' ->  putBO g'
+            GeoPolygon g' -> putBO g'
+            GeoTriangle g' -> putBO g'
+            GeoMultiPoint g' -> putVectorBo (G.map GeoPoint g')
+            GeoMultiLineString g' -> putVectorBo (G.map GeoLineString g')
+            GeoMultiPolygon g' -> putVectorBo (G.map GeoPolygon g')
+            GeoCollection g' ->  putVectorBo g'
+            GeoPolyhedralSurface g' -> putBO g'
+            GeoTIN g' -> putBO g'
+    {-# SPECIALIZE INLINE putBO :: Geometry V2 -> PutBO #-}
+    {-# SPECIALIZE INLINE putBO :: Geometry V3 -> PutBO #-}
+
     getBO = getWord32bo
         >>= \t -> case (t,dim (Proxy::Proxy v)) of
-                    (1,2) -> GeoPoint <$> getBO
-                    (2,2) -> GeoLineString <$> getBO
-                    (3,2) -> GeoPolygon <$> getBO
-                    (17,2) -> GeoTriangle <$> getBO
-                    (4,3) -> GeoMultiPoint <$>
-                             getVector (skipHeader >> getBO)
-                    (5,3) -> GeoMultiLineString <$>
-                             getVector (skipHeader >> getBO)
-                    (6,2) -> GeoMultiPolygon <$> getVector (skipHeader >> getBO)
-                    (7,2) -> GeoCollection <$> getVectorBo
-                    (15,2) -> GeoPolyhedralSurface <$> getBO
-                    (16,2) -> GeoTIN <$> getBO
-
-                    (1001,3) -> GeoPoint <$> getBO
-                    (1002,3) -> GeoLineString <$> getBO
-                    (1003,3) -> GeoPolygon <$> getBO
-                    (1017,3) -> GeoTriangle <$> getBO
-                    (1004,3) -> GeoMultiPoint <$> getVector (skipHeader >> getBO)
-                    (1005,3) -> GeoMultiLineString <$> getVector (skipHeader >> getBO)
-                    (1006,3) -> GeoMultiPolygon <$> getVector (skipHeader >> getBO)
-                    (1007,3) -> GeoCollection <$> getVectorBo
-                    (1015,3) -> GeoPolyhedralSurface <$> getBO
-                    (1016,3) -> GeoTIN <$> getBO
+                    (1,2)    -> geoPoint
+                    (2,2)    -> geoLineString
+                    (3,2)    -> geoPolygon
+                    (17,2)   -> geoTriangle
+                    (4,2)    -> geoMultiPoint
+                    (5,2)    -> geoMultiLineString
+                    (6,2)    -> geoMultiPolygon
+                    (7,2)    -> geoCollection
+                    (15,2)   -> geoPolyhedralSurface
+                    (16,2)   -> geoTIN
+                    (1001,3) -> geoPoint
+                    (1002,3) -> geoLineString
+                    (1003,3) -> geoPolygon
+                    (1017,3) -> geoTriangle
+                    (1004,3) -> geoMultiPoint
+                    (1005,3) -> geoMultiLineString
+                    (1006,3) -> geoMultiPolygon
+                    (1007,3) -> geoCollection
+                    (1015,3) -> geoPolyhedralSurface
+                    (1016,3) -> geoTIN
                     _        -> fail "get(Geometry): wrong dimension"
+      where
+        geoPoint = GeoPoint <$> getBO
+        geoLineString = GeoLineString <$> getBO
+        geoPolygon = GeoPolygon <$> getBO
+        geoTriangle = GeoTriangle <$> getBO
+        geoMultiPoint = GeoMultiPoint <$> getVector (skipHeader >> getBO)
+        geoMultiLineString = GeoMultiLineString
+                         <$> getVector (skipHeader >> getBO)
+        geoMultiPolygon = GeoMultiPolygon <$> getVector (skipHeader >> getBO)
+        geoCollection = GeoCollection <$> getVector (lift  get)
+        geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
+        geoTIN = GeoTIN <$> getBO
+    {-# SPECIALIZE INLINE getBO :: GetBO (Geometry V2) #-}
+    {-# SPECIALIZE INLINE getBO :: GetBO (Geometry V3) #-}
 
 skipHeader :: GetBO ()
 skipHeader = do _ <- lift get :: GetBO ByteOrder
@@ -86,56 +133,76 @@ skipHeader = do _ <- lift get :: GetBO ByteOrder
 instance forall v. VectorSpace v => BinaryBO (Point v) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromList
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
+    {-# SPECIALIZE INLINE getBO :: GetBO (Point V2) #-}
+    {-# SPECIALIZE INLINE getBO :: GetBO (Point V3) #-}
     putBO = mapM_ putBO . toList . _pVertex
 
 instance forall v. VectorSpace v => BinaryBO (LineString v) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
+    {-# SPECIALIZE INLINE getBO :: GetBO (LineString V2) #-}
+    {-# SPECIALIZE INLINE getBO :: GetBO (LineString V3) #-}
     putBO = putVectorBo . _lsPoints
 
 instance forall v. VectorSpace v => BinaryBO (LinearRing v) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
+    {-# SPECIALIZE INLINE getBO :: GetBO (LinearRing V2) #-}
+    {-# SPECIALIZE INLINE getBO :: GetBO (LinearRing V3) #-}
     putBO = putVectorBo . _lrPoints
 
 instance forall v. VectorSpace v => BinaryBO (Polygon v) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
+    {-# SPECIALIZE INLINE getBO :: GetBO (Polygon V2) #-}
+    {-# SPECIALIZE INLINE getBO :: GetBO (Polygon V3) #-}
     putBO = putVectorBo . polygonRings
 
 instance forall v. VectorSpace v => BinaryBO (Triangle v) where
-    getBO = undefined
-    putBO = undefined
+    getBO = do
+        nRings <- getBO :: GetBO (Word32)
+        when (nRings/=1) $ fail "getBO(Triangle): expected a single ring"
+        nPoints <- getBO :: GetBO (Word32)
+        when (nPoints/=4) $ fail "getBO(Triangle): expected a 4-point ring"
+        (a,b,c,a') <- (,,,) <$> getBO <*> getBO <*> getBO <*> getBO
+        when (a /= a') $
+            fail "getBO(Triangle): first point /= last point"
+        justOrFail "getBO(Triangle): invalid triangle" $ mkTriangle a b c
+    putBO (Triangle a b c) = putBO (1 :: Word32)
+                          >> putBO (4 :: Word32)
+                          >> putBO a
+                          >> putBO b
+                          >> putBO c
+                          >> putBO a
 
 instance forall v. VectorSpace v => BinaryBO (PolyhedralSurface v) where
-    getBO = undefined
-    putBO = undefined
+    getBO = PolyhedralSurface <$> getVector getBO
+    putBO = putVectorBo . _psPolygons
 
 instance forall v. VectorSpace v => BinaryBO (TIN v) where
-    getBO = undefined
-    putBO = undefined
+    getBO = TIN <$> getVector getBO
+    putBO = putVectorBo . _tinTriangles
 
 justOrFail :: Monad m => String -> Maybe a -> m a
 justOrFail msg = maybe (fail msg) return
 
 
-getVector :: (BinaryBO a, V.Vector v a) => GetBO a -> GetBO (v a)
-getVector f  = getBO >>= flip V.replicateM f
-
-getVectorBo :: (BinaryBO a, V.Vector v a) => GetBO (v a)
-getVectorBo = getVector getBO
+getVector :: (BinaryBO a, G.Vector v a) => GetBO a -> GetBO (v a)
+getVector f  = getWord32bo >>= flip G.replicateM f . fromIntegral
 
 getListBo :: BinaryBO a => GetBO [a]
-getListBo = getBO >>= flip replicateM getBO
+getListBo = getWord32bo >>= flip replicateM getBO . fromIntegral
 
+putVector :: (BinaryBO a, G.Vector v a) => (a -> PutBO) -> v a -> PutBO
+putVector p v = putWord32bo (fromIntegral $ G.length v) >> G.mapM_ p v
 
-putVectorBo :: (BinaryBO a, V.Vector v a) => v a -> PutBO
-putVectorBo v = putBO (V.length v) >> V.mapM_ putBO v
-
-instance BinaryBO Int where
-    getBO = fmap fromIntegral getWord32bo
-    putBO = putWord32bo . fromIntegral
+putVectorBo :: (BinaryBO a, G.Vector v a) => v a -> PutBO
+putVectorBo = putVector putBO
 
 instance BinaryBO Double where
     getBO = getFloat64bo
     putBO = putFloat64bo
+
+instance BinaryBO Word32 where
+    getBO = getWord32bo
+    putBO = putWord32bo
 
 instance Binary ByteOrder where
   put BigEndian = putWord8 0
