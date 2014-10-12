@@ -113,22 +113,26 @@ instance forall v. VectorSpace v => BinaryBO (Geometry v) where
                     (1016,3) -> geoTIN
                     _        -> fail "get(Geometry): wrong dimension"
       where
+        unPoint (GeoPoint g) = Just g
+        unPoint _            = Nothing
+        unLineString (GeoLineString g) = Just g
+        unLineString _            = Nothing
+        unPolygon (GeoPolygon g) = Just g
+        unPolygon _            = Nothing
         geoPoint = GeoPoint <$> getBO
         geoLineString = GeoLineString <$> getBO
         geoPolygon = GeoPolygon <$> getBO
         geoTriangle = GeoTriangle <$> getBO
-        geoMultiPoint = GeoMultiPoint <$> getVector (skipHeader >> getBO)
+        geoMultiPoint = GeoMultiPoint <$> unwrapGeo "geoMultiPoint" unPoint
         geoMultiLineString = GeoMultiLineString
-                         <$> getVector (skipHeader >> getBO)
-        geoMultiPolygon = GeoMultiPolygon <$> getVector (skipHeader >> getBO)
+                         <$> unwrapGeo "geoMultiLineString" unLineString
+        geoMultiPolygon = GeoMultiPolygon
+                      <$> unwrapGeo "geoMultiPolygon" unPolygon
         geoCollection = GeoCollection <$> getVector (lift  get)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
-
-skipHeader :: GetBO ()
-skipHeader = do _ <- lift get :: GetBO ByteOrder
-                _ <- getWord32bo
-                return ()
+        unwrapGeo msg f = justOrFail msg
+                      =<< fmap (G.sequence . G.map f) (getVector (lift get))
 
 instance forall v. VectorSpace v => BinaryBO (Point v) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromList
@@ -182,7 +186,7 @@ getVector f  = getWord32bo >>= flip G.replicateM f . fromIntegral
 getListBo :: BinaryBO a => GetBO [a]
 getListBo = getWord32bo >>= flip replicateM getBO . fromIntegral
 
-putVector :: (BinaryBO a, G.Vector v a) => (a -> PutBO) -> v a -> PutBO
+putVector :: G.Vector v a => (a -> PutBO) -> v a -> PutBO
 putVector p v = putWord32bo (fromIntegral $ G.length v) >> G.mapM_ p v
 
 putVectorBo :: (BinaryBO a, G.Vector v a) => v a -> PutBO
