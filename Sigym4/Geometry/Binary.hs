@@ -153,20 +153,15 @@ instance forall v. VectorSpace v => BinaryBO (Polygon v) where
 
 instance forall v. VectorSpace v => BinaryBO (Triangle v) where
     getBO = do
-        nRings <- getBO :: GetBO (Word32)
+        nRings <- getWord32bo
         when (nRings/=1) $ fail "getBO(Triangle): expected a single ring"
-        nPoints <- getBO :: GetBO (Word32)
+        nPoints <- getWord32bo
         when (nPoints/=4) $ fail "getBO(Triangle): expected a 4-point ring"
         (a,b,c,a') <- (,,,) <$> getBO <*> getBO <*> getBO <*> getBO
-        when (a /= a') $
-            fail "getBO(Triangle): first point /= last point"
+        when (a /= a') $ fail "getBO(Triangle): first point /= last point"
         justOrFail "getBO(Triangle): invalid triangle" $ mkTriangle a b c
-    putBO (Triangle a b c) = putBO (1 :: Word32)
-                          >> putBO (4 :: Word32)
-                          >> putBO a
-                          >> putBO b
-                          >> putBO c
-                          >> putBO a
+    putBO (Triangle a b c) = putWord32bo 1 >> putWord32bo 4
+                          >> putBO a >> putBO b >> putBO c >> putBO a
 
 instance forall v. VectorSpace v => BinaryBO (PolyhedralSurface v) where
     getBO = PolyhedralSurface <$> getVector getBO
@@ -178,7 +173,6 @@ instance forall v. VectorSpace v => BinaryBO (TIN v) where
 
 justOrFail :: Monad m => String -> Maybe a -> m a
 justOrFail msg = maybe (fail msg) return
-
 
 getVector :: (BinaryBO a, G.Vector v a) => GetBO a -> GetBO (v a)
 getVector f  = getWord32bo >>= flip G.replicateM f . fromIntegral
@@ -205,17 +199,16 @@ instance Binary ByteOrder where
   get = fmap (toEnum . fromIntegral) getWord8
 
 getWord32bo :: GetBO Word32
-getWord32bo = ask
-          >>= lift . \case {BigEndian -> getWord32be; _ -> getWord32le}
+getWord32bo = ask >>= lift . byteOrder getWord32be getWord32le
 
 putWord32bo :: Word32 -> PutBO
-putWord32bo w = ask
-          >>= lift . \case {BigEndian -> putWord32be w; _ -> putWord32le w}
+putWord32bo w = ask >>= lift . byteOrder (putWord32be w) (putWord32le w)
 
 getFloat64bo :: GetBO Double
-getFloat64bo = ask
-          >>= lift . \case {BigEndian -> getFloat64be; _ -> getFloat64le}
+getFloat64bo = ask >>= lift . byteOrder getFloat64be getFloat64le
 
 putFloat64bo :: Double -> PutBO
-putFloat64bo w = ask
-          >>= lift . \case {BigEndian -> putFloat64be w; _ -> putFloat64le w}
+putFloat64bo w = ask >>= lift . byteOrder (putFloat64be w) (putFloat64le w)
+
+byteOrder :: a -> a -> ByteOrder -> a
+byteOrder a b = \case {BigEndian->a; LittleEndian->b}
