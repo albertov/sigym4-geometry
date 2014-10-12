@@ -20,7 +20,7 @@ import Data.Binary.Get
 import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
                            , putFloat64be)
 
-data ByteOrder = LittleEndian | BigEndian deriving (Eq, Show)
+data ByteOrder = BigEndian | LittleEndian deriving (Eq, Show, Enum)
 
 nativeEndian :: ByteOrder
 #ifdef WORDS_BIGENDIAN
@@ -201,10 +201,8 @@ instance BinaryBO Word32 where
     putBO = putWord32bo
 
 instance Binary ByteOrder where
-  put BigEndian = putWord8 0
-  put LittleEndian = putWord8 1
-  get = fmap (\v -> if v==0 then BigEndian else LittleEndian) getWord8
-
+  put = putWord8 . fromIntegral . fromEnum
+  get = fmap (toEnum . fromIntegral) getWord8
 
 getWord32bo :: GetBO Word32
 getWord32bo = ask
