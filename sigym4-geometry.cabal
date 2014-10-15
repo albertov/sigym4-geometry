@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sigym4-geometry
-version:             0.2.0.1
+version:             0.2.1
 synopsis:            Geometry types
 -- description:         
 homepage:            https://github.com/meteogrid/sigym4-geometry
