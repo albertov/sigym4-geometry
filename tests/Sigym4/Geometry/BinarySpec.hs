@@ -1,4 +1,7 @@
-{-# LANGUAGE FlexibleContexts, ScopedTypeVariables, OverloadedStrings, DataKinds #-}
+{-# LANGUAGE FlexibleContexts
+           , ScopedTypeVariables
+           , OverloadedStrings
+           , DataKinds #-}
 
 module Sigym4.Geometry.BinarySpec (main, spec) where
 

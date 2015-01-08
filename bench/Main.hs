@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 module Main where
 
 import Criterion.Main
@@ -11,10 +12,10 @@ main :: IO ()
 main = do
   bs <- hGetContents =<< openFile "tests/fixtures/big_geom.wkb" ReadMode
   let decode = wkbDecode
-      decode :: ByteString -> Either String (Geometry V2)
+      decode :: ByteString -> Either String (Geometry V2 0)
       Right geom = decode bs
   defaultMain [
       bench "decode" $ whnf decode bs
-    , bench "extent" $ whnf (extent :: Geometry V2 -> Extent V2) geom
-    --, bench "encode" $ nf (wkbEncode LittleEndian) geom
+    , bench "extent" $ whnf (extent :: Geometry V2 0 -> Extent V2 0) geom
+    , bench "encode" $ nf (wkbEncode LittleEndian) geom
     ]
