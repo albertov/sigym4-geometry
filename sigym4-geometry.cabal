@@ -2,11 +2,13 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sigym4-geometry
-version:             0.2.1
-synopsis:            Geometry types
--- description:         
+version:             0.2.2
+synopsis:            Geometry types for GIS applications.
+description:         Geometry types for GIS applications, algorithms and
+                     de/serialization from/into well-known formats.
+                     Includes WKB and Geojson de/serializers.
 homepage:            https://github.com/meteogrid/sigym4-geometry
-license:             LGPL-3
+license:             BSD3
 license-file:        LICENSE
 author:              Alberto Valverde
 maintainer:          alberto@meteogrid.com
@@ -15,6 +17,10 @@ category:            Data
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
+
+source-repository head
+  type:              git
+  location:          https://github.com/meteogrid/sigym4-geometry
 
 library
   exposed-modules:    Sigym4.Geometry
