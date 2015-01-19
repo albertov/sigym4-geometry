@@ -28,7 +28,7 @@ module Sigym4.Geometry.Types (
   , fData
   , fGeom
   , VectorSpace (..)
-  , HasOffset
+  , HasOffset (..)
   , Pixel (..)
   , Size (..)
   , Offset (..)

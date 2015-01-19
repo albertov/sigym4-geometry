@@ -25,6 +25,22 @@ instance Arbitrary t => Arbitrary (V2 t) where
 instance Arbitrary t => Arbitrary (V3 t) where
   arbitrary = V3 <$> arbitrary <*> arbitrary <*> arbitrary
 
+instance Arbitrary (Size V2) where
+  arbitrary = do
+    Positive w <- arbitrary
+    Positive h <- arbitrary
+    return $ Size $ V2 w h
+
+instance Arbitrary (Size V3) where
+  arbitrary = do
+    Positive w <- arbitrary
+    Positive h <- arbitrary
+    Positive z <- arbitrary
+    return $ Size $ V3 w h z
+
+instance Arbitrary (Vertex v) => Arbitrary (Pixel v) where
+  arbitrary = Pixel <$> arbitrary
+
 instance Arbitrary (Vertex v) => Arbitrary (Point v srid) where
     arbitrary = fmap Point arbitrary
 
