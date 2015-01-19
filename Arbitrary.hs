@@ -1,9 +1,18 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables, UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances
+           , FlexibleContexts
+           , ScopedTypeVariables
+           , UndecidableInstances
+           , CPP
+           #-}
 module Arbitrary where
 
 import Test.QuickCheck
+#if MIN_VERSION_base(4,8,0)
+import Control.Applicative ((<$>))
+#else
 import Control.Applicative ((<$>), (<*>))
+#endif
 import Data.Maybe (fromJust)
 import Data.Vector (fromList)
 import qualified Data.Vector.Unboxed as U

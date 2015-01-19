@@ -68,12 +68,16 @@ module Sigym4.Geometry.Types (
 ) where
 
 import Prelude hiding (product)
+#if MIN_VERSION_base(4,8,0)
+import Control.Applicative ((<$>))
+#else
 import Control.Applicative (Applicative, pure, (<$>), (<*>))
+import Data.Foldable (Foldable)
+import Data.Monoid (Monoid(..))
+#endif
 import Control.Lens
 import Data.Proxy (Proxy(..))
-import Data.Foldable (Foldable)
 import Data.Maybe (fromMaybe)
-import Data.Monoid (Monoid(..))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
 import qualified Data.Vector as V
@@ -283,7 +287,7 @@ deriving instance VectorSpace v => Show (Point v srid)
 deriving instance VectorSpace v => Eq (Point v srid)
 
 derivingUnbox "Point"
-    [t| VectorSpace v => Point v srid -> Vertex v |]
+    [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
     [| \v -> Point v|]
 
@@ -297,7 +301,7 @@ data Triangle v srid = Triangle !(Point v srid) !(Point v srid) !(Point v srid)
     deriving (Eq, Show)
 
 derivingUnbox "Triangle"
-    [t| VectorSpace v => Triangle v srid -> (Point v srid, Point v srid, Point v srid) |]
+    [t| forall v srid. VectorSpace v => Triangle v srid -> (Point v srid, Point v srid, Point v srid) |]
     [| \(Triangle a b c) -> (a, b, c) |]
     [| \(a, b, c) -> Triangle a b c|]
 
