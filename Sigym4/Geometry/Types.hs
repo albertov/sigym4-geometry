@@ -83,8 +83,6 @@ import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), inv22, inv33)
-import Linear.Trace (Trace)
-import Linear.Vector (Additive)
 import Linear.Metric (Metric)
 import GHC.TypeLits
 
@@ -99,7 +97,7 @@ class ( Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int), Eq (v Bool)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
-      , Metric v, Applicative v, Additive v, Foldable v, Trace v)
+      , Metric v, Applicative v, Foldable v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
     dim :: Proxy v -> Int
