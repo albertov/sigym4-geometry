@@ -1,9 +1,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 module Sigym4.GeometrySpec (main, spec) where
 
-import Test.Hspec
+import Test.Hspec (Spec, hspec, parallel, describe, shouldBe, it)
 import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (Positive(..), NonNegative(..), arbitrary, forAll)
 
+import Control.Applicative (liftA2)
 import Arbitrary ()
 import Sigym4.Geometry
 
@@ -68,3 +71,40 @@ spec = parallel $ do
 
         it "produces a valid result" $ do
           toOffset (Size (V3 5 4 2)) (Pixel (V3 2 3 1)) `shouldBe` Just (Offset 23 :: Offset ColumnMajor)
+
+  describe "northUpGeoTransform" $ do
+    prop "preserves origin and has diagonal matrix" $ 
+      \(e :: Extent V2 0, s :: Size V2) ->
+        case northUpGeoTransform e s of
+          Right (GeoTransform (V2 (V2 dx ry) (V2 rx dy)) (V2 x0 y0)) ->
+            let V2 dx' dy' = eSize e / fmap fromIntegral (unSize s)
+                V2 x0' _ = eMin e
+                V2 _ y0' = eMax e
+            in rx == 0 &&
+               ry == 0 &&
+               dx == dx' &&
+               dy == (-dy') &&
+               x0 == x0' &&
+               y0 == y0'
+          Left _ -> False
+
+    let genInvalidExtent = do
+          lr <- arbitrary
+          Positive dx <- arbitrary
+          Positive dy <- arbitrary
+          let d = V2 dx dy
+          return $ Extent lr (lr-d)
+        genInvalidSize = do
+          NonNegative x <- arbitrary
+          NonNegative y <- arbitrary
+          return $ Size $ V2 (-x) (-y)
+        isLeft (Left _) = True
+        isLeft _        = False
+
+    prop "invalid extent returns Left" $
+      forAll (liftA2 (,) genInvalidExtent arbitrary) $
+        \(e :: Extent V2 0, s :: Size V2) -> isLeft (northUpGeoTransform e s)
+
+    prop "invalid size returns Left" $
+      forAll (liftA2 (,) arbitrary genInvalidSize) $
+        \(e :: Extent V2 0, s :: Size V2) -> isLeft (northUpGeoTransform e s)

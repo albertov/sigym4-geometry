@@ -38,6 +38,14 @@ instance Arbitrary (Size V3) where
     Positive z <- arbitrary
     return $ Size $ V3 w h z
 
+instance forall srid. Arbitrary (Extent V2 srid) where
+  arbitrary = do
+    lr <- arbitrary
+    Positive dx <- arbitrary
+    Positive dy <- arbitrary
+    let d = V2 dx dy
+    return $ Extent lr (lr+d)
+
 instance Arbitrary (Vertex v) => Arbitrary (Pixel v) where
   arbitrary = Pixel <$> arbitrary
 

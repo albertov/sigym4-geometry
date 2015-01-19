@@ -22,11 +22,8 @@ module Sigym4.Geometry.Types (
   , Triangle (..)
   , TIN (..)
   , PolyhedralSurface (..)
-  , pVertex
   , Feature (..)
   , FeatureCollection (..)
-  , fData
-  , fGeom
   , VectorSpace (..)
   , HasOffset (..)
   , Pixel (..)
@@ -36,6 +33,7 @@ module Sigym4.Geometry.Types (
   , ColumnMajor
   , Extent (..)
   , GeoTransform (..)
+  , northUpGeoTransform
   , GeoReference
   , mkGeoReference
   , vertexOffset
@@ -75,7 +73,6 @@ import Control.Applicative (Applicative, pure, (<$>), (<*>))
 import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
 #endif
-import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Maybe (fromMaybe)
 import qualified Data.Semigroup as SG
@@ -85,7 +82,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
-import Linear.Matrix ((!*), (*!), eye2, eye3, inv22, inv33)
+import Linear.Matrix ((!*), (*!), inv22, inv33)
 import Linear.Trace (Trace)
 import Linear.Vector (Additive)
 import Linear.Metric (Metric)
@@ -100,19 +97,17 @@ type SqMatrix v = v (Vertex v)
 -- | A vector space
 class ( Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
-      , Show (v Int), Eq (v Int), Eq (v Bool) --XXX
+      , Show (v Int), Eq (v Int), Eq (v Bool)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Additive v, Foldable v, Trace v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
-    eye :: SqMatrix v 
     dim :: Proxy v -> Int
     toList :: Vertex v -> [Double]
     fromList :: [Double] -> Maybe (Vertex v)
 
 instance VectorSpace V2 where
     inv = inv22
-    eye = eye2
     dim _ = 2
     toList (V2 u v) = [u, v]
     fromList [u, v] = Just $ V2 u v
@@ -123,7 +118,6 @@ instance VectorSpace V2 where
 
 instance VectorSpace V3 where
     inv = inv33
-    eye = eye3
     dim _ = 3
     toList (V3 u v z) = [u, v, z]
     fromList [u, v, z] = Just $ V3 u v z
@@ -146,48 +140,44 @@ class HasOffset v (t :: OffsetType) where
 
 instance HasOffset V2 RowMajor where
     toOffset s p
-      | between (pure 0) s' p' = Just (Offset o)
-      | otherwise              = Nothing
-      where o  = p'^._y * s'^._x
-               + p'^._x
-            s' = unSize s
-            p' = fmap floor $ unPx p
+      | 0<=px && px < sx
+      , 0<=py && py < sy = Just (Offset o)
+      | otherwise        = Nothing
+      where o  = py * sx + px
+            V2 sx sy = unSize s
+            V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
 instance HasOffset V2 ColumnMajor where
     toOffset s p
-      | between (pure 0) s' p' = Just (Offset o)
-      | otherwise              = Nothing
-      where o  = p'^._x * s'^._y
-               + p'^._y
-            s' = unSize s
-            p' = fmap floor $ unPx p
+      | 0<=px && px < sx
+      , 0<=py && py < sy = Just (Offset o)
+      | otherwise        = Nothing
+      where o  = px * sy + py
+            V2 sx sy = unSize s
+            V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
-
-between :: (Ord a, Num a, Num (v a), VectorSpace v) => v a -> v a -> v a -> Bool
-between lo hi v = (fmap (>  0) (hi - v) == pure True) &&
-                  (fmap (>= 0) (v - lo) == pure True)
 
 instance HasOffset V3 RowMajor where
     toOffset s p
-      | between (pure 0) s' p' = Just (Offset o)
-      | otherwise              = Nothing
-      where o  = p'^._z * (s'^._x * s'^._y)
-               + p'^._y * s'^._x
-               + p'^._x
-            s' = unSize s
-            p' = fmap floor $ unPx p
+      | 0<=px && px < sx
+      , 0<=py && py < sy
+      , 0<=pz && pz < sz = Just (Offset o)
+      | otherwise        = Nothing
+      where o  = pz * sx * sy + py * sx + px
+            V3 sx sy sz = unSize s
+            V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
 instance HasOffset V3 ColumnMajor where
     toOffset s p
-      | between (pure 0) s' p' = Just (Offset o)
-      | otherwise              = Nothing
-      where o  = p'^._x * (s'^._z * s'^._y)
-               + p'^._y * s'^._z
-               + p'^._z
-            s' = unSize s
-            p' = fmap floor $ unPx p
+      | 0<=px && px < sx
+      , 0<=py && py < sy
+      , 0<=pz && pz < sz = Just (Offset o)
+      | otherwise        = Nothing
+      where o  = px * sz * sy + py * sz + pz
+            V3 sx sy sz = unSize s
+            V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
 
@@ -236,10 +226,12 @@ northUpGeoTransform e s
   where
     isValidBox  = fmap (> 0) (eMax e - eMin e)  == pure True
     isValidSize = fmap (> 0) s'                 == pure True
-    origin      = (eMin e) & _y .~ ((eMax e)^._y)
+    V2 x0 _     = eMin e
+    V2 _ y1     = eMax e
+    origin      = V2 x0 y1
     s'          = fmap fromIntegral $ unSize s
-    dPx         = (eMax e - eMin e)/s' & _y %~ negate
-    matrix      = pure dPx * eye
+    V2 dx dy    = (eMax e - eMin e)/s'
+    matrix      = V2 (V2 dx 0) (V2 0 (-dy))
 
 gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
@@ -359,10 +351,6 @@ mkTriangle :: VectorSpace v
 mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
                  | otherwise = Nothing
 
-pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
-pVertex = lens _pVertex (\point v -> point { _pVertex = v })
-{-# INLINE pVertex #-}
-
 pointCoordinates :: VectorSpace v => Point v srid -> [Double]
 pointCoordinates = toList . _pVertex
 
@@ -389,7 +377,6 @@ data Feature v (srid::Nat) d = Feature {
     _fGeom :: Geometry v srid
   , _fData :: d
   } deriving (Eq, Show)
-makeLenses ''Feature
 
 newtype FeatureCollection v (srid::Nat) d = FeatureCollection {
     _fcFeatures :: [Feature v srid d]
