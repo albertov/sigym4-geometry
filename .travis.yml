@@ -4,9 +4,7 @@ matrix:
 
 env:
  - CABALVER=1.18 GHCVER=7.8.3
-# - CABALVER=1.22 GHCVER=7.10.1 wait until next release candidate
-# when https://git.haskell.org/ghc.git/commitdiff/854e7b8efdd7fe5fcba77e1e049e8a835f03b16a
-# is merged
+ - CABALVER=1.22 GHCVER=7.10.1
  - CABALVER=head GHCVER=head   # see section about GHC HEAD snapshots
 
 # Note: the distinction between `before_install` and `install` is not important.
