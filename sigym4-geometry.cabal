@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sigym4-geometry
-version:             0.3
+version:             0.3.1
 synopsis:            Geometry types for GIS applications.
 description:         Geometry types for GIS applications, algorithms and
                      de/serialization from/into well-known formats.
@@ -12,7 +12,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Alberto Valverde
 maintainer:          alberto@meteogrid.com
--- copyright:           
+copyright:           2014-2015 Meteogrid
 category:            Data
 build-type:          Simple
 extra-source-files:  README.md
@@ -28,12 +28,11 @@ library
                     , Sigym4.Geometry.Algorithms
                     , Sigym4.Geometry.Binary
                     , Sigym4.Geometry.Json
-                    --, Sigym4.Geometry.Arrow
-                    --, Sigym4.Geometry.Rasterize
-  -- other-modules:       
-  -- other-extensions:    
+                    , Sigym4.Geometry.Arrow
+                    , Sigym4.Geometry.Rasterize
   build-depends:       base     >= 4.6 && <5
                      , linear   >= 1.10
+                     , lens
                      , mtl
                      , vector
                      , vector-th-unbox
@@ -43,7 +42,6 @@ library
                      , binary
                      , aeson
                      , semigroups
-  -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -fwarn-incomplete-patterns

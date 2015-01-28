@@ -10,7 +10,6 @@
            , RankNTypes
            , CPP
            , KindSignatures
-           , DataKinds
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -36,7 +35,7 @@ module Sigym4.Geometry.Types (
   , northUpGeoTransform
   , GeoReference
   , mkGeoReference
-  , vertexOffset
+  , pointOffset
   , grScalarSize
   , grSize
   , grTransform
@@ -59,6 +58,29 @@ module Sigym4.Geometry.Types (
 
   , eSize
 
+  -- lenses & prisms
+  , pVertex
+  , fGeom
+  , fData
+  , fcFeatures
+  , lrPoints
+  , lsPoints
+  , pOuterRing
+  , pRings
+  , psPolygons
+  , tinTriangles
+
+  , _GeoPoint
+  , _GeoMultiPoint
+  , _GeoLineString
+  , _GeoMultiLineString
+  , _GeoPolygon
+  , _GeoMultiPolygon
+  , _GeoTriangle
+  , _GeoPolyhedralSurface
+  , _GeoTIN
+  , _GeoCollection
+
   -- re-exports
   , KnownNat
   , module V2
@@ -73,6 +95,7 @@ import Control.Applicative (Applicative, pure, (<$>), (<*>))
 import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
 #endif
+import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Maybe (fromMaybe)
 import qualified Data.Semigroup as SG
@@ -101,28 +124,28 @@ class ( Num (Vertex v), Fractional (Vertex v)
   => VectorSpace v where
     inv :: SqMatrix v -> Maybe (SqMatrix v)
     dim :: Proxy v -> Int
-    toList :: Vertex v -> [Double]
-    fromList :: [Double] -> Maybe (Vertex v)
+    coords :: Vertex v -> [Double]
+    fromCoords :: [Double] -> Maybe (Vertex v)
 
 instance VectorSpace V2 where
     inv = inv22
     dim _ = 2
-    toList (V2 u v) = [u, v]
-    fromList [u, v] = Just $ V2 u v
-    fromList _ = Nothing
+    coords (V2 u v) = [u, v]
+    fromCoords [u, v] = Just $ V2 u v
+    fromCoords _ = Nothing
     {-# INLINE dim #-}
-    {-# INLINE fromList #-}
-    {-# INLINE toList #-}
+    {-# INLINE fromCoords #-}
+    {-# INLINE coords #-}
 
 instance VectorSpace V3 where
     inv = inv33
     dim _ = 3
-    toList (V3 u v z) = [u, v, z]
-    fromList [u, v, z] = Just $ V3 u v z
-    fromList _ = Nothing
+    coords (V3 u v z) = [u, v, z]
+    fromCoords [u, v, z] = Just $ V3 u v z
+    fromCoords _ = Nothing
     {-# INLINE dim #-}
-    {-# INLINE fromList #-}
-    {-# INLINE toList #-}
+    {-# INLINE fromCoords #-}
+    {-# INLINE coords #-}
 
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
@@ -255,10 +278,10 @@ grScalarSize :: VectorSpace v => GeoReference v srid -> Int
 grScalarSize = scalarSize . grSize
 
 
-vertexOffset :: (HasOffset v t, VectorSpace v)
+pointOffset :: (HasOffset v t, VectorSpace v)
   => GeoReference v srid -> Point v srid -> Maybe (Offset t)
-vertexOffset gr =  toOffset (grSize gr) . grForward gr
-{-# INLINEABLE vertexOffset #-}
+pointOffset gr =  toOffset (grSize gr) . grForward gr
+{-# INLINEABLE pointOffset #-}
 
 grForward :: VectorSpace v => GeoReference v srid -> Point v srid -> Pixel v
 grForward gr = gtForward (grTransform gr)
@@ -276,6 +299,10 @@ newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
 deriving instance VectorSpace v => Show (Point v srid)
 deriving instance VectorSpace v => Eq (Point v srid)
 
+pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
+pVertex = lens _pVertex (\point v -> point { _pVertex = v })
+{-# INLINE pVertex #-}
+
 derivingUnbox "Point"
     [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
@@ -283,9 +310,11 @@ derivingUnbox "Point"
 
 newtype LinearRing v srid = LinearRing {_lrPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
+makeLenses ''LinearRing
 
 newtype LineString v srid = LineString {_lsPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
+makeLenses ''LineString
 
 data Triangle v srid = Triangle !(Point v srid) !(Point v srid) !(Point v srid)
     deriving (Eq, Show)
@@ -299,14 +328,17 @@ data Polygon v srid = Polygon {
     _pOuterRing :: LinearRing v srid
   , _pRings     :: V.Vector (LinearRing v srid) 
 } deriving (Eq, Show)
+makeLenses ''Polygon
 
 newtype PolyhedralSurface v srid = PolyhedralSurface {
     _psPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
+makeLenses ''PolyhedralSurface
 
 newtype TIN v srid = TIN {
     _tinTriangles :: U.Vector (Triangle v srid)
 } deriving (Eq, Show)
+makeLenses ''TIN
 
 data Geometry v (srid::Nat)
     = GeoPoint (Point v srid)
@@ -320,7 +352,7 @@ data Geometry v (srid::Nat)
     | GeoTIN (TIN v srid)
     | GeoCollection (V.Vector (Geometry v srid))
     deriving (Eq, Show)
-
+makePrisms ''Geometry
 
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
@@ -350,7 +382,7 @@ mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
                  | otherwise = Nothing
 
 pointCoordinates :: VectorSpace v => Point v srid -> [Double]
-pointCoordinates = toList . _pVertex
+pointCoordinates = views pVertex coords
 
 lineStringCoordinates :: VectorSpace v => LineString v srid -> [[Double]]
 lineStringCoordinates = vectorCoordinates . _lsPoints
@@ -375,10 +407,12 @@ data Feature v (srid::Nat) d = Feature {
     _fGeom :: Geometry v srid
   , _fData :: d
   } deriving (Eq, Show)
+makeLenses ''Feature
 
 newtype FeatureCollection v (srid::Nat) d = FeatureCollection {
     _fcFeatures :: [Feature v srid d]
 } deriving (Show)
+makeLenses ''FeatureCollection
 
 instance Monoid (FeatureCollection v srid d) where
     mempty = FeatureCollection mempty

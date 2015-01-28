@@ -150,9 +150,9 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
                       =<< fmap (G.sequence . G.map f) (getVector (lift get))
 
 instance forall v srid. VectorSpace v => BinaryBO (Point v srid) where
-    getBO = Point <$> (justOrFail "getBO(Point v)" . fromList
+    getBO = Point <$> (justOrFail "getBO(Point v)" . fromCoords
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
-    putBO = mapM_ putBO . toList . _pVertex
+    putBO = mapM_ putBO . coords . _pVertex
 
 instance forall v srid. VectorSpace v => BinaryBO (LineString v srid) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo

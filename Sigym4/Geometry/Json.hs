@@ -62,7 +62,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     {-# INLINEABLE toJSON  #-}
 
 parsePoint :: VectorSpace v => [Double] -> Parser (Point v srid)
-parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromList
+parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromCoords
 
 parsePoints :: VectorSpace v => [[Double]] -> Parser (V.Vector (Point v srid))
 parsePoints = V.mapM parsePoint . V.fromList
@@ -94,8 +94,8 @@ parsePolygon ps = do
        then fail $ "parseJSON(Geometry): Polygon requires at least one linear ring"
        else return $ Polygon (V.head rings) (V.tail rings)
 
-coords :: FromJSON a => Object -> Parser a
-coords o = o .: "coordinates"
+coordinates :: FromJSON a => Object -> Parser a
+coordinates o = o .: "coordinates"
 
 typedObject :: Text -> [Pair] -> Value
 typedObject k = object . ((:) ("type" .= k))
@@ -108,24 +108,24 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
         typ <- o .: "type"
         case typ of
             "Point" ->
-                coords o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v srid)
+                coordinates o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v srid)
             "MultiPoint" ->
-                coords o >>= fmap GeoMultiPoint . parsePoints
+                coordinates o >>= fmap GeoMultiPoint . parsePoints
             "LineString" ->
-                coords o >>= fmap GeoLineString . parseLineString
+                coordinates o >>= fmap GeoLineString . parseLineString
             "MultiLineString" ->
-                coords o >>= fmap GeoMultiLineString . V.mapM parseLineString
+                coordinates o >>= fmap GeoMultiLineString . V.mapM parseLineString
             "Polygon" ->
-                coords o >>= fmap GeoPolygon . parsePolygon
+                coordinates o >>= fmap GeoPolygon . parsePolygon
             "MultiPolygon" ->
-                coords o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
+                coordinates o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
             "Triangle" ->
-                coords o >>= fmap GeoTriangle . parseTriangle
+                coordinates o >>= fmap GeoTriangle . parseTriangle
             "PolyhedralSurface" ->
-                coords o >>= fmap (GeoPolyhedralSurface . PolyhedralSurface)
+                coordinates o >>= fmap (GeoPolyhedralSurface . PolyhedralSurface)
                            . V.mapM parsePolygon
             "TIN" ->
-                coords o >>= fmap (GeoTIN . TIN . U.convert)
+                coordinates o >>= fmap (GeoTIN . TIN . U.convert)
                            . V.mapM parseTriangle
             "GeometryCollection" ->
                 fmap GeoCollection $ o .: "geometries"
