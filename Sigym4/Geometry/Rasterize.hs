@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, FlexibleContexts #-}
 module Sigym4.Geometry.Rasterize (rasterizeFeatures) where
 
-import Control.Lens ((^.), (^?), views, over)
+import Control.Lens ((^.), (^?), views)
 import Control.Monad (replicateM, join)
 import Control.Monad.ST (ST, runST)
 import qualified Data.Vector.Storable as St

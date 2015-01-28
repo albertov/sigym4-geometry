@@ -17,7 +17,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (fromList)
 import qualified Data.Vector.Unboxed as U
 
-import Sigym4.Geometry hiding (fromList)
+import Sigym4.Geometry
 
 instance Arbitrary t => Arbitrary (V2 t) where
   arbitrary = V2 <$> arbitrary <*> arbitrary
