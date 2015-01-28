@@ -81,8 +81,11 @@ module Sigym4.Geometry.Types (
   , _GeoTIN
   , _GeoCollection
 
+  , NoSrid
+
   -- re-exports
   , KnownNat
+  , Nat
   , module V2
   , module V3
 ) where
@@ -201,6 +204,7 @@ instance HasOffset V3 ColumnMajor where
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
 
+type NoSrid = 0
 
 
 -- | An extent in v space is a pair of minimum and maximum vertices
