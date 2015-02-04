@@ -98,7 +98,7 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
             GeoPolygon g' -> putBO g'
             GeoTriangle g' -> putBO g'
             GeoMultiPoint g' -> putBO g'
-            GeoMultiLineString g' -> putVectorBo (G.map GeoLineString g')
+            GeoMultiLineString g' -> putBO g'
             GeoMultiPolygon g' -> putBO g'
             GeoCollection g' ->  putVectorBo g'
             GeoPolyhedralSurface g' -> putBO g'
@@ -125,15 +125,12 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
            16 -> geoTIN
            _  -> fail "get(Geometry): wrong geometry type"
       where
-        unLineString (GeoLineString g) = Just g
-        unLineString _            = Nothing
         geoPoint = GeoPoint <$> getBO
         geoLineString = GeoLineString <$> getBO
         geoPolygon = GeoPolygon <$> getBO
         geoTriangle = GeoTriangle <$> getBO
         geoMultiPoint = GeoMultiPoint <$> getBO
-        geoMultiLineString = GeoMultiLineString
-                         <$> unwrapGeo "geoMultiLineString" unLineString
+        geoMultiLineString = GeoMultiLineString <$> getBO
         geoMultiPolygon = GeoMultiPolygon <$> getBO
         geoCollection = GeoCollection <$> getVector (lift  get)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
@@ -157,12 +154,17 @@ instance forall v srid. VectorSpace v => BinaryBO (Point v srid) where
 
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiPoint v srid) where
-    getBO = MultiPoint  <$> unwrapGeo "geoMultiPoint" (^?_GeoPoint)
+    getBO = MultiPoint  <$> unwrapGeo "MultiPoint" (^?_GeoPoint)
     putBO = putVectorBo . G.map GeoPoint . _mpPoints
 
 instance forall v srid. VectorSpace v => BinaryBO (LineString v srid) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
     putBO = putVectorBo . _lsPoints
+
+instance forall v srid. (VectorSpace v, KnownNat srid)
+  => BinaryBO (MultiLineString v srid) where
+    getBO = MultiLineString <$> unwrapGeo "MultiLineString" (^?_GeoLineString)
+    putBO = putVectorBo . G.map GeoLineString . _mlLineStrings
 
 instance forall v srid. VectorSpace v => BinaryBO (LinearRing v srid) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
@@ -174,7 +176,7 @@ instance forall v srid. VectorSpace v => BinaryBO (Polygon v srid) where
 
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiPolygon v srid) where
-    getBO = MultiPolygon <$> unwrapGeo "geoMultiPolygon" (^?_GeoPolygon)
+    getBO = MultiPolygon <$> unwrapGeo "MultiPolygon" (^?_GeoPolygon)
     putBO = putVectorBo . G.map GeoPolygon . _mpPolygons
 
 instance forall v srid. VectorSpace v => BinaryBO (Triangle v srid) where

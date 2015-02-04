@@ -36,7 +36,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoLineString g)
       = typedObject "LineString"
         ["coordinates" .= lineStringCoordinates g]
-    toJSON (GeoMultiLineString g)
+    toJSON (GeoMultiLineString (MultiLineString g))
       = typedObject "MultiLineString"
         ["coordinates" .= V.map lineStringCoordinates g]
     toJSON (GeoPolygon g)
@@ -115,7 +115,7 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
             "LineString" ->
                 coordinates o >>= fmap GeoLineString . parseLineString
             "MultiLineString" ->
-                coordinates o >>= fmap GeoMultiLineString
+                coordinates o >>= fmap (GeoMultiLineString . MultiLineString)
                                 . V.mapM parseLineString
             "Polygon" ->
                 coordinates o >>= fmap GeoPolygon . parsePolygon

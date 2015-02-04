@@ -14,6 +14,7 @@
 module Sigym4.Geometry.Types (
     Geometry (..)
   , LineString (..)
+  , MultiLineString (..)
   , LinearRing (..)
   , Vertex
   , Point (..)
@@ -68,6 +69,7 @@ module Sigym4.Geometry.Types (
   , mpPoints
   , lrPoints
   , lsPoints
+  , mlLineStrings
   , pOuterRing
   , pRings
   , mpPolygons
@@ -329,6 +331,11 @@ newtype LineString v srid = LineString {_lsPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 makeLenses ''LineString
 
+newtype MultiLineString v srid = MultiLineString {
+    _mlLineStrings :: V.Vector (LineString v srid)
+} deriving (Eq, Show)
+makeLenses ''MultiLineString
+
 data Triangle v srid = Triangle !(Point v srid) !(Point v srid) !(Point v srid)
     deriving (Eq, Show)
 
@@ -362,7 +369,7 @@ data Geometry v (srid::Nat)
     = GeoPoint (Point v srid)
     | GeoMultiPoint (MultiPoint v srid)
     | GeoLineString (LineString v srid)
-    | GeoMultiLineString (V.Vector (LineString v srid))
+    | GeoMultiLineString (MultiLineString v srid)
     | GeoPolygon (Polygon v srid)
     | GeoMultiPolygon (MultiPolygon v srid)
     | GeoTriangle (Triangle v srid)

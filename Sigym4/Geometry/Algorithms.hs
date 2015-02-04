@@ -44,6 +44,10 @@ instance VectorSpace v => HasPredicates (Extent v srid) (LineString v srid)
   where
     ext `contains` (LineString ps) = U.all (contains ext) ps
 
+instance VectorSpace v =>
+  HasPredicates (Extent v srid) (MultiLineString v srid) where
+    ext `contains` (MultiLineString ps) = V.all (contains ext) ps
+
 instance VectorSpace v => HasPredicates (Extent v srid) (Polygon v srid) where
     ext `contains` (Polygon oRing _) = ext `contains` oRing
 
@@ -67,7 +71,7 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
     ext `contains` (GeoPoint g)             = ext `contains` g
     ext `contains` (GeoMultiPoint g)        = ext `contains` g
     ext `contains` (GeoLineString g)        = ext `contains` g
-    ext `contains` (GeoMultiLineString g)   = V.all (contains ext) g
+    ext `contains` (GeoMultiLineString g)   = ext `contains` g
     ext `contains` (GeoPolygon g)           = ext `contains` g
     ext `contains` (GeoMultiPolygon g)      = ext `contains` g
     ext `contains` (GeoTriangle g)          = ext `contains` g
@@ -114,6 +118,9 @@ instance VectorSpace v => HasExtent (LinearRing v srid) v srid where
 instance VectorSpace v => HasExtent (LineString v srid) v srid where
     extent = extentFromVector . V.convert . _lsPoints
 
+instance VectorSpace v => HasExtent (MultiLineString v srid) v srid where
+    extent = extentFromVector . _mlLineStrings
+
 instance VectorSpace v => HasExtent (Polygon v srid) v srid where
     extent = extent . _pOuterRing
 
@@ -136,7 +143,7 @@ instance VectorSpace v => HasExtent (Geometry v srid) v srid where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extent g
     extent (GeoLineString g) = extent g
-    extent (GeoMultiLineString g) = extentFromVector g
+    extent (GeoMultiLineString g) = extent g
     extent (GeoPolygon g) = extent g
     extent (GeoMultiPolygon g) = extent g
     extent (GeoTriangle g) = extent g
