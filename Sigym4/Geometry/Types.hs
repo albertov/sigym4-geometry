@@ -24,6 +24,7 @@ module Sigym4.Geometry.Types (
   , Triangle (..)
   , TIN (..)
   , PolyhedralSurface (..)
+  , GeometryCollection (..)
   , Feature (..)
   , FeatureCollection (..)
   , VectorSpace (..)
@@ -75,6 +76,7 @@ module Sigym4.Geometry.Types (
   , mpPolygons
   , psPolygons
   , tinTriangles
+  , gcGeometries
 
   , _GeoPoint
   , _GeoMultiPoint
@@ -375,9 +377,15 @@ data Geometry v (srid::Nat)
     | GeoTriangle (Triangle v srid)
     | GeoPolyhedralSurface (PolyhedralSurface v srid)
     | GeoTIN (TIN v srid)
-    | GeoCollection (V.Vector (Geometry v srid))
+    | GeoCollection (GeometryCollection v srid)
     deriving (Eq, Show)
+
+newtype GeometryCollection v srid = GeometryCollection {
+    _gcGeometries :: V.Vector (Geometry v srid)
+} deriving (Eq, Show)
+makeLenses ''GeometryCollection
 makePrisms ''Geometry
+
 
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal

@@ -56,7 +56,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoTIN (TIN g))
       = typedObject "TIN"
         ["coordinates" .= V.map triangleCoordinates (V.convert g)]
-    toJSON (GeoCollection g)
+    toJSON (GeoCollection (GeometryCollection g))
       = typedObject "GeometryCollection"
         ["geometries" .= g]
     {-# INLINEABLE toJSON  #-}
@@ -131,7 +131,7 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
                 coordinates o >>= fmap (GeoTIN . TIN . U.convert)
                            . V.mapM parseTriangle
             "GeometryCollection" ->
-                fmap GeoCollection $ o .: "geometries"
+                fmap (GeoCollection . GeometryCollection) $ o .: "geometries"
             _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
     {-# INLINEABLE parseJSON  #-}

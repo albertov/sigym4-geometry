@@ -97,8 +97,8 @@ instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (Geometry v srid) where
     arbitrary = oneof (geometryCollection:geometries)
         where
-            geometryCollection =
-              GeoCollection . fromList <$> (resized $ listOf (oneof geometries))
+            geometryCollection = GeoCollection . GeometryCollection . fromList
+                             <$> (resized $ listOf (oneof geometries))
             point = GeoPoint <$> arbitrary
             lineString = GeoLineString <$> arbitrary
             polygon = GeoPolygon <$> arbitrary

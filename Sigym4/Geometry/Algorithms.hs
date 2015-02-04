@@ -77,7 +77,11 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
     ext `contains` (GeoTriangle g)          = ext `contains` g
     ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
     ext `contains` (GeoTIN g)               = ext `contains` g
-    ext `contains` (GeoCollection g)        = V.all (contains ext) g
+    ext `contains` (GeoCollection g)        = ext `contains` g
+
+instance VectorSpace v =>
+  HasPredicates (Extent v srid) (GeometryCollection v srid) where
+    ext `contains` (GeometryCollection ps) = V.all (contains ext) ps
 
 instance VectorSpace v => HasPredicates (Extent v srid) (Feature v srid d) where
     ext `contains`  f = ext `contains`  _fGeom f
@@ -149,7 +153,10 @@ instance VectorSpace v => HasExtent (Geometry v srid) v srid where
     extent (GeoTriangle g) = extent g
     extent (GeoPolyhedralSurface g) = extent g
     extent (GeoTIN g) = extent g
-    extent (GeoCollection g) = extentFromVector g
+    extent (GeoCollection g) = extent g
+
+instance VectorSpace v => HasExtent (GeometryCollection v srid) v srid where
+    extent = extentFromVector . _gcGeometries
 
 extentFromVector :: (HasExtent a v srid, VectorSpace v) => V.Vector a -> Extent v srid
 extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)

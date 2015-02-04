@@ -100,7 +100,7 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
             GeoMultiPoint g' -> putBO g'
             GeoMultiLineString g' -> putBO g'
             GeoMultiPolygon g' -> putBO g'
-            GeoCollection g' ->  putVectorBo g'
+            GeoCollection g' ->  putBO g'
             GeoPolyhedralSurface g' -> putBO g'
             GeoTIN g' -> putBO g'
 
@@ -132,7 +132,7 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
         geoMultiPoint = GeoMultiPoint <$> getBO
         geoMultiLineString = GeoMultiLineString <$> getBO
         geoMultiPolygon = GeoMultiPolygon <$> getBO
-        geoCollection = GeoCollection <$> getVector (lift  get)
+        geoCollection = GeoCollection <$> getBO
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
 
@@ -156,6 +156,11 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiPoint v srid) where
     getBO = MultiPoint  <$> unwrapGeo "MultiPoint" (^?_GeoPoint)
     putBO = putVectorBo . G.map GeoPoint . _mpPoints
+
+instance forall v srid. (VectorSpace v, KnownNat srid)
+  => BinaryBO (GeometryCollection v srid) where
+    getBO = GeometryCollection  <$> getVector (lift get)
+    putBO = putVectorBo . _gcGeometries
 
 instance forall v srid. VectorSpace v => BinaryBO (LineString v srid) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
