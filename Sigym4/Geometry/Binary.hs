@@ -10,6 +10,7 @@ module Sigym4.Geometry.Binary (
 
 import Control.Applicative
 import Control.Monad.Reader
+import Control.Lens ((^?))
 import Data.Proxy (Proxy(Proxy))
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.Vector.Generic as G
@@ -98,7 +99,7 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
             GeoTriangle g' -> putBO g'
             GeoMultiPoint g' -> putVectorBo (G.map GeoPoint g')
             GeoMultiLineString g' -> putVectorBo (G.map GeoLineString g')
-            GeoMultiPolygon g' -> putVectorBo (G.map GeoPolygon g')
+            GeoMultiPolygon g' -> putBO g'
             GeoCollection g' ->  putVectorBo g'
             GeoPolyhedralSurface g' -> putBO g'
             GeoTIN g' -> putBO g'
@@ -128,8 +129,6 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
         unPoint _            = Nothing
         unLineString (GeoLineString g) = Just g
         unLineString _            = Nothing
-        unPolygon (GeoPolygon g) = Just g
-        unPolygon _            = Nothing
         geoPoint = GeoPoint <$> getBO
         geoLineString = GeoLineString <$> getBO
         geoPolygon = GeoPolygon <$> getBO
@@ -137,17 +136,21 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
         geoMultiPoint = GeoMultiPoint <$> unwrapGeo "geoMultiPoint" unPoint
         geoMultiLineString = GeoMultiLineString
                          <$> unwrapGeo "geoMultiLineString" unLineString
-        geoMultiPolygon = GeoMultiPolygon
-                      <$> unwrapGeo "geoMultiPolygon" unPolygon
+        geoMultiPolygon = GeoMultiPolygon <$> getBO
         geoCollection = GeoCollection <$> getVector (lift  get)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
-        unwrapGeo :: ( G.Vector vec a
-                     , G.Vector vec (Maybe a)
-                     , G.Vector vec (Geometry v srid))
-                  => String -> (Geometry v srid -> Maybe a) -> GetBO (vec a)
-        unwrapGeo msg f = justOrFail msg
-                      =<< fmap (G.sequence . G.map f) (getVector (lift get))
+
+unwrapGeo :: ( G.Vector vec a
+             , G.Vector vec (Maybe a)
+             , G.Vector vec (Geometry v srid)
+             , KnownNat srid
+             , VectorSpace v
+             )
+          => String -> (Geometry v srid -> Maybe a) -> GetBO (vec a)
+unwrapGeo msg f = justOrFail msg
+              =<< fmap (G.sequence . G.map f) (getVector (lift get))
+{-# INLINE unwrapGeo #-}
 
 instance forall v srid. VectorSpace v => BinaryBO (Point v srid) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromCoords
@@ -165,6 +168,11 @@ instance forall v srid. VectorSpace v => BinaryBO (LinearRing v srid) where
 instance forall v srid. VectorSpace v => BinaryBO (Polygon v srid) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
     putBO = putVectorBo . polygonRings
+
+instance forall v srid. (VectorSpace v, KnownNat srid)
+  => BinaryBO (MultiPolygon v srid) where
+    getBO = MultiPolygon <$> unwrapGeo "geoMultiPolygon" (^?_GeoPolygon)
+    putBO = putVectorBo . G.map GeoPolygon . _mpPolygons
 
 instance forall v srid. VectorSpace v => BinaryBO (Triangle v srid) where
     getBO = do

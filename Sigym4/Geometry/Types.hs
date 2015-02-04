@@ -18,6 +18,7 @@ module Sigym4.Geometry.Types (
   , Vertex
   , Point (..)
   , Polygon (..)
+  , MultiPolygon (..)
   , Triangle (..)
   , TIN (..)
   , PolyhedralSurface (..)
@@ -67,6 +68,7 @@ module Sigym4.Geometry.Types (
   , lsPoints
   , pOuterRing
   , pRings
+  , mpPolygons
   , psPolygons
   , tinTriangles
 
@@ -334,6 +336,11 @@ data Polygon v srid = Polygon {
 } deriving (Eq, Show)
 makeLenses ''Polygon
 
+newtype MultiPolygon v srid = MultiPolygon {
+    _mpPolygons :: V.Vector (Polygon v srid)
+} deriving (Eq, Show)
+makeLenses ''MultiPolygon
+
 newtype PolyhedralSurface v srid = PolyhedralSurface {
     _psPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
@@ -350,7 +357,7 @@ data Geometry v (srid::Nat)
     | GeoLineString (LineString v srid)
     | GeoMultiLineString (V.Vector (LineString v srid))
     | GeoPolygon (Polygon v srid)
-    | GeoMultiPolygon (V.Vector (Polygon v srid))
+    | GeoMultiPolygon (MultiPolygon v srid)
     | GeoTriangle (Triangle v srid)
     | GeoPolyhedralSurface (PolyhedralSurface v srid)
     | GeoTIN (TIN v srid)

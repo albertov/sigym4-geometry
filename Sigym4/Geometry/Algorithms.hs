@@ -1,9 +1,9 @@
-{-# LANGUAGE MultiParamTypeClasses
-          , RankNTypes
-          , FlexibleContexts
-          , FlexibleInstances
-          , CPP
-          #-}
+{-# LANGUAGE FunctionalDependencies
+           , RankNTypes
+           , FlexibleContexts
+           , FlexibleInstances
+           , CPP
+           #-}
 module Sigym4.Geometry.Algorithms (
     HasExtent(..)
   , HasDistance(..)
@@ -49,6 +49,10 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Triangle v srid) where
                                       ext `contains` c
 
 instance VectorSpace v =>
+  HasPredicates (Extent v srid) (MultiPolygon v srid) where
+    ext `contains` (MultiPolygon ps) = V.all (contains ext) ps
+
+instance VectorSpace v =>
   HasPredicates (Extent v srid) (PolyhedralSurface v srid) where
     ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
 
@@ -61,7 +65,7 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
     ext `contains` (GeoLineString g) = ext `contains` g
     ext `contains` (GeoMultiLineString g) = V.all (contains ext) g
     ext `contains` (GeoPolygon g) = ext `contains` g
-    ext `contains` (GeoMultiPolygon g) = V.all (contains ext) g
+    ext `contains` (GeoMultiPolygon g) = ext `contains` g
     ext `contains` (GeoTriangle g) = ext `contains` g
     ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
     ext `contains` (GeoTIN g) = ext `contains` g
@@ -90,7 +94,7 @@ class HasDistance a b where
 instance VectorSpace v => HasDistance (Point v srid) (Point v srid) where
     distance (Point a) (Point b) = M.distance a b
 
-class VectorSpace v => HasExtent a v srid where
+class VectorSpace v => HasExtent a v srid | a->v, a->srid where
     extent :: a -> Extent v srid
 
 instance VectorSpace v => HasExtent (Point v srid) v srid where
@@ -111,6 +115,9 @@ instance VectorSpace v => HasExtent (Triangle v srid) v srid where
               b' = extent b
               c' = extent c
 
+instance VectorSpace v => HasExtent (MultiPolygon v srid) v srid where
+    extent = extentFromVector . _mpPolygons
+
 instance VectorSpace v => HasExtent (PolyhedralSurface v srid) v srid where
     extent = extentFromVector . _psPolygons
 
@@ -123,7 +130,7 @@ instance VectorSpace v => HasExtent (Geometry v srid) v srid where
     extent (GeoLineString g) = extent g
     extent (GeoMultiLineString g) = extentFromVector g
     extent (GeoPolygon g) = extent g
-    extent (GeoMultiPolygon g) = extentFromVector g
+    extent (GeoMultiPolygon g) = extent g
     extent (GeoTriangle g) = extent g
     extent (GeoPolyhedralSurface g) = extent g
     extent (GeoTIN g) = extent g

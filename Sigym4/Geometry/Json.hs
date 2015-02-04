@@ -42,7 +42,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoPolygon g)
       = typedObject "Polygon"
         ["coordinates" .= polygonCoordinates g]
-    toJSON (GeoMultiPolygon g)
+    toJSON (GeoMultiPolygon (MultiPolygon g))
       = typedObject "MultiPolygon"
         ["coordinates" .= V.map polygonCoordinates g]
     -- GeoJson spec does not define Triangle, TIN or PolyhedralSurface but we
@@ -118,7 +118,7 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
             "Polygon" ->
                 coordinates o >>= fmap GeoPolygon . parsePolygon
             "MultiPolygon" ->
-                coordinates o >>= fmap GeoMultiPolygon . V.mapM parsePolygon
+                coordinates o >>= fmap (GeoMultiPolygon . MultiPolygon) . V.mapM parsePolygon
             "Triangle" ->
                 coordinates o >>= fmap GeoTriangle . parseTriangle
             "PolyhedralSurface" ->

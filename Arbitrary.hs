@@ -72,6 +72,10 @@ instance (VectorSpace v, Arbitrary (Vertex v))
         maybe arbitrary return mRet
 
 instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (MultiPolygon v srid) where
+    arbitrary = MultiPolygon <$> fmap fromList (resized arbitrary)
+
+instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (PolyhedralSurface v srid) where
     arbitrary = PolyhedralSurface <$> fmap fromList (resized arbitrary)
 
@@ -89,7 +93,7 @@ instance (VectorSpace v, Arbitrary (Vertex v))
             point = GeoPoint <$> arbitrary
             lineString = GeoLineString <$> arbitrary
             polygon = GeoPolygon <$> arbitrary
-            multiPolygon = GeoMultiPolygon <$> fmap fromList (resized arbitrary)
+            multiPolygon = GeoMultiPolygon <$> arbitrary
             multiPoint = GeoMultiPoint <$> fmap fromList (resized arbitrary)
             multiLineString = GeoMultiLineString <$> fmap fromList (resized arbitrary)
             triangle = GeoTriangle <$> arbitrary
