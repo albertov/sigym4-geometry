@@ -30,7 +30,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoPoint g)
       = typedObject "Point"
         ["coordinates" .= pointCoordinates g]
-    toJSON (GeoMultiPoint g)
+    toJSON (GeoMultiPoint (MultiPoint g))
       = typedObject "MultiPoint"
         ["coordinates" .= V.map pointCoordinates g]
     toJSON (GeoLineString g)
@@ -110,20 +110,23 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
             "Point" ->
                 coordinates o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v srid)
             "MultiPoint" ->
-                coordinates o >>= fmap GeoMultiPoint . parsePoints
+                coordinates o >>= fmap (GeoMultiPoint . MultiPoint)
+                                . parsePoints
             "LineString" ->
                 coordinates o >>= fmap GeoLineString . parseLineString
             "MultiLineString" ->
-                coordinates o >>= fmap GeoMultiLineString . V.mapM parseLineString
+                coordinates o >>= fmap GeoMultiLineString
+                                . V.mapM parseLineString
             "Polygon" ->
                 coordinates o >>= fmap GeoPolygon . parsePolygon
             "MultiPolygon" ->
-                coordinates o >>= fmap (GeoMultiPolygon . MultiPolygon) . V.mapM parsePolygon
+                coordinates o >>= fmap (GeoMultiPolygon . MultiPolygon)
+                                . V.mapM parsePolygon
             "Triangle" ->
                 coordinates o >>= fmap GeoTriangle . parseTriangle
             "PolyhedralSurface" ->
-                coordinates o >>= fmap (GeoPolyhedralSurface . PolyhedralSurface)
-                           . V.mapM parsePolygon
+                coordinates o >>= fmap (GeoPolyhedralSurface. PolyhedralSurface)
+                                . V.mapM parsePolygon
             "TIN" ->
                 coordinates o >>= fmap (GeoTIN . TIN . U.convert)
                            . V.mapM parseTriangle

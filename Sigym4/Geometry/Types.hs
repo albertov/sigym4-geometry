@@ -17,6 +17,7 @@ module Sigym4.Geometry.Types (
   , LinearRing (..)
   , Vertex
   , Point (..)
+  , MultiPoint (..)
   , Polygon (..)
   , MultiPolygon (..)
   , Triangle (..)
@@ -64,6 +65,7 @@ module Sigym4.Geometry.Types (
   , fGeom
   , fData
   , fcFeatures
+  , mpPoints
   , lrPoints
   , lsPoints
   , pOuterRing
@@ -314,6 +316,11 @@ derivingUnbox "Point"
     [| \(Point v) -> v |]
     [| \v -> Point v|]
 
+newtype MultiPoint v srid = MultiPoint {
+    _mpPoints :: V.Vector (Point v srid)
+} deriving (Eq, Show)
+makeLenses ''MultiPoint
+
 newtype LinearRing v srid = LinearRing {_lrPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 makeLenses ''LinearRing
@@ -353,7 +360,7 @@ makeLenses ''TIN
 
 data Geometry v (srid::Nat)
     = GeoPoint (Point v srid)
-    | GeoMultiPoint (V.Vector (Point v srid))
+    | GeoMultiPoint (MultiPoint v srid)
     | GeoLineString (LineString v srid)
     | GeoMultiLineString (V.Vector (LineString v srid))
     | GeoPolygon (Polygon v srid)

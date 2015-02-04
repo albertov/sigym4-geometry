@@ -28,6 +28,10 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Point v srid) where
     Extent{eMin=l, eMax=h} `contains` (Point v)
       = (fmap (>= 0) (v - l) == pure True) && (fmap (>= 0) (h - v) == pure True)
 
+instance VectorSpace v =>
+  HasPredicates (Extent v srid) (MultiPoint v srid) where
+    ext `contains` (MultiPoint ps) = V.all (contains ext) ps
+
 instance VectorSpace v => HasPredicates (Point v srid) (Extent v srid) where
     (Point v) `contains` (Extent lo hi) = v==lo && v==hi
 
@@ -60,16 +64,16 @@ instance VectorSpace v => HasPredicates (Extent v srid) (TIN v srid) where
     ext `contains` (TIN ts) = U.all (contains ext) ts
 
 instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
-    ext `contains` (GeoPoint g) = ext `contains` g
-    ext `contains` (GeoMultiPoint g) = V.all (contains ext) g
-    ext `contains` (GeoLineString g) = ext `contains` g
-    ext `contains` (GeoMultiLineString g) = V.all (contains ext) g
-    ext `contains` (GeoPolygon g) = ext `contains` g
-    ext `contains` (GeoMultiPolygon g) = ext `contains` g
-    ext `contains` (GeoTriangle g) = ext `contains` g
+    ext `contains` (GeoPoint g)             = ext `contains` g
+    ext `contains` (GeoMultiPoint g)        = ext `contains` g
+    ext `contains` (GeoLineString g)        = ext `contains` g
+    ext `contains` (GeoMultiLineString g)   = V.all (contains ext) g
+    ext `contains` (GeoPolygon g)           = ext `contains` g
+    ext `contains` (GeoMultiPolygon g)      = ext `contains` g
+    ext `contains` (GeoTriangle g)          = ext `contains` g
     ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
-    ext `contains` (GeoTIN g) = ext `contains` g
-    ext `contains` (GeoCollection g) = V.all (contains ext) g
+    ext `contains` (GeoTIN g)               = ext `contains` g
+    ext `contains` (GeoCollection g)        = V.all (contains ext) g
 
 instance VectorSpace v => HasPredicates (Extent v srid) (Feature v srid d) where
     ext `contains`  f = ext `contains`  _fGeom f
@@ -100,6 +104,10 @@ class VectorSpace v => HasExtent a v srid | a->v, a->srid where
 instance VectorSpace v => HasExtent (Point v srid) v srid where
     extent (Point v) = Extent v v
 
+instance VectorSpace v => HasExtent (MultiPoint v srid) v srid where
+    extent = extentFromVector . V.convert . _mpPoints
+
+
 instance VectorSpace v => HasExtent (LinearRing v srid) v srid where
     extent = extentFromVector . V.convert . _lrPoints
 
@@ -126,7 +134,7 @@ instance VectorSpace v => HasExtent (TIN v srid) v srid where
 
 instance VectorSpace v => HasExtent (Geometry v srid) v srid where
     extent (GeoPoint g) = extent g
-    extent (GeoMultiPoint g) = extentFromVector g
+    extent (GeoMultiPoint g) = extent g
     extent (GeoLineString g) = extent g
     extent (GeoMultiLineString g) = extentFromVector g
     extent (GeoPolygon g) = extent g

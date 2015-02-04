@@ -53,6 +53,10 @@ instance Arbitrary (Vertex v) => Arbitrary (Point v srid) where
     arbitrary = fmap Point arbitrary
 
 instance (VectorSpace v, Arbitrary (Vertex v))
+  => Arbitrary (MultiPoint v srid) where
+    arbitrary = MultiPoint <$> fmap fromList (resized arbitrary)
+
+instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (LinearRing v srid) where
     arbitrary = do ps <- (++) <$> vector 3 <*> arbitrary
                    return . fromJust . mkLinearRing $ ps ++ [head ps]
@@ -94,7 +98,7 @@ instance (VectorSpace v, Arbitrary (Vertex v))
             lineString = GeoLineString <$> arbitrary
             polygon = GeoPolygon <$> arbitrary
             multiPolygon = GeoMultiPolygon <$> arbitrary
-            multiPoint = GeoMultiPoint <$> fmap fromList (resized arbitrary)
+            multiPoint = GeoMultiPoint <$> arbitrary
             multiLineString = GeoMultiLineString <$> fmap fromList (resized arbitrary)
             triangle = GeoTriangle <$> arbitrary
             tin = GeoTIN <$> arbitrary
