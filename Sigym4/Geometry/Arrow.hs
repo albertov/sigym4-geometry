@@ -16,7 +16,7 @@ import Control.Applicative ((<$>))
 import Control.Applicative (pure, (<$>), (<*>))
 #endif
 
-import Sigym4.Geometry.Types (Geometry, Feature(_fGeom))
+import Sigym4.Geometry.Types (Geometry, Feature, _fGeom)
 
 -- | A 'FeatureArrow' is an 'Arrow' that maps 'a's to 'b's which have an
 --   associated read-only 'Geometry' of type 't' and vertex 'v'

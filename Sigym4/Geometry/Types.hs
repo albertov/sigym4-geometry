@@ -25,8 +25,10 @@ module Sigym4.Geometry.Types (
   , TIN (..)
   , PolyhedralSurface (..)
   , GeometryCollection (..)
-  , Feature (..)
-  , FeatureCollection (..)
+  , Feature
+  , FeatureCollection
+  , FeatureT (..)
+  , FeatureCollectionT (..)
   , VectorSpace (..)
   , HasOffset (..)
   , Pixel (..)
@@ -436,18 +438,22 @@ vectorCoordinates :: VectorSpace v => U.Vector (Point v srid) -> [[Double]]
 vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data Feature v (srid::Nat) d = Feature {
-    _fGeom :: Geometry v srid
+data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
+    _fGeom :: g v srid
   , _fData :: d
   } deriving (Eq, Show)
-makeLenses ''Feature
+makeLenses ''FeatureT
 
-newtype FeatureCollection v (srid::Nat) d = FeatureCollection {
-    _fcFeatures :: [Feature v srid d]
+type Feature = FeatureT Geometry
+
+newtype FeatureCollectionT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = FeatureCollection {
+    _fcFeatures :: [FeatureT g v srid d]
 } deriving (Show)
-makeLenses ''FeatureCollection
+makeLenses ''FeatureCollectionT
 
-instance Monoid (FeatureCollection v srid d) where
+type FeatureCollection = FeatureCollectionT Geometry
+
+instance Monoid (FeatureCollectionT g v srid d) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
