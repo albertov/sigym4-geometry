@@ -10,6 +10,7 @@
            , RankNTypes
            , CPP
            , KindSignatures
+           , DeriveFunctor
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -441,14 +442,14 @@ vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
 data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
     _fGeom :: g v srid
   , _fData :: d
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Functor)
 makeLenses ''FeatureT
 
 type Feature = FeatureT Geometry
 
 newtype FeatureCollectionT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = FeatureCollection {
     _fcFeatures :: [FeatureT g v srid d]
-} deriving (Show)
+} deriving (Eq, Show, Functor)
 makeLenses ''FeatureCollectionT
 
 type FeatureCollection = FeatureCollectionT Geometry
@@ -457,6 +458,3 @@ instance Monoid (FeatureCollectionT g v srid d) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
-
-instance Functor (Feature v srid) where
-   fmap f (Feature g d) = Feature g (f d)
