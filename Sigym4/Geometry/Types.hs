@@ -44,6 +44,7 @@ module Sigym4.Geometry.Types (
   , mkGeoReference
   , pointOffset
   , grScalarSize
+  , scalarSize
   , grSize
   , grTransform
   , grForward
