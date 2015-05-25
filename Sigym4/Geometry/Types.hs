@@ -40,7 +40,7 @@ module Sigym4.Geometry.Types (
   , Extent (..)
   , GeoTransform (..)
   , northUpGeoTransform
-  , GeoReference
+  , GeoReference (..)
   , mkGeoReference
   , pointOffset
   , grScalarSize
