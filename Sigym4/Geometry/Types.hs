@@ -173,48 +173,63 @@ type ColumnMajor = 'ColumnMajor
 
 class HasOffset v (t :: OffsetType) where
     toOffset :: Size v -> Pixel v -> Maybe (Offset t)
+    unsafeToOffset :: Size v -> Pixel v -> Offset t
 
 instance HasOffset V2 RowMajor where
     toOffset s p
       | 0<=px && px < sx
-      , 0<=py && py < sy = Just (Offset o)
+      , 0<=py && py < sy = Just (unsafeToOffset s p)
       | otherwise        = Nothing
       where o  = py * sx + px
             V2 sx sy = unSize s
             V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
+    unsafeToOffset s p = Offset $ py * sx + px
+      where 
+            V2 sx sy = unSize s
+            V2 px py = fmap floor $ unPx p
+    {-# INLINE unsafeToOffset #-}
 
 instance HasOffset V2 ColumnMajor where
     toOffset s p
       | 0<=px && px < sx
-      , 0<=py && py < sy = Just (Offset o)
+      , 0<=py && py < sy = Just (unsafeToOffset s p)
       | otherwise        = Nothing
-      where o  = px * sy + py
-            V2 sx sy = unSize s
+      where V2 sx sy = unSize s
             V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
+    unsafeToOffset s p  = Offset $ px * sy + py
+      where V2 sx sy = unSize s
+            V2 px py = fmap floor $ unPx p
+    {-# INLINE unsafeToOffset #-}
 
 instance HasOffset V3 RowMajor where
     toOffset s p
       | 0<=px && px < sx
       , 0<=py && py < sy
-      , 0<=pz && pz < sz = Just (Offset o)
+      , 0<=pz && pz < sz = Just (unsafeToOffset s p)
       | otherwise        = Nothing
-      where o  = pz * sx * sy + py * sx + px
-            V3 sx sy sz = unSize s
+      where V3 sx sy sz = unSize s
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
+    unsafeToOffset s p  = Offset $ (pz * sx * sy) + (py * sx) + px
+      where V3 sx sy sz = unSize s
+            V3 px py pz = fmap floor $ unPx p
+    {-# INLINE unsafeToOffset #-}
 
 instance HasOffset V3 ColumnMajor where
     toOffset s p
       | 0<=px && px < sx
       , 0<=py && py < sy
-      , 0<=pz && pz < sz = Just (Offset o)
+      , 0<=pz && pz < sz = Just (unsafeToOffset s p)
       | otherwise        = Nothing
-      where o  = px * sz * sy + py * sz + pz
-            V3 sx sy sz = unSize s
+      where V3 sx sy sz = unSize s
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
+    unsafeToOffset s p = Offset $ (px * sz * sy) + (py * sz) + pz
+      where V3 sx sy sz = unSize s
+            V3 px py pz = fmap floor $ unPx p
+    {-# INLINE unsafeToOffset #-}
 
 type NoSrid = 0
 
@@ -323,6 +338,16 @@ derivingUnbox "Point"
     [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
     [| \v -> Point v|]
+
+derivingUnbox "Pixel"
+    [t| forall v. VectorSpace v => Pixel v -> Vertex v |]
+    [| \(Pixel v) -> v |]
+    [| \v -> Pixel v|]
+
+derivingUnbox "Offset"
+    [t| forall t. Offset (t :: OffsetType) -> Int |]
+    [| \(Offset o) -> o |]
+    [| \o -> Offset o|]
 
 newtype MultiPoint v srid = MultiPoint {
     _mpPoints :: V.Vector (Point v srid)
