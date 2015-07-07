@@ -11,6 +11,7 @@
            , CPP
            , KindSignatures
            , DeriveFunctor
+           , ScopedTypeVariables
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -39,6 +40,7 @@ module Sigym4.Geometry.Types (
   , ColumnMajor
   , Extent (..)
   , GeoTransform (..)
+  , Raster (..)
   , northUpGeoTransform
   , GeoReference (..)
   , mkGeoReference
@@ -58,6 +60,7 @@ module Sigym4.Geometry.Types (
   , polygonCoordinates
   , polygonRings
   , triangleCoordinates
+  , convertRasterOffsetType
 
   , gSrid
   , hasSrid
@@ -114,6 +117,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
 import qualified Data.Vector as V
+import qualified Data.Vector.Generic as GV
 import qualified Data.Vector.Unboxed as U
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
@@ -516,3 +520,20 @@ instance Monoid (FeatureCollectionT g v srid d) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
+
+data Raster vs (t :: OffsetType) srid v a
+  = Raster {
+      rGeoReference :: !(GeoReference vs srid)
+    , rData         :: !(v a)
+    } deriving (Eq, Show)
+
+convertRasterOffsetType
+  :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
+  => Raster vs t1 srid v a -> Raster vs t2 srid v a
+convertRasterOffsetType r = r {rData = GV.generate n go}
+  where go i = let px        = unsafeFromOffset s (Offset i :: Offset t2)
+                   Offset i' = unsafeToOffset s px :: Offset t1
+               in rd `GV.unsafeIndex` i'
+        s = grSize (rGeoReference r)
+        rd = rData r
+        n  = GV.length rd
