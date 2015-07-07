@@ -31,6 +31,9 @@ instance Arbitrary (Size V2) where
     Positive h <- arbitrary
     return $ Size $ V2 w h
 
+instance Arbitrary (Offset t) where
+  arbitrary = Offset . getNonNegative <$> arbitrary
+
 instance Arbitrary (Size V3) where
   arbitrary = do
     Positive w <- arbitrary

@@ -45,8 +45,6 @@ module Sigym4.Geometry.Types (
   , pointOffset
   , grScalarSize
   , scalarSize
-  , grSize
-  , grTransform
   , grForward
   , grBackward
 
@@ -172,23 +170,31 @@ type RowMajor = 'RowMajor
 type ColumnMajor = 'ColumnMajor
 
 class HasOffset v (t :: OffsetType) where
-    toOffset :: Size v -> Pixel v -> Maybe (Offset t)
+    toOffset   :: Size v -> Pixel v -> Maybe (Offset t)
+    fromOffset :: Size v -> Offset t -> Maybe (Pixel v)
     unsafeToOffset :: Size v -> Pixel v -> Offset t
+    unsafeFromOffset :: Size v -> Offset t -> Pixel v
 
 instance HasOffset V2 RowMajor where
     toOffset s p
       | 0<=px && px < sx
       , 0<=py && py < sy = Just (unsafeToOffset s p)
       | otherwise        = Nothing
-      where o  = py * sx + px
-            V2 sx sy = unSize s
+      where V2 sx sy = unSize s
             V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p = Offset $ py * sx + px
-      where 
-            V2 sx sy = unSize s
+      where V2 sx _  = unSize s
             V2 px py = fmap floor $ unPx p
     {-# INLINE unsafeToOffset #-}
+    fromOffset s@(Size (V2 sx sy)) o@(Offset o')
+      | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
+      | otherwise        = Nothing
+    {-# INLINE fromOffset #-}
+    unsafeFromOffset (Size (V2 sx _)) (Offset o)
+      = Pixel (V2 (fromIntegral px) (fromIntegral py))
+      where (py,px) =  o `divMod` sx
+    {-# INLINE unsafeFromOffset #-}
 
 instance HasOffset V2 ColumnMajor where
     toOffset s p
@@ -199,9 +205,17 @@ instance HasOffset V2 ColumnMajor where
             V2 px py = fmap floor $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p  = Offset $ px * sy + py
-      where V2 sx sy = unSize s
+      where V2 _ sy  = unSize s
             V2 px py = fmap floor $ unPx p
     {-# INLINE unsafeToOffset #-}
+    fromOffset s@(Size (V2 sx sy)) o@(Offset o')
+      | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
+      | otherwise        = Nothing
+    {-# INLINE fromOffset #-}
+    unsafeFromOffset (Size (V2 _ sy)) (Offset o)
+      = Pixel (V2 (fromIntegral px) (fromIntegral py))
+      where (px,py) =  o `divMod` sy
+    {-# INLINE unsafeFromOffset #-}
 
 instance HasOffset V3 RowMajor where
     toOffset s p
@@ -213,9 +227,18 @@ instance HasOffset V3 RowMajor where
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p  = Offset $ (pz * sx * sy) + (py * sx) + px
-      where V3 sx sy sz = unSize s
+      where V3 sx sy _  = unSize s
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE unsafeToOffset #-}
+    fromOffset s@(Size (V3 sx sy sz)) o@(Offset o')
+      | 0<=o' && o'<sx*sy*sz = Just (unsafeFromOffset  s o)
+      | otherwise            = Nothing
+    {-# INLINE fromOffset #-}
+    unsafeFromOffset (Size (V3 sx sy _)) (Offset o)
+      = Pixel (V3 (fromIntegral px) (fromIntegral py) (fromIntegral pz))
+      where (pz, r) =  o `divMod` (sx*sy)
+            (py,px) =  r `divMod` sx
+    {-# INLINE unsafeFromOffset #-}
 
 instance HasOffset V3 ColumnMajor where
     toOffset s p
@@ -227,9 +250,18 @@ instance HasOffset V3 ColumnMajor where
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p = Offset $ (px * sz * sy) + (py * sz) + pz
-      where V3 sx sy sz = unSize s
+      where V3 _  sy sz = unSize s
             V3 px py pz = fmap floor $ unPx p
     {-# INLINE unsafeToOffset #-}
+    fromOffset s@(Size (V3 sx sy sz)) o@(Offset o')
+      | 0<=o' && o'<sx*sy*sz = Just (unsafeFromOffset  s o)
+      | otherwise            = Nothing
+    {-# INLINE fromOffset #-}
+    unsafeFromOffset (Size (V3 _ sy sz)) (Offset o)
+      = Pixel (V3 (fromIntegral px) (fromIntegral py) (fromIntegral pz))
+      where (px, r) =  o `divMod` (sz*sy)
+            (py,pz) =  r `divMod` sz
+    {-# INLINE unsafeFromOffset #-}
 
 type NoSrid = 0
 
