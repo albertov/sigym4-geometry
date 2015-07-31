@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sigym4-geometry
-version:             0.3.3
+version:             0.3.4
 synopsis:            Geometry types for GIS applications.
 description:         Geometry types for GIS applications, algorithms and
                      de/serialization from/into well-known formats.

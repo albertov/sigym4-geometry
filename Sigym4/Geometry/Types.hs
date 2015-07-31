@@ -41,6 +41,7 @@ module Sigym4.Geometry.Types (
   , Extent (..)
   , GeoTransform (..)
   , Raster (..)
+  , indexRaster
   , northUpGeoTransform
   , GeoReference (..)
   , mkGeoReference
@@ -64,6 +65,7 @@ module Sigym4.Geometry.Types (
 
   , gSrid
   , hasSrid
+  , withSrid
 
   , eSize
 
@@ -455,6 +457,15 @@ makePrisms ''Geometry
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
 
+withSrid
+  :: Integer
+  -> (forall srid. KnownNat srid => Proxy srid -> a)
+  -> Maybe a
+withSrid srid f
+  = case someNatVal srid of
+      Just (SomeNat a) -> Just (f a)
+      Nothing          -> Nothing
+
 hasSrid :: KnownNat srid => Geometry v srid -> Bool
 hasSrid = (/= 0) . gSrid
 
@@ -526,6 +537,17 @@ data Raster vs (t :: OffsetType) srid v a
       rGeoReference :: !(GeoReference vs srid)
     , rData         :: !(v a)
     } deriving (Eq, Show)
+
+indexRaster
+  :: forall vs t srid v a. (GV.Vector v a, HasOffset vs t)
+  => Raster vs t srid v a -> Pixel vs -> Maybe a
+indexRaster raster px = fmap (GV.unsafeIndex arr . unOff) offset
+  where
+    offset :: Maybe (Offset t)
+    offset = toOffset (grSize (rGeoReference raster)) px
+    arr    = rData raster
+{-# INLINE indexRaster #-}
+
 
 convertRasterOffsetType
   :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
