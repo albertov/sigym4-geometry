@@ -41,8 +41,10 @@ module Sigym4.Geometry.Types (
   , Extent (..)
   , GeoTransform (..)
   , Raster (..)
-  , indexRaster
-  , unsafeIndexRaster
+  , rasterIndexPixel
+  , unsafeRasterIndexPixel
+  , rasterIndex
+  , unsafeRasterIndex
   , northUpGeoTransform
   , GeoReference (..)
   , mkGeoReference
@@ -546,21 +548,38 @@ data Raster vs (t :: OffsetType) srid v a
     , rData         :: !(v a)
     } deriving (Eq, Show)
 
-indexRaster
+rasterIndex
   :: forall vs t srid v a. (HasOffset vs t)
   => Raster vs t srid v a -> Point vs srid -> Maybe Int
-indexRaster r p = fmap unOff offset
+rasterIndex r p = fmap unOff offset
   where
     offset = pointOffset (rGeoReference r) p :: Maybe (Offset t)
-{-# INLINE indexRaster #-}
+{-# INLINE rasterIndex #-}
 
-unsafeIndexRaster
+unsafeRasterIndex
   :: forall vs t srid v a. (HasOffset vs t)
   => Raster vs t srid v a -> Point vs srid -> Int
-unsafeIndexRaster r p = unOff offset
+unsafeRasterIndex r p = unOff offset
   where
     offset = unsafePointOffset (rGeoReference r) p :: Offset t
-{-# INLINE unsafeIndexRaster #-}
+{-# INLINE unsafeRasterIndex #-}
+
+rasterIndexPixel
+  :: forall vs t srid v a. (HasOffset vs t)
+  => Raster vs t srid v a -> Pixel vs -> Maybe Int
+rasterIndexPixel r px = fmap unOff offset
+  where
+    offset = toOffset (grSize (rGeoReference r)) px :: Maybe  (Offset t)
+{-# INLINE rasterIndexPixel #-}
+
+unsafeRasterIndexPixel
+  :: forall vs t srid v a. (HasOffset vs t)
+  => Raster vs t srid v a -> Pixel vs -> Int
+unsafeRasterIndexPixel r px = unOff offset
+  where
+    offset = unsafeToOffset (grSize (rGeoReference r)) px :: Offset t
+{-# INLINE unsafeRasterIndexPixel #-}
+
 
 convertRasterOffsetType
   :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
