@@ -45,10 +45,13 @@ module Sigym4.Geometry.Types (
   , GeoReference (..)
   , mkGeoReference
   , pointOffset
+  , unsafePointOffset
   , grScalarSize
   , scalarSize
   , grForward
   , grBackward
+  , rasterIndex
+  , unsafeRasterIndex
 
   , mkLineString
   , mkLinearRing
@@ -173,7 +176,7 @@ data OffsetType = RowMajor | ColumnMajor
 type RowMajor = 'RowMajor
 type ColumnMajor = 'ColumnMajor
 
-class HasOffset v (t :: OffsetType) where
+class VectorSpace v => HasOffset v (t :: OffsetType) where
     toOffset   :: Size v -> Pixel v -> Maybe (Offset t)
     fromOffset :: Size v -> Offset t -> Maybe (Pixel v)
     unsafeToOffset :: Size v -> Pixel v -> Offset t
@@ -349,6 +352,12 @@ pointOffset :: (HasOffset v t, VectorSpace v)
   => GeoReference v srid -> Point v srid -> Maybe (Offset t)
 pointOffset gr =  toOffset (grSize gr) . grForward gr
 {-# INLINEABLE pointOffset #-}
+
+unsafePointOffset :: (HasOffset v t, VectorSpace v)
+  => GeoReference v srid -> Point v srid -> Offset t
+unsafePointOffset gr =  unsafeToOffset (grSize gr) . grForward gr
+{-# INLINEABLE unsafePointOffset #-}
+
 
 grForward :: VectorSpace v => GeoReference v srid -> Point v srid -> Pixel v
 grForward gr = gtForward (grTransform gr)
@@ -526,6 +535,22 @@ data Raster vs (t :: OffsetType) srid v a
       rGeoReference :: !(GeoReference vs srid)
     , rData         :: !(v a)
     } deriving (Eq, Show)
+
+rasterIndex
+  :: forall vs t srid v a. (HasOffset vs t)
+  => Raster vs t srid v a -> Point vs srid -> Maybe Int
+rasterIndex r p = fmap unOff offset
+  where
+    offset = pointOffset (rGeoReference r) p :: Maybe (Offset t)
+{-# INLINE rasterIndex #-}
+
+unsafeRasterIndex
+  :: forall vs t srid v a. (HasOffset vs t)
+  => Raster vs t srid v a -> Point vs srid -> Int
+unsafeRasterIndex r p = unOff offset
+  where
+    offset = unsafePointOffset (rGeoReference r) p :: Offset t
+{-# INLINE unsafeRasterIndex #-}
 
 convertRasterOffsetType
   :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
