@@ -41,6 +41,8 @@ module Sigym4.Geometry.Types (
   , Extent (..)
   , GeoTransform (..)
   , Raster (..)
+  , indexRaster
+  , unsafeIndexRaster
   , northUpGeoTransform
   , GeoReference (..)
   , mkGeoReference
@@ -50,8 +52,6 @@ module Sigym4.Geometry.Types (
   , scalarSize
   , grForward
   , grBackward
-  , rasterIndex
-  , unsafeRasterIndex
 
   , mkLineString
   , mkLinearRing
@@ -67,6 +67,7 @@ module Sigym4.Geometry.Types (
 
   , gSrid
   , hasSrid
+  , withSrid
 
   , eSize
 
@@ -464,6 +465,15 @@ makePrisms ''Geometry
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
 
+withSrid
+  :: Integer
+  -> (forall srid. KnownNat srid => Proxy srid -> a)
+  -> Maybe a
+withSrid srid f
+  = case someNatVal srid of
+      Just (SomeNat a) -> Just (f a)
+      Nothing          -> Nothing
+
 hasSrid :: KnownNat srid => Geometry v srid -> Bool
 hasSrid = (/= 0) . gSrid
 
@@ -536,21 +546,21 @@ data Raster vs (t :: OffsetType) srid v a
     , rData         :: !(v a)
     } deriving (Eq, Show)
 
-rasterIndex
+indexRaster
   :: forall vs t srid v a. (HasOffset vs t)
   => Raster vs t srid v a -> Point vs srid -> Maybe Int
-rasterIndex r p = fmap unOff offset
+indexRaster r p = fmap unOff offset
   where
     offset = pointOffset (rGeoReference r) p :: Maybe (Offset t)
-{-# INLINE rasterIndex #-}
+{-# INLINE indexRaster #-}
 
-unsafeRasterIndex
+unsafeIndexRaster
   :: forall vs t srid v a. (HasOffset vs t)
   => Raster vs t srid v a -> Point vs srid -> Int
-unsafeRasterIndex r p = unOff offset
+unsafeIndexRaster r p = unOff offset
   where
     offset = unsafePointOffset (rGeoReference r) p :: Offset t
-{-# INLINE unsafeRasterIndex #-}
+{-# INLINE unsafeIndexRaster #-}
 
 convertRasterOffsetType
   :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
