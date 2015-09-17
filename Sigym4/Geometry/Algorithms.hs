@@ -22,52 +22,59 @@ import qualified Linear.Metric as M
 
 
 class HasPredicates a b where
-    contains :: a -> b -> Bool
+    contains :: (VectorSpace v, KnownNat srid) => a v srid -> b v srid -> Bool
 
-instance VectorSpace v => HasPredicates (Extent v srid) (Point v srid) where
+instance HasPredicates Extent Point where
     Extent{eMin=l, eMax=h} `contains` (Point v)
       = (fmap (>= 0) (v - l) == pure True) && (fmap (>= 0) (h - v) == pure True)
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (MultiPoint v srid) where
+instance HasPredicates Extent MultiPoint where
     ext `contains` (MultiPoint ps) = V.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Point v srid) (Extent v srid) where
+instance HasPredicates Point Extent where
     (Point v) `contains` (Extent lo hi) = v==lo && v==hi
+    {-# INLINABLE contains #-}
 
 
-instance VectorSpace v => HasPredicates (Extent v srid) (LinearRing v srid)
+instance HasPredicates Extent LinearRing
   where
     ext `contains` (LinearRing ps) = U.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (LineString v srid)
+instance HasPredicates Extent LineString
   where
     ext `contains` (LineString ps) = U.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (MultiLineString v srid) where
+instance HasPredicates Extent MultiLineString where
     ext `contains` (MultiLineString ps) = V.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (Polygon v srid) where
+instance HasPredicates Extent Polygon where
     ext `contains` (Polygon oRing _) = ext `contains` oRing
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (Triangle v srid) where
+instance HasPredicates Extent Triangle where
     ext `contains` (Triangle a b c) = ext `contains` a &&
                                       ext `contains` b &&
                                       ext `contains` c
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (MultiPolygon v srid) where
+instance HasPredicates Extent MultiPolygon where
     ext `contains` (MultiPolygon ps) = V.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (PolyhedralSurface v srid) where
+instance HasPredicates Extent PolyhedralSurface where
     ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (TIN v srid) where
+instance HasPredicates Extent TIN where
     ext `contains` (TIN ts) = U.all (contains ext) ts
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
+instance HasPredicates Extent Geometry where
     ext `contains` (GeoPoint g)             = ext `contains` g
     ext `contains` (GeoMultiPoint g)        = ext `contains` g
     ext `contains` (GeoLineString g)        = ext `contains` g
@@ -78,72 +85,79 @@ instance VectorSpace v => HasPredicates (Extent v srid) (Geometry v srid) where
     ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
     ext `contains` (GeoTIN g)               = ext `contains` g
     ext `contains` (GeoCollection g)        = ext `contains` g
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (GeometryCollection v srid) where
+instance HasPredicates Extent GeometryCollection where
     ext `contains` (GeometryCollection ps) = V.all (contains ext) ps
+    {-# INLINABLE contains #-}
 
-instance VectorSpace v => HasPredicates (Extent v srid) (Feature v srid d) where
-    ext `contains`  f = ext `contains`  _fGeom f
+class HasCentroid a where
+    centroid :: (VectorSpace v, KnownNat srid) => a v srid -> Point v srid
 
-instance VectorSpace v =>
-  HasPredicates (Extent v srid) (FeatureCollection v srid d) where
-    ext `contains` fc = all (contains ext) $ _fcFeatures fc
-
-class VectorSpace v => HasCentroid a v srid where
-    centroid :: a -> Point v srid
-
-instance VectorSpace v => HasCentroid (Point v srid) v srid where
+instance HasCentroid Point where
     centroid = id
+    {-# INLINABLE centroid #-}
 
-instance VectorSpace v => HasCentroid (Extent v srid) v srid where
+instance HasCentroid Extent where
     centroid e = Point $ eMin e + (eSize e / 2)
+    {-# INLINABLE centroid #-}
 
 
 class HasDistance a b where
-    distance :: a -> b -> Double
+    distance :: (VectorSpace v, KnownNat srid) => a v srid -> b v srid -> Double
 
-instance VectorSpace v => HasDistance (Point v srid) (Point v srid) where
+instance HasDistance Point Point where
     distance (Point a) (Point b) = M.distance a b
+    {-# INLINABLE distance #-}
 
-class VectorSpace v => HasExtent a v srid | a->v, a->srid where
-    extent :: a -> Extent v srid
+class HasExtent a where
+    extent :: (VectorSpace v, KnownNat srid) => a v srid -> Extent v srid
 
-instance VectorSpace v => HasExtent (Point v srid) v srid where
+instance HasExtent Point where
     extent (Point v) = Extent v v
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (MultiPoint v srid) v srid where
+instance HasExtent MultiPoint where
     extent = extentFromVector . V.convert . _mpPoints
+    {-# INLINABLE extent #-}
 
 
-instance VectorSpace v => HasExtent (LinearRing v srid) v srid where
+instance HasExtent LinearRing where
     extent = extentFromVector . V.convert . _lrPoints
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (LineString v srid) v srid where
+instance HasExtent LineString where
     extent = extentFromVector . V.convert . _lsPoints
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (MultiLineString v srid) v srid where
+instance HasExtent MultiLineString where
     extent = extentFromVector . _mlLineStrings
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (Polygon v srid) v srid where
+instance HasExtent Polygon where
     extent = extent . _pOuterRing
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (Triangle v srid) v srid where
+instance HasExtent Triangle where
     extent (Triangle a b c) = a' SG.<> b' SG.<> c'
         where a' = extent a
               b' = extent b
               c' = extent c
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (MultiPolygon v srid) v srid where
+instance HasExtent MultiPolygon where
     extent = extentFromVector . _mpPolygons
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (PolyhedralSurface v srid) v srid where
+instance HasExtent PolyhedralSurface where
     extent = extentFromVector . _psPolygons
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (TIN v srid) v srid where
+instance HasExtent TIN where
     extent = extentFromVector . V.convert . _tinTriangles
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (Geometry v srid) v srid where
+instance HasExtent Geometry where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extent g
     extent (GeoLineString g) = extent g
@@ -154,16 +168,15 @@ instance VectorSpace v => HasExtent (Geometry v srid) v srid where
     extent (GeoPolyhedralSurface g) = extent g
     extent (GeoTIN g) = extent g
     extent (GeoCollection g) = extent g
+    {-# INLINABLE extent #-}
 
-instance VectorSpace v => HasExtent (GeometryCollection v srid) v srid where
+instance HasExtent GeometryCollection where
     extent = extentFromVector . _gcGeometries
+    {-# INLINABLE extent #-}
 
-extentFromVector :: (HasExtent a v srid, VectorSpace v) => V.Vector a -> Extent v srid
+extentFromVector
+  :: (HasExtent a, VectorSpace v, KnownNat srid)
+  => V.Vector (a v srid) -> Extent v srid
 extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)
-    where es = V.map extent v
-
-instance VectorSpace v => HasExtent (Feature v srid d) v srid where
-    extent = extent . _fGeom
-
-instance VectorSpace v => HasExtent (FeatureCollection v srid d) v srid where
-    extent = extentFromVector . V.map _fGeom . V.fromList . _fcFeatures
+  where es = V.map extent v
+{-# INLINE extentFromVector #-}
