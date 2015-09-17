@@ -120,6 +120,7 @@ import Data.Monoid (Monoid(..))
 import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Maybe (fromMaybe)
+import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
 import qualified Data.Vector as V
@@ -377,6 +378,7 @@ mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
 deriving instance VectorSpace v => Show (Point v srid)
 deriving instance VectorSpace v => Eq (Point v srid)
+deriving instance Hashable (v Double) => Hashable (Point v srid)
 
 pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
