@@ -283,6 +283,8 @@ data Extent v (srid :: Nat) = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
 deriving instance VectorSpace v => Eq (Extent v srid)
 deriving instance VectorSpace v => Show (Extent v srid)
 
+
+
 eSize :: VectorSpace v => Extent v srid -> Vertex v
 eSize e = eMax e - eMin e
 

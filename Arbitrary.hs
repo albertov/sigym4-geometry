@@ -18,6 +18,7 @@ import Data.Vector (fromList)
 import qualified Data.Vector.Unboxed as U
 
 import Sigym4.Geometry
+import Sigym4.Geometry.QuadTree
 
 instance Arbitrary t => Arbitrary (V2 t) where
   arbitrary = V2 <$> arbitrary <*> arbitrary
@@ -115,6 +116,9 @@ instance (VectorSpace v, Arbitrary (Vertex v))
                          , multiPoint, multiLineString, multiPolygon
                          , triangle, psurface, tin
                          ]
+
+instance Arbitrary Quadrant where
+  arbitrary = elements [minBound..maxBound]
 
 resized :: Gen a -> Gen a
 resized = resize 15

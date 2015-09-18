@@ -30,6 +30,7 @@ library
                     , Sigym4.Geometry.Json
                     , Sigym4.Geometry.Arrow
                     , Sigym4.Geometry.Rasterize
+                    , Sigym4.Geometry.QuadTree
   build-depends:       base     >= 4.6 && <5
                      , linear   >= 1.10
                      , lens

@@ -2,6 +2,8 @@
            , RankNTypes
            , FlexibleContexts
            , FlexibleInstances
+           , KindSignatures
+           , DataKinds
            , CPP
            #-}
 module Sigym4.Geometry.Algorithms (
@@ -22,11 +24,16 @@ import qualified Linear.Metric as M
 
 
 class HasPredicates a b where
-    contains :: (VectorSpace v, KnownNat srid) => a v srid -> b v srid -> Bool
+    contains :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
 
 instance HasPredicates Extent Point where
     Extent{eMin=l, eMax=h} `contains` (Point v)
       = (fmap (>= 0) (v - l) == pure True) && (fmap (>= 0) (h - v) == pure True)
+    {-# INLINABLE contains #-}
+
+instance HasPredicates Extent Extent where
+    Extent{eMin=l1, eMax=h1} `contains` Extent{eMin=l2, eMax=h2}
+      = (fmap (>= 0) (l2 - l1) == pure True) && (fmap (>= 0) (h1 - h2) == pure True)
     {-# INLINABLE contains #-}
 
 instance HasPredicates Extent MultiPoint where
@@ -92,7 +99,7 @@ instance HasPredicates Extent GeometryCollection where
     {-# INLINABLE contains #-}
 
 class HasCentroid a where
-    centroid :: (VectorSpace v, KnownNat srid) => a v srid -> Point v srid
+    centroid :: (VectorSpace v) => a v (srid::Nat) -> Point v (srid::Nat)
 
 instance HasCentroid Point where
     centroid = id
@@ -104,14 +111,14 @@ instance HasCentroid Extent where
 
 
 class HasDistance a b where
-    distance :: (VectorSpace v, KnownNat srid) => a v srid -> b v srid -> Double
+    distance :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Double
 
 instance HasDistance Point Point where
     distance (Point a) (Point b) = M.distance a b
     {-# INLINABLE distance #-}
 
 class HasExtent a where
-    extent :: (VectorSpace v, KnownNat srid) => a v srid -> Extent v srid
+    extent :: (VectorSpace v) => a v (srid::Nat) -> Extent v (srid::Nat)
 
 instance HasExtent Point where
     extent (Point v) = Extent v v
@@ -175,8 +182,8 @@ instance HasExtent GeometryCollection where
     {-# INLINABLE extent #-}
 
 extentFromVector
-  :: (HasExtent a, VectorSpace v, KnownNat srid)
-  => V.Vector (a v srid) -> Extent v srid
+  :: (HasExtent a, VectorSpace v)
+  => V.Vector (a v (srid::Nat)) -> Extent v (srid::Nat)
 extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)
   where es = V.map extent v
 {-# INLINE extentFromVector #-}
