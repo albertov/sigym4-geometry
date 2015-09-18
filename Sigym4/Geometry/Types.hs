@@ -126,6 +126,7 @@ import Data.Foldable (product)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as GV
 import qualified Data.Vector.Unboxed as U
+import Foreign.Storable (Storable)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
@@ -379,6 +380,7 @@ newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
 deriving instance VectorSpace v => Show (Point v srid)
 deriving instance VectorSpace v => Eq (Point v srid)
 deriving instance Hashable (v Double) => Hashable (Point v srid)
+deriving instance Storable (v Double) => Storable (Point v srid)
 
 pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
@@ -388,6 +390,11 @@ derivingUnbox "Point"
     [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
     [| \v -> Point v|]
+
+derivingUnbox "Extent"
+    [t| forall v srid. VectorSpace v => Extent v srid -> (Vertex v,Vertex v) |]
+    [| \(Extent e0 e1) -> (e0,e1) |]
+    [| \(e0,e1) -> Extent e0 e1 |]
 
 derivingUnbox "Pixel"
     [t| forall v. VectorSpace v => Pixel v -> Vertex v |]
@@ -531,6 +538,12 @@ data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
 makeLenses ''FeatureT
 
 type Feature = FeatureT Geometry
+
+derivingUnbox "PointFeature"
+    [t| forall v srid a. (VectorSpace v, U.Unbox a)
+        => FeatureT Point v srid a -> (Point v srid, a) |]
+    [| \(Feature p v) -> (p,v) |]
+    [| \(p,v) -> Feature p v|]
 
 newtype FeatureCollectionT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = FeatureCollection {
     _fcFeatures :: [FeatureT g v srid d]
