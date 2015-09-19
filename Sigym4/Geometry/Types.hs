@@ -147,7 +147,7 @@ class ( Num (Vertex v), Fractional (Vertex v)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v)
   => VectorSpace v where
-    inv :: SqMatrix v -> Maybe (SqMatrix v)
+    inv :: SqMatrix v -> SqMatrix v
     dim :: Proxy v -> Int
     coords :: Vertex v -> [Double]
     fromCoords :: [Double] -> Maybe (Vertex v)
@@ -333,8 +333,7 @@ northUpGeoTransform e s
 
 gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
-  where m   = fromMaybe (error "gtForward. non-inversible matrix")
-                        (inv $ gtMatrix gt)
+  where m   = inv (gtMatrix gt)
         v0  = gtOrigin gt
 
 
