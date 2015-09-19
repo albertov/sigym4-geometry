@@ -84,6 +84,8 @@ benchmark bench
                    , mtl
                    , semigroups
                    , lens
+                   , hashable
+                   , transformers
                    , criterion
                    , linear
                    , vector-th-unbox
