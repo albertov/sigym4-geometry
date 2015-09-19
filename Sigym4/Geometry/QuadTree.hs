@@ -1,5 +1,4 @@
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
 
@@ -51,8 +50,7 @@ data Node (srid :: Nat) a
          }
   deriving (Eq, Show, Functor)
 
-lookupPoint
-  :: QuadTree srid a -> Point V2 srid -> Maybe a
+lookupPoint :: QuadTree srid a -> Point V2 srid -> Maybe a
 lookupPoint qt p = go (qtRoot qt) (qtExtent qt)
   where
     go Nil _ = Nothing
@@ -69,36 +67,41 @@ lookupPoint qt p = go (qtRoot qt) (qtExtent qt)
       | innerExtent SouthWest ext `contains` p
       = go (qSW node) (innerExtent SouthWest ext)
       | otherwise = Nothing
+{-# INLINE lookupPoint #-}
 
 
 type GenFunc srid a = (Quadrant -> Extent V2 srid -> a -> Maybe a)
 type GenFuncM m srid a = (Quadrant -> Extent V2 srid -> a -> m (Maybe a))
 
 generate
-  :: Eq a
-  => GenFunc srid a
-  -> Extent V2 srid -> a -> QuadTree srid a
-generate func ext = runIdentity . generateM (\q e -> return . func q e) ext
+  :: GenFunc srid a -> (a -> a -> Bool) -> Extent V2 srid -> a
+  -> QuadTree srid a
+generate func eq ext
+  = runIdentity . generateM (\q e -> return . func q e) eq ext
+{-# INLINE generate #-}
 
 grow
-  :: Eq a
-  => GenFunc srid a -> QuadTree srid a -> Quadrant -> a -> QuadTree srid a
-grow func tree dir = runIdentity . growM (\q e -> return . func q e) tree dir
+  :: GenFunc srid a -> (a -> a -> Bool) -> QuadTree srid a -> Quadrant -> a
+  -> QuadTree srid a
+grow func eq tree dir
+  = runIdentity . growM (\q e -> return . func q e) eq tree dir
+{-# INLINE grow #-}
 
 
 generateM
-  :: (Monad m, Eq a)
-  => GenFuncM m srid a
+  :: Monad m
+  => GenFuncM m srid a -> (a -> a -> Bool)
   -> Extent V2 srid -> a -> m (QuadTree srid a)
-generateM func initialExt
-  = liftM (flip QuadTree initialExt) . genNodeM func initialExt
+generateM func eq initialExt
+  = liftM (flip QuadTree initialExt) . genNodeM func eq initialExt
+{-# INLINE generateM #-}
 
 genNodeM
-  :: forall m srid a. (Eq a, Monad m)
-  => GenFuncM m srid a -> Extent V2 srid -> a -> m (Node srid a)
-genNodeM func = go
+  :: Monad m
+  => GenFuncM m srid a -> (a -> a -> Bool) -> Extent V2 srid -> a
+  -> m (Node srid a)
+genNodeM func eq = go
   where
-    go :: Extent V2 srid -> a -> m (Node srid a)
     go ext a = liftM (fromMaybe Nil) $ runMaybeT $ do
           let nwext = innerExtent NorthWest ext
               neext = innerExtent NorthEast ext
@@ -108,16 +111,18 @@ genNodeM func = go
           ne <- MaybeT $ func NorthEast neext a
           sw <- MaybeT $ func SouthWest swext a
           se <- MaybeT $ func SouthEast seext a
-          if nw==ne && ne==sw && sw==se
+          if nw `eq` ne && ne `eq` sw && sw `eq` se
             then return (Leaf nw)
             else lift $ liftM4 Node
                   (go nwext nw) (go neext ne) (go swext sw) (go seext se)
+{-# INLINE genNodeM #-}
 
 growM
-  :: (Eq a, Monad m)
-  => GenFuncM m srid a -> QuadTree srid a -> Quadrant -> a
+  :: Monad m
+  => GenFuncM m srid a -> (a -> a -> Bool) -> QuadTree srid a -> Quadrant -> a
   -> m (QuadTree srid a)
-growM func (QuadTree oldRoot ext) dir val = liftM (flip QuadTree newExt) newRoot
+growM func eq (QuadTree oldRoot ext) dir val
+  = liftM (flip QuadTree newExt) newRoot
   where
     oldRoot' = return oldRoot
     newRoot
@@ -131,7 +136,8 @@ growM func (QuadTree oldRoot ext) dir val = liftM (flip QuadTree newExt) newRoot
           SouthEast ->
             liftM4 Node (gen NorthWest) (gen NorthEast) (gen SouthWest) oldRoot'
     newExt  = outerExtent dir ext
-    gen dir' = genNodeM func (innerExtent dir' newExt) val
+    gen dir' = genNodeM func eq (innerExtent dir' newExt) val
+{-# INLINE growM #-}
 
 
 innerExtent :: Quadrant -> Extent V2 srid -> Extent V2 srid
@@ -142,6 +148,7 @@ innerExtent q (Extent (V2 x0 y0) (V2 x1 y1))
       SouthWest -> Extent (V2 x0      y0   ) (V2 (x0+w) (y0+h))
       SouthEast -> Extent (V2 (x0+w)  y0   ) (V2 x1     (y0+h))
   where w = (x1-x0)/2; h = (y1-y0)/2
+{-# INLINE innerExtent #-}
 
 outerExtent :: Quadrant -> Extent V2 srid -> Extent V2 srid
 outerExtent q (Extent (V2 x0 y0) (V2 x1 y1))
@@ -151,3 +158,4 @@ outerExtent q (Extent (V2 x0 y0) (V2 x1 y1))
       SouthWest -> Extent (V2 x0      y0   ) (V2 (x1+w) (y1+h))
       SouthEast -> Extent (V2 (x0-w)  y0   ) (V2 x1     (y1+h))
   where w = (x1-x0); h = (y1-y0)
+{-# INLINE outerExtent #-}
