@@ -119,7 +119,6 @@ import Data.Monoid (Monoid(..))
 #endif
 import Control.Lens
 import Data.Proxy (Proxy(..))
-import Data.Maybe (fromMaybe)
 import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)

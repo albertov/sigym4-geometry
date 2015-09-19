@@ -44,6 +44,7 @@ library
                      , binary
                      , aeson
                      , semigroups
+                     , transformers
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -fwarn-incomplete-patterns
@@ -68,6 +69,7 @@ test-suite main
                    , QuickCheck
                    , aeson
                    , text
+                   , transformers
   hs-source-dirs:    tests .
   main-is:           Spec.hs
   default-language:  Haskell2010

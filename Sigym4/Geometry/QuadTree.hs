@@ -9,6 +9,10 @@ module Sigym4.Geometry.QuadTree (
 
   , generate
   , grow
+
+  , generateM
+  , growM
+
   , lookupPoint
   , qtExtent
 
@@ -17,7 +21,12 @@ module Sigym4.Geometry.QuadTree (
   , outerExtent
 ) where
 
+
+import Control.Monad (liftM, liftM4)
+import Control.Monad.Trans.Maybe (MaybeT(..))
+import Control.Monad.Trans.Class (lift)
 import Data.Maybe (fromMaybe)
+import Data.Functor.Identity (runIdentity)
 
 import Sigym4.Geometry (Nat, Extent(..), Point, V2(..))
 import Sigym4.Geometry.Algorithms (contains)
@@ -63,63 +72,66 @@ lookupPoint qt p = go (qtRoot qt) (qtExtent qt)
 
 
 type GenFunc srid a = (Quadrant -> Extent V2 srid -> a -> Maybe a)
+type GenFuncM m srid a = (Quadrant -> Extent V2 srid -> a -> m (Maybe a))
 
 generate
   :: Eq a
   => GenFunc srid a
   -> Extent V2 srid -> a -> QuadTree srid a
-generate func initialExt = flip QuadTree initialExt . genNode func initialExt
-
-genNode
-  :: forall srid a. Eq a
-  => GenFunc srid a -> Extent V2 srid -> a -> Node srid a
-genNode func = go
-  where
-    go :: Extent V2 srid -> a -> Node srid a
-    go ext a = fromMaybe Nil $ do
-          let nwext = innerExtent NorthWest ext
-              neext = innerExtent NorthEast ext
-              swext = innerExtent SouthWest ext
-              seext = innerExtent SouthEast ext
-          nw <- func NorthWest nwext a
-          ne <- func NorthEast neext a
-          sw <- func SouthWest swext a
-          se <- func SouthEast seext a
-          if nw==ne && ne==sw && sw==se
-            then return (Leaf nw)
-            else return Node { qNW = go nwext nw
-                             , qNE = go neext ne
-                             , qSW = go swext sw
-                             , qSE = go seext se
-                             }
+generate func ext = runIdentity . generateM (\q e -> return . func q e) ext
 
 grow
   :: Eq a
   => GenFunc srid a -> QuadTree srid a -> Quadrant -> a -> QuadTree srid a
-grow func (QuadTree oldRoot ext) dir val = QuadTree newRoot newExt
+grow func tree dir = runIdentity . growM (\q e -> return . func q e) tree dir
+
+
+generateM
+  :: (Monad m, Eq a)
+  => GenFuncM m srid a
+  -> Extent V2 srid -> a -> m (QuadTree srid a)
+generateM func initialExt
+  = liftM (flip QuadTree initialExt) . genNodeM func initialExt
+
+genNodeM
+  :: forall m srid a. (Eq a, Monad m)
+  => GenFuncM m srid a -> Extent V2 srid -> a -> m (Node srid a)
+genNodeM func = go
   where
-    newRoot = case dir of
-                NorthWest -> Node { qNW = oldRoot
-                                  , qNE = gen NorthEast
-                                  , qSE = gen SouthEast
-                                  , qSW = gen SouthWest}
+    go :: Extent V2 srid -> a -> m (Node srid a)
+    go ext a = liftM (fromMaybe Nil) $ runMaybeT $ do
+          let nwext = innerExtent NorthWest ext
+              neext = innerExtent NorthEast ext
+              swext = innerExtent SouthWest ext
+              seext = innerExtent SouthEast ext
+          nw <- MaybeT $ func NorthWest nwext a
+          ne <- MaybeT $ func NorthEast neext a
+          sw <- MaybeT $ func SouthWest swext a
+          se <- MaybeT $ func SouthEast seext a
+          if nw==ne && ne==sw && sw==se
+            then return (Leaf nw)
+            else lift $ liftM4 Node
+                  (go nwext nw) (go neext ne) (go swext sw) (go seext se)
 
-                NorthEast -> Node { qNW = gen NorthWest
-                                  , qNE = oldRoot
-                                  , qSE = gen SouthEast
-                                  , qSW = gen SouthWest}
-
-                SouthEast -> Node { qNW = gen NorthWest
-                                  , qNE = gen NorthEast
-                                  , qSE = oldRoot
-                                  , qSW = gen SouthWest}
-
-                SouthWest -> Node { qNW = gen NorthWest
-                                  , qNE = gen NorthEast
-                                  , qSE = gen SouthEast
-                                  , qSW = oldRoot}
+growM
+  :: (Eq a, Monad m)
+  => GenFuncM m srid a -> QuadTree srid a -> Quadrant -> a
+  -> m (QuadTree srid a)
+growM func (QuadTree oldRoot ext) dir val = liftM (flip QuadTree newExt) newRoot
+  where
+    oldRoot' = return oldRoot
+    newRoot
+      = case dir of
+          NorthWest ->
+            liftM4 Node oldRoot' (gen NorthEast) (gen SouthWest) (gen SouthEast)
+          NorthEast ->
+            liftM4 Node (gen NorthWest) oldRoot' (gen SouthWest) (gen SouthEast)
+          SouthWest ->
+            liftM4 Node (gen NorthWest) (gen NorthEast) oldRoot' (gen SouthEast)
+          SouthEast ->
+            liftM4 Node (gen NorthWest) (gen NorthEast) (gen SouthWest) oldRoot'
     newExt  = outerExtent dir ext
-    gen dir' = genNode func (innerExtent dir' newExt) val
+    gen dir' = genNodeM func (innerExtent dir' newExt) val
 
 
 innerExtent :: Quadrant -> Extent V2 srid -> Extent V2 srid
