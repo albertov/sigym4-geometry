@@ -5,14 +5,14 @@
 module Sigym4.Geometry.QuadTree (
     QuadTree
   , Quadrant (..)
+  , TreeBuilder (..)
 
   , generate
   , grow
 
-  , generateM
-  , growM
+  , lookupByPoint
+  , traceRay
 
-  , lookupPoint
   , qtExtent
 
   -- | internal (exposed for testing)
@@ -25,16 +25,15 @@ import Control.Monad (liftM, liftM4)
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (fromMaybe)
-import Data.Functor.Identity (runIdentity)
 
-import Sigym4.Geometry (Nat, Extent(..), Point, V2(..))
+import Sigym4.Geometry (Nat, Extent(..), Point(..), V2(..))
 import Sigym4.Geometry.Algorithms (contains)
 
 data QuadTree (srid :: Nat) a
   = QuadTree {
       qtRoot   :: Node srid a
     , qtExtent :: !(Extent V2 srid)
-  } deriving (Eq, Show, Functor)
+  } deriving (Show, Functor)
 
 data Quadrant = NorthWest | NorthEast | SouthWest | SouthEast
   deriving (Show, Eq, Enum, Bounded)
@@ -42,86 +41,40 @@ data Quadrant = NorthWest | NorthEast | SouthWest | SouthEast
 
 data Node (srid :: Nat) a
   = Leaf a
-  | Nil
-  | Node { qNW :: Node srid a
-         , qNE :: Node srid a
-         , qSW :: Node srid a
-         , qSE :: Node srid a
+  | Node { qNW     :: Node srid a
+         , qNE     :: Node srid a
+         , qSW     :: Node srid a
+         , qSE     :: Node srid a
          }
-  deriving (Eq, Show, Functor)
+  deriving (Show, Functor)
 
-lookupPoint :: QuadTree srid a -> Point V2 srid -> Maybe a
-lookupPoint qt p = go (qtRoot qt) (qtExtent qt)
-  where
-    go Nil _ = Nothing
-    go (Leaf v) ext
-      | ext `contains` p = Just v
-      | otherwise        = Nothing
-    go node ext
-      | innerExtent NorthWest ext `contains` p
-      = go (qNW node) (innerExtent NorthWest ext)
-      | innerExtent NorthEast ext `contains` p
-      = go (qNE node) (innerExtent NorthEast ext)
-      | innerExtent SouthEast ext `contains` p
-      = go (qSE node) (innerExtent SouthEast ext)
-      | innerExtent SouthWest ext `contains` p
-      = go (qSW node) (innerExtent SouthWest ext)
-      | otherwise = Nothing
-{-# INLINE lookupPoint #-}
-
-
-type GenFunc srid a = (Quadrant -> Extent V2 srid -> a -> Maybe a)
-type GenFuncM m srid a = (Quadrant -> Extent V2 srid -> a -> m (Maybe a))
+data TreeBuilder m (srid::Nat) a
+  = CreateLeaf a
+  | CreateNode (Extent V2 srid -> m (TreeBuilder m srid a))
 
 generate
-  :: GenFunc srid a -> (a -> a -> Bool) -> Extent V2 srid -> a
-  -> QuadTree srid a
-generate func eq ext
-  = runIdentity . generateM (\q e -> return . func q e) eq ext
-{-# INLINE generate #-}
+  :: Monad m
+  => TreeBuilder m srid a -> Extent V2 srid -> m (QuadTree srid a)
+generate build ext = liftM (flip QuadTree ext) (genNode ext build)
+
+genNode
+  :: Monad m
+  => Extent V2 srid -> TreeBuilder m srid a -> m (Node srid a)
+genNode _   (CreateLeaf v) = return (Leaf v)
+genNode ext (CreateNode f) = do
+  let nw = innerExtent NorthWest ext
+      ne = innerExtent NorthEast ext
+      sw = innerExtent SouthWest ext
+      se = innerExtent SouthEast ext
+  liftM4 Node (f nw >>= genNode nw)
+              (f ne >>= genNode ne)
+              (f sw >>= genNode sw)
+              (f se >>= genNode se)
 
 grow
-  :: GenFunc srid a -> (a -> a -> Bool) -> QuadTree srid a -> Quadrant -> a
-  -> QuadTree srid a
-grow func eq tree dir
-  = runIdentity . growM (\q e -> return . func q e) eq tree dir
-{-# INLINE grow #-}
-
-
-generateM
   :: Monad m
-  => GenFuncM m srid a -> (a -> a -> Bool)
-  -> Extent V2 srid -> a -> m (QuadTree srid a)
-generateM func eq initialExt
-  = liftM (flip QuadTree initialExt) . genNodeM func eq initialExt
-{-# INLINE generateM #-}
-
-genNodeM
-  :: Monad m
-  => GenFuncM m srid a -> (a -> a -> Bool) -> Extent V2 srid -> a
-  -> m (Node srid a)
-genNodeM func eq = go
-  where
-    go ext a = liftM (fromMaybe Nil) $ runMaybeT $ do
-          let nwext = innerExtent NorthWest ext
-              neext = innerExtent NorthEast ext
-              swext = innerExtent SouthWest ext
-              seext = innerExtent SouthEast ext
-          nw <- MaybeT $ func NorthWest nwext a
-          ne <- MaybeT $ func NorthEast neext a
-          sw <- MaybeT $ func SouthWest swext a
-          se <- MaybeT $ func SouthEast seext a
-          if nw `eq` ne && ne `eq` sw && sw `eq` se
-            then return (Leaf nw)
-            else lift $ liftM4 Node
-                  (go nwext nw) (go neext ne) (go swext sw) (go seext se)
-{-# INLINE genNodeM #-}
-
-growM
-  :: Monad m
-  => GenFuncM m srid a -> (a -> a -> Bool) -> QuadTree srid a -> Quadrant -> a
-  -> m (QuadTree srid a)
-growM func eq (QuadTree oldRoot ext) dir val
+  => TreeBuilder m srid a -> Quadrant -> QuadTree srid a -> m (QuadTree srid a)
+grow build dir (QuadTree oldRoot ext)
   = liftM (flip QuadTree newExt) newRoot
   where
     oldRoot' = return oldRoot
@@ -135,9 +88,54 @@ growM func eq (QuadTree oldRoot ext) dir val
             liftM4 Node (gen NorthWest) (gen NorthEast) oldRoot' (gen SouthEast)
           SouthEast ->
             liftM4 Node (gen NorthWest) (gen NorthEast) (gen SouthWest) oldRoot'
-    newExt  = outerExtent dir ext
-    gen dir' = genNodeM func eq (innerExtent dir' newExt) val
-{-# INLINE growM #-}
+    newExt   = outerExtent dir ext
+    gen dir' = genNode (innerExtent dir' newExt) build
+
+lookupByPoint :: QuadTree srid a -> Point V2 srid -> Maybe (a, Extent V2 srid)
+lookupByPoint qt p = go (qtRoot qt) (qtExtent qt)
+  where
+    go (Leaf v) ext
+      | ext `contains` p = Just (v,ext)
+      | otherwise        = Nothing
+    go node ext
+      | innerExtent NorthWest ext `contains` p
+      = go (qNW node) (innerExtent NorthWest ext)
+      | innerExtent NorthEast ext `contains` p
+      = go (qNE node) (innerExtent NorthEast ext)
+      | innerExtent SouthEast ext `contains` p
+      = go (qSE node) (innerExtent SouthEast ext)
+      | innerExtent SouthWest ext `contains` p
+      = go (qSW node) (innerExtent SouthWest ext)
+      | otherwise = Nothing
+{-# INLINE lookupByPoint #-}
+
+traceRay :: QuadTree srid a -> Point V2 srid -> Point V2 srid -> [a]
+traceRay qt from@(Point (V2 x0 y0)) to@(Point (V2 x1 y1))
+  = reverse (go from [])
+  where
+    go a ps
+      = case lookupByPoint qt a of
+          Nothing                           -> ps
+          Just (v, ext) | ext `contains` to -> v:ps
+          Just (v, ext@(Extent (V2 minx _) (V2 maxx _))) ->
+            let (xx, xy) = xIntersect a ext
+                (yx, yy) = yIntersect a ext
+                next
+                  | minx <= xx && xx < maxx = Point (V2 xx xy)
+                  | otherwise               = Point (V2 yx yy)
+            in go next (v:ps)
+    slope = (y1-y0) / (x1-x0)
+    epsilon = 1e-6
+    delta   = 1e-1
+    xIntersect (Point (V2 x y)) (Extent (V2 _ miny) (V2 _ maxy))
+      | abs(x1-x0) < epsilon = (x, y')
+      | otherwise            = (x + ((y' - y) / slope), y')
+      where y' = if y1>y0 then maxy else miny-delta
+    yIntersect (Point (V2 x y)) (Extent (V2 minx _) (V2 maxx _))
+      | abs(y1-y0) < epsilon = (x', y)
+      | otherwise            = (x', y + ((x' - x) * slope))
+      where x' = if x1>x0 then maxx else minx-delta
+{-# INLINE traceRay #-}
 
 
 innerExtent :: Quadrant -> Extent V2 srid -> Extent V2 srid

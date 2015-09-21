@@ -28,7 +28,7 @@ class HasPredicates a b where
 
 instance HasPredicates Extent Point where
     Extent{eMin=l, eMax=h} `contains` (Point v)
-      = (fmap (>= 0) (v - l) == pure True) && (fmap (>= 0) (h - v) == pure True)
+      = (fmap (>= 0) (v - l) == pure True) && (fmap (> 0) (h - v) == pure True)
     {-# INLINABLE contains #-}
 
 instance HasPredicates Extent Extent where
