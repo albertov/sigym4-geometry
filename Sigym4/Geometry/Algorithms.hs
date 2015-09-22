@@ -40,10 +40,6 @@ instance HasPredicates Extent MultiPoint where
     ext `contains` (MultiPoint ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Point Extent where
-    (Point v) `contains` (Extent lo hi) = v==lo && v==hi
-    {-# INLINABLE contains #-}
-
 
 instance HasPredicates Extent LinearRing
   where

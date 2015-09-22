@@ -117,8 +117,12 @@ instance (VectorSpace v, Arbitrary (Vertex v))
                          , triangle, psurface, tin
                          ]
 
-instance Arbitrary Quadrant where
+instance VectorSpace v => Arbitrary (Quadrant v) where
   arbitrary = elements [minBound..maxBound]
+
+instance Arbitrary Level where
+  arbitrary = Level <$> choose (lo,hi)
+    where Level lo = minBound; Level hi = maxBound
 
 resized :: Gen a -> Gen a
 resized = resize 15

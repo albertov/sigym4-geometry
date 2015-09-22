@@ -1,4 +1,6 @@
 {-# LANGUAGE StandaloneDeriving
+           , UndecidableInstances
+           , OverloadedLists
            , DataKinds
            , TypeFamilies
            , GeneralizedNewtypeDeriving
@@ -117,16 +119,20 @@ import Control.Applicative (Applicative, pure, (<$>), (<*>))
 import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
 #endif
+import Control.Monad (liftM)
 import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
+import Data.Maybe (fromJust)
 import qualified Data.Vector as V
-import qualified Data.Vector.Generic as GV
+import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Generic.Mutable as M
 import Foreign.Storable (Storable)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
+import Linear.V hiding (dim)
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.Matrix ((!*), (*!), inv22, inv33)
@@ -140,36 +146,114 @@ type Vertex v = v Double
 type SqMatrix v = v (Vertex v)
 
 -- | A vector space
-class ( Num (Vertex v), Fractional (Vertex v)
+class ( Num (Vertex v), Fractional (Vertex v), Dim (VsDim v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int), Eq (v Bool)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v)
   => VectorSpace v where
+    type VsDim v :: Nat
+
     inv :: SqMatrix v -> SqMatrix v
+
     dim :: Proxy v -> Int
-    coords :: Vertex v -> [Double]
-    fromCoords :: [Double] -> Maybe (Vertex v)
+    dim = const (reflectDim (Proxy :: Proxy (VsDim v)))
+    {-# INLINE dim #-}
+
+    toVectorN   :: v a -> V (VsDim v) a
+    toVectorN = V . V.fromList . coords
+    {-# INLINE toVectorN #-}
+
+    coords :: v a -> [a]
+    coords vn = let V v = toVectorN vn in V.toList v
+    {-# INLINE coords #-}
+
+
+    fromVectorN :: V (VsDim v) a -> v a
+    fromVectorN = fromJust . fromCoords . V.toList . toVector
+    {-# INLINE fromVectorN #-}
+
+    fromCoords :: [a] -> Maybe (v a)
+    fromCoords = fmap fromVectorN . fromVector . V.fromList
+    {-# INLINE fromCoords #-}
+
+
+    {-# MINIMAL (toVectorN | coords)
+              , (fromVectorN | fromCoords)
+              , inv
+     #-}
 
 instance VectorSpace V2 where
+    type VsDim V2 = 2
     inv = inv22
-    dim _ = 2
-    coords (V2 u v) = [u, v]
-    fromCoords [u, v] = Just $ V2 u v
-    fromCoords _ = Nothing
-    {-# INLINE dim #-}
-    {-# INLINE fromCoords #-}
-    {-# INLINE coords #-}
+    toVectorN (V2 u v) = V [u, v]
+    fromVectorN (V v) = V2 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
+    {-# INLINE toVectorN #-}
+    {-# INLINE fromVectorN #-}
+    {-# INLINE inv #-}
 
 instance VectorSpace V3 where
+    type VsDim V3 = 3
     inv = inv33
-    dim _ = 3
-    coords (V3 u v z) = [u, v, z]
-    fromCoords [u, v, z] = Just $ V3 u v z
-    fromCoords _ = Nothing
-    {-# INLINE dim #-}
-    {-# INLINE fromCoords #-}
-    {-# INLINE coords #-}
+    toVectorN (V3 u v z) = V [u, v, z]
+    fromVectorN (V v)
+      = V3 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1) (v `V.unsafeIndex` 2)
+    {-# INLINE toVectorN #-}
+    {-# INLINE fromVectorN #-}
+    {-# INLINE inv #-}
+
+instance (U.Unbox (Vertex (V n)), KnownNat n) => VectorSpace (V n) where
+    type VsDim (V n) = n
+    inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
+    toVectorN   = id
+    fromVectorN = id
+    {-# INLINE toVectorN #-}
+    {-# INLINE fromVectorN #-}
+    {-# INLINE inv #-}
+
+
+data instance U.Vector    (V n a) =  V_VN {-# UNPACK #-} !Int !(U.Vector    a)
+data instance U.MVector s (V n a) = MV_VN {-# UNPACK #-} !Int !(U.MVector s a)
+instance (Dim n, U.Unbox a) => U.Unbox (V n a)
+
+instance (Dim n, U.Unbox a) => M.MVector U.MVector (V n a) where
+  {-# INLINE basicLength #-}
+  {-# INLINE basicUnsafeSlice #-}
+  {-# INLINE basicOverlaps #-}
+  {-# INLINE basicUnsafeNew #-}
+  {-# INLINE basicUnsafeRead #-}
+  {-# INLINE basicUnsafeWrite #-}
+  basicLength (MV_VN n _) = n
+  basicUnsafeSlice m n (MV_VN _ v) = MV_VN n (M.basicUnsafeSlice (d*m) (d*n) v)
+    where d = reflectDim (Proxy :: Proxy n)
+  basicOverlaps (MV_VN _ v) (MV_VN _ u) = M.basicOverlaps v u
+  basicUnsafeNew n = liftM (MV_VN n) (M.basicUnsafeNew (d*n))
+    where d = reflectDim (Proxy :: Proxy n)
+  basicUnsafeRead (MV_VN _ v) i =
+    liftM V $ V.generateM d (\j -> M.basicUnsafeRead v (d*i+j))
+    where d = reflectDim (Proxy :: Proxy n)
+  basicUnsafeWrite (MV_VN _ v) i (V vn) =
+    V.imapM_ (\j -> M.basicUnsafeWrite v (d*i+j)) vn
+    where d = reflectDim (Proxy :: Proxy n)
+#if MIN_VERSION_vector(0,11,0)
+  basicInitialize (MV_VN _ v) = M.basicInitialize v
+  {-# INLINE basicInitialize #-}
+#endif
+
+instance (Dim n, U.Unbox a) => G.Vector U.Vector (V n a) where
+  {-# INLINE basicUnsafeFreeze #-}
+  {-# INLINE basicUnsafeThaw   #-}
+  {-# INLINE basicLength       #-}
+  {-# INLINE basicUnsafeSlice  #-}
+  {-# INLINE basicUnsafeIndexM #-}
+  basicUnsafeFreeze (MV_VN n v) = liftM ( V_VN n) (G.basicUnsafeFreeze v)
+  basicUnsafeThaw   ( V_VN n v) = liftM (MV_VN n) (G.basicUnsafeThaw   v)
+  basicLength       ( V_VN n _) = n
+  basicUnsafeSlice m n (V_VN _ v) = V_VN n (G.basicUnsafeSlice (d*m) (d*n) v)
+    where d = reflectDim (Proxy :: Proxy n)
+  basicUnsafeIndexM (V_VN _ v) i =
+    liftM V $ V.generateM d (\j -> G.basicUnsafeIndexM v (d*i+j))
+    where d = reflectDim (Proxy :: Proxy n)
 
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
@@ -386,6 +470,7 @@ pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\point v -> point { _pVertex = v })
 {-# INLINE pVertex #-}
 
+
 derivingUnbox "Point"
     [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
     [| \(Point v) -> v |]
@@ -597,12 +682,12 @@ unsafeRasterIndexPixel r px = unOff offset
 
 
 convertRasterOffsetType
-  :: forall vs t1 t2 srid v a. (GV.Vector v a, HasOffset vs t1, HasOffset vs t2)
+  :: forall vs t1 t2 srid v a. (G.Vector v a, HasOffset vs t1, HasOffset vs t2)
   => Raster vs t1 srid v a -> Raster vs t2 srid v a
-convertRasterOffsetType r = r {rData = GV.generate n go}
+convertRasterOffsetType r = r {rData = G.generate n go}
   where go i = let px        = unsafeFromOffset s (Offset i :: Offset t2)
                    Offset i' = unsafeToOffset s px :: Offset t1
-               in rd `GV.unsafeIndex` i'
+               in rd `G.unsafeIndex` i'
         s = grSize (rGeoReference r)
         rd = rData r
-        n  = GV.length rd
+        n  = G.length rd
