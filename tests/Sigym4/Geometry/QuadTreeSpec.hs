@@ -29,7 +29,7 @@ spec = do
   quadTreeSpec "V2" (Proxy :: Proxy V2)
   quadTreeSpec "V3" (Proxy :: Proxy V3)
   quadTreeSpec "V4" (Proxy :: Proxy V4)
-  -- quadTreeSpec "V5" (Proxy :: Proxy (V 5))
+  quadTreeSpec "V5" (Proxy :: Proxy (V 5))
 
 quadTreeSpec
   :: forall v. (VectorSpace v, Show (v Halve))

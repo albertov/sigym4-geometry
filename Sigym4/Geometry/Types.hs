@@ -120,7 +120,6 @@ import Control.Applicative (Applicative, pure, (<$>), (<*>))
 import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
 #endif
-import Control.Monad (liftM)
 import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
@@ -130,7 +129,6 @@ import Data.Maybe (fromJust)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Generic.Mutable as M
 import Foreign.Storable (Storable)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
@@ -213,6 +211,16 @@ instance VectorSpace V4 where
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
+
+instance KnownNat n => VectorSpace (V n) where
+    type VsDim (V n) = n
+    inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
+    toVectorN   = id
+    fromVectorN = id
+    {-# INLINE toVectorN #-}
+    {-# INLINE fromVectorN #-}
+    {-# INLINE inv #-}
+
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
   deriving (Eq, Show, Ord, Num)
