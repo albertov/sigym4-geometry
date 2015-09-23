@@ -1,5 +1,4 @@
 {-# LANGUAGE StandaloneDeriving
-           , UndecidableInstances
            , OverloadedLists
            , DataKinds
            , TypeFamilies
@@ -109,6 +108,8 @@ module Sigym4.Geometry.Types (
   , Nat
   , module V2
   , module V3
+  , module V4
+  , module VN
 ) where
 
 import Prelude hiding (product)
@@ -132,10 +133,11 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Generic.Mutable as M
 import Foreign.Storable (Storable)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
-import Linear.V hiding (dim)
 import Linear.V2 as V2
 import Linear.V3 as V3
-import Linear.Matrix ((!*), (*!), inv22, inv33)
+import Linear.V4 as V4 hiding (vector, point)
+import Linear.V as VN hiding (dim)
+import Linear.Matrix ((!*), (*!), inv22, inv33, inv44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
 
@@ -147,11 +149,11 @@ type SqMatrix v = v (Vertex v)
 
 -- | A vector space
 class ( Num (Vertex v), Fractional (Vertex v), Dim (VsDim v)
-      , Show (Vertex v), Eq (Vertex v), U.Unbox (Vertex v)
-      , Show (v Int), Eq (v Int), Eq (v Bool)
+      , Show (Vertex v), Eq (Vertex v), U.Unbox (v Double)
+      , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v)
-  => VectorSpace v where
+  => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
 
     inv :: SqMatrix v -> SqMatrix v
@@ -202,59 +204,15 @@ instance VectorSpace V3 where
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
 
-instance (U.Unbox (Vertex (V n)), KnownNat n) => VectorSpace (V n) where
-    type VsDim (V n) = n
-    inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
-    toVectorN   = id
-    fromVectorN = id
+instance VectorSpace V4 where
+    type VsDim V4 = 4
+    inv = inv44
+    toVectorN (V4 u v z t) = V [u, v, z, t]
+    fromVectorN (V v) = V4 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
+                           (v `V.unsafeIndex` 2) (v `V.unsafeIndex` 3)
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
-
-
-data instance U.Vector    (V n a) =  V_VN {-# UNPACK #-} !Int !(U.Vector    a)
-data instance U.MVector s (V n a) = MV_VN {-# UNPACK #-} !Int !(U.MVector s a)
-instance (Dim n, U.Unbox a) => U.Unbox (V n a)
-
-instance (Dim n, U.Unbox a) => M.MVector U.MVector (V n a) where
-  {-# INLINE basicLength #-}
-  {-# INLINE basicUnsafeSlice #-}
-  {-# INLINE basicOverlaps #-}
-  {-# INLINE basicUnsafeNew #-}
-  {-# INLINE basicUnsafeRead #-}
-  {-# INLINE basicUnsafeWrite #-}
-  basicLength (MV_VN n _) = n
-  basicUnsafeSlice m n (MV_VN _ v) = MV_VN n (M.basicUnsafeSlice (d*m) (d*n) v)
-    where d = reflectDim (Proxy :: Proxy n)
-  basicOverlaps (MV_VN _ v) (MV_VN _ u) = M.basicOverlaps v u
-  basicUnsafeNew n = liftM (MV_VN n) (M.basicUnsafeNew (d*n))
-    where d = reflectDim (Proxy :: Proxy n)
-  basicUnsafeRead (MV_VN _ v) i =
-    liftM V $ V.generateM d (\j -> M.basicUnsafeRead v (d*i+j))
-    where d = reflectDim (Proxy :: Proxy n)
-  basicUnsafeWrite (MV_VN _ v) i (V vn) =
-    V.imapM_ (\j -> M.basicUnsafeWrite v (d*i+j)) vn
-    where d = reflectDim (Proxy :: Proxy n)
-#if MIN_VERSION_vector(0,11,0)
-  basicInitialize (MV_VN _ v) = M.basicInitialize v
-  {-# INLINE basicInitialize #-}
-#endif
-
-instance (Dim n, U.Unbox a) => G.Vector U.Vector (V n a) where
-  {-# INLINE basicUnsafeFreeze #-}
-  {-# INLINE basicUnsafeThaw   #-}
-  {-# INLINE basicLength       #-}
-  {-# INLINE basicUnsafeSlice  #-}
-  {-# INLINE basicUnsafeIndexM #-}
-  basicUnsafeFreeze (MV_VN n v) = liftM ( V_VN n) (G.basicUnsafeFreeze v)
-  basicUnsafeThaw   ( V_VN n v) = liftM (MV_VN n) (G.basicUnsafeThaw   v)
-  basicLength       ( V_VN n _) = n
-  basicUnsafeSlice m n (V_VN _ v) = V_VN n (G.basicUnsafeSlice (d*m) (d*n) v)
-    where d = reflectDim (Proxy :: Proxy n)
-  basicUnsafeIndexM (V_VN _ v) i =
-    liftM V $ V.generateM d (\j -> G.basicUnsafeIndexM v (d*i+j))
-    where d = reflectDim (Proxy :: Proxy n)
-
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
   deriving (Eq, Show, Ord, Num)
@@ -370,10 +328,12 @@ deriving instance VectorSpace v => Show (Extent v srid)
 
 eSize :: VectorSpace v => Extent v srid -> Vertex v
 eSize e = eMax e - eMin e
+{-# INLINE eSize #-}
 
 instance VectorSpace v => SG.Semigroup (Extent v srid) where
     Extent a0 a1 <> Extent b0 b1
         = Extent (min <$> a0 <*> b0) (max <$> a1 <*> b1)
+    {-# INLINE (<>) #-}
 
 -- | A pixel is a newtype around a vertex
 newtype Pixel v = Pixel {unPx :: Vertex v}
@@ -386,6 +346,7 @@ deriving instance VectorSpace v => Show (Size v)
 
 scalarSize :: VectorSpace v => Size v -> Int
 scalarSize = product . unSize
+{-# INLINE scalarSize #-}
 
 
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
@@ -435,17 +396,18 @@ deriving instance VectorSpace v => Show (GeoReference v srid)
 
 grScalarSize :: VectorSpace v => GeoReference v srid -> Int
 grScalarSize = scalarSize . grSize
+{-# INLINE grScalarSize #-}
 
 
 pointOffset :: (HasOffset v t, VectorSpace v)
   => GeoReference v srid -> Point v srid -> Maybe (Offset t)
 pointOffset gr =  toOffset (grSize gr) . grForward gr
-{-# INLINEABLE pointOffset #-}
+{-# INLINE pointOffset #-}
 
 unsafePointOffset :: (HasOffset v t, VectorSpace v)
   => GeoReference v srid -> Point v srid -> Offset t
 unsafePointOffset gr =  unsafeToOffset (grSize gr) . grForward gr
-{-# INLINEABLE unsafePointOffset #-}
+{-# INLINE unsafePointOffset #-}
 
 
 grForward :: VectorSpace v => GeoReference v srid -> Point v srid -> Pixel v
@@ -467,7 +429,7 @@ deriving instance Hashable (v Double) => Hashable (Point v srid)
 deriving instance Storable (v Double) => Storable (Point v srid)
 
 pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
-pVertex = lens _pVertex (\point v -> point { _pVertex = v })
+pVertex = lens _pVertex (\p v -> p { _pVertex = v })
 {-# INLINE pVertex #-}
 
 

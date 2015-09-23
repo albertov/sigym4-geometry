@@ -7,7 +7,7 @@ import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Positive(..), NonNegative(..), arbitrary, forAll)
 
 import Control.Applicative (liftA2)
-import Arbitrary ()
+import Arbitrary (positiveV)
 import Sigym4.Geometry
 
 main :: IO ()
@@ -90,14 +90,11 @@ spec = parallel $ do
 
     let genInvalidExtent = do
           lr <- arbitrary
-          Positive dx <- arbitrary
-          Positive dy <- arbitrary
-          let d = V2 dx dy
+          d <- positiveV
           return $ Extent lr (lr-d)
         genInvalidSize = do
-          NonNegative x <- arbitrary
-          NonNegative y <- arbitrary
-          return $ Size $ V2 (-x) (-y)
+          d <- positiveV
+          return $ Size $ (fmap (negate . floor) d)
         isLeft (Left _) = True
         isLeft _        = False
 

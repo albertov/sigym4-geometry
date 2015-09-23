@@ -10,74 +10,73 @@ module Sigym4.Geometry.Algorithms (
     HasExtent(..)
   , HasDistance(..)
   , HasCentroid(..)
-  , HasPredicates(..)
+  , HasContains(..)
+  , HasIntersects(..)
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (pure)
 #endif
+import Control.Applicative (liftA2)
+import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
 
-
-class HasPredicates a b where
+class HasContains a b where
     contains :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
 
-instance HasPredicates Extent Point where
-    Extent{eMin=l, eMax=h} `contains` (Point v)
-      = (fmap (>= 0) (v - l) == pure True) && (fmap (> 0) (h - v) == pure True)
+instance HasContains Extent Point where
+    Extent{eMin=l, eMax=h} `contains` (Point v) = vBetween l h v
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent Extent where
+instance HasContains Extent Extent where
     Extent{eMin=l1, eMax=h1} `contains` Extent{eMin=l2, eMax=h2}
-      = (fmap (>= 0) (l2 - l1) == pure True) && (fmap (>= 0) (h1 - h2) == pure True)
+      = vBetweenC l1 h1 l2 && vBetweenC l1 h1 h2
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent MultiPoint where
+instance HasContains Extent MultiPoint where
     ext `contains` (MultiPoint ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
 
 
-instance HasPredicates Extent LinearRing
-  where
+instance HasContains Extent LinearRing where
     ext `contains` (LinearRing ps) = U.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent LineString
-  where
+instance HasContains Extent LineString where
     ext `contains` (LineString ps) = U.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent MultiLineString where
+instance HasContains Extent MultiLineString where
     ext `contains` (MultiLineString ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent Polygon where
+instance HasContains Extent Polygon where
     ext `contains` (Polygon oRing _) = ext `contains` oRing
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent Triangle where
+instance HasContains Extent Triangle where
     ext `contains` (Triangle a b c) = ext `contains` a &&
                                       ext `contains` b &&
                                       ext `contains` c
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent MultiPolygon where
+instance HasContains Extent MultiPolygon where
     ext `contains` (MultiPolygon ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent PolyhedralSurface where
+instance HasContains Extent PolyhedralSurface where
     ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent TIN where
+instance HasContains Extent TIN where
     ext `contains` (TIN ts) = U.all (contains ext) ts
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent Geometry where
+instance HasContains Extent Geometry where
     ext `contains` (GeoPoint g)             = ext `contains` g
     ext `contains` (GeoMultiPoint g)        = ext `contains` g
     ext `contains` (GeoLineString g)        = ext `contains` g
@@ -90,9 +89,29 @@ instance HasPredicates Extent Geometry where
     ext `contains` (GeoCollection g)        = ext `contains` g
     {-# INLINABLE contains #-}
 
-instance HasPredicates Extent GeometryCollection where
+instance HasContains Extent GeometryCollection where
     ext `contains` (GeometryCollection ps) = V.all (contains ext) ps
     {-# INLINABLE contains #-}
+
+
+
+class HasIntersects a b where
+  intersects :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
+
+instance HasIntersects Extent Point where
+  intersects = contains
+  {-# INLINABLE intersects #-}
+
+instance HasIntersects Point Extent where
+  intersects = flip intersects
+  {-# INLINABLE intersects #-}
+
+instance HasIntersects Extent Extent where
+  Extent{eMin=l1, eMax=h1} `intersects` Extent{eMin=l2, eMax=h2}
+    = liftBinBool (>) (eSize intersection) (pure 0)
+    where intersection = Extent (liftA2 max l1 l2) (liftA2 min h1 h2)
+  {-# INLINABLE intersects #-}
+
 
 class HasCentroid a where
     centroid :: (VectorSpace v) => a v (srid::Nat) -> Point v (srid::Nat)
@@ -183,3 +202,22 @@ extentFromVector
 extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)
   where es = V.map extent v
 {-# INLINE extentFromVector #-}
+
+liftBinBool
+  :: VectorSpace v
+  => (Double -> Double -> Bool) -> Vertex v -> Vertex v -> Bool
+liftBinBool f a =  F.all id . liftA2 f a
+{-# INLINE liftBinBool #-}
+
+vLt, vLte :: VectorSpace v => Vertex v -> Vertex v -> Bool
+vLt  = liftBinBool (<)
+vLte = liftBinBool (<=)
+{-# INLINE vLt #-}
+{-# INLINE vLte #-}
+
+vBetween, vBetweenC :: VectorSpace v => Vertex v -> Vertex v -> Vertex v -> Bool
+vBetween  l h p = l `vLte` p && p `vLt`  h
+vBetweenC l h p = l `vLte` p && p `vLte` h
+{-# INLINE vBetween #-}
+{-# INLINE vBetweenC #-}
+

@@ -15,39 +15,32 @@ import Control.Applicative ((<$>), (<*>))
 #endif
 import Data.Maybe (fromJust)
 import Data.Vector (fromList)
+import Data.Proxy (Proxy(..))
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Generic as G
 
 import Sigym4.Geometry
 import Sigym4.Geometry.QuadTree
 
-instance Arbitrary t => Arbitrary (V2 t) where
-  arbitrary = V2 <$> arbitrary <*> arbitrary
+instance {-# INCOHERENT #-} forall v. VectorSpace v
+  => Arbitrary (Vertex v) where
+  arbitrary = (fromVectorN . V) <$> G.replicateM n arbitrary
+    where n = dim (Proxy :: Proxy v)
 
-instance Arbitrary t => Arbitrary (V3 t) where
-  arbitrary = V3 <$> arbitrary <*> arbitrary <*> arbitrary
+positiveV :: forall v. VectorSpace v => Gen (Vertex v)
+positiveV = (fromVectorN . V) <$> G.replicateM n (choose (1, 1000))
+  where n = dim (Proxy :: Proxy v)
 
-instance Arbitrary (Size V2) where
-  arbitrary = do
-    Positive w <- arbitrary
-    Positive h <- arbitrary
-    return $ Size $ V2 w h
+instance VectorSpace v => Arbitrary (Size v) where
+  arbitrary = (Size . fmap round) <$> positiveV
 
 instance Arbitrary (Offset t) where
   arbitrary = Offset . getNonNegative <$> arbitrary
 
-instance Arbitrary (Size V3) where
-  arbitrary = do
-    Positive w <- arbitrary
-    Positive h <- arbitrary
-    Positive z <- arbitrary
-    return $ Size $ V3 w h z
-
-instance forall srid. Arbitrary (Extent V2 srid) where
+instance VectorSpace v => Arbitrary (Extent v srid) where
   arbitrary = do
     lr <- arbitrary
-    Positive dx <- arbitrary
-    Positive dy <- arbitrary
-    let d = V2 dx dy
+    d  <- positiveV
     return $ Extent lr (lr+d)
 
 instance Arbitrary (Vertex v) => Arbitrary (Pixel v) where
