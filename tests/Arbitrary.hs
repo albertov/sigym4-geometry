@@ -114,8 +114,9 @@ instance VectorSpace v => Arbitrary (Quadrant v) where
   arbitrary = elements [minBound..maxBound]
 
 instance Arbitrary Level where
-  arbitrary = Level <$> choose (lo,hi)
-    where Level lo = minBound; Level hi = maxBound
+  arbitrary = fromInteger <$> choose (lo, hi)
+    where lo = fromIntegral (unLevel minBound)
+          hi = fromIntegral (unLevel maxBound)
 
 resized :: Gen a -> Gen a
 resized = resize 15

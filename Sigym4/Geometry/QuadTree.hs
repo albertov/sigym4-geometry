@@ -15,7 +15,9 @@ module Sigym4.Geometry.QuadTree (
   , Quadrant (..)
   , Halve (..)
   , Node (..)
-  , Level (Level) -- constructor is internal, exposed for tests
+  , Level (unLevel)
+  , Neighbor
+  , NeighborDir (..)
 
   , generate
   , generate2
@@ -31,11 +33,12 @@ module Sigym4.Geometry.QuadTree (
   -- | internal (exposed for testing)
   , innerExtent
   , outerExtent
+  , neighbors
 ) where
 
 
-import Control.Applicative ((<$>), (<*>), pure, liftA2)
-import Control.Monad (liftM)
+import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
+import Control.Monad (liftM, guard)
 import Data.Proxy (Proxy(..))
 import Data.Bits
 import qualified Data.Vector as V
@@ -75,6 +78,8 @@ instance VectorSpace v => Eq (Quadrant v) where
 
 deriving instance Show (v Halve) => Show (Quadrant v)
 
+
+
 instance VectorSpace v => Enum (Quadrant v) where
   fromEnum
     = V.sum . V.imap (\i qv -> (fromEnum qv `unsafeShiftL` i))
@@ -93,18 +98,58 @@ instance VectorSpace v => Bounded (Quadrant v) where
   maxBound = Q (pure Second)
   {-# INLINE maxBound #-}
 
-newtype Level = Level Int
-  deriving (Eq, Ord, Show, Num)
+data NeighborDir = Down | Same | Up
+  deriving (Show, Eq, Enum, Bounded)
+
+newtype Neighbor v = Ng {unNg :: v NeighborDir}
+
+deriving instance Show (v NeighborDir) => Show (Neighbor v)
+
+instance VectorSpace v => Bounded (Neighbor v) where
+  minBound = Ng (pure Down)
+  {-# INLINE minBound #-}
+  maxBound = Ng (pure Up)
+  {-# INLINE maxBound #-}
+
+neighbors :: forall v. VectorSpace v => [Neighbor v]
+neighbors = do
+  n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
+  guard (not (V.all (==Same) n))
+  return (Ng (fromVectorN (V n)))
+
+newtype Level = Level {unLevel :: Int}
+  deriving (Eq, Ord, Show)
+
+instance Num Level where
+  Level a + Level b
+    | Level (a+b) <= maxBound = Level (a+b)
+    | otherwise               = error ("Level " ++ show (a+b) ++ " too large")
+  Level a - Level b
+    | Level (a-b) >= minBound = Level (a-b)
+    | otherwise               = error ("Level " ++ show (a-b) ++ " too small")
+  Level a * Level b
+    | Level (a*b) <= maxBound = Level (a*b)
+    | otherwise               = error ("Level " ++ show (a*b) ++ " too large")
+  negate                      = error "Level cannot be negative"
+  abs                         = id
+  signum  (Level 0)           = 0
+  signum  _                   = 1
+  fromInteger i
+    | minBound<=l,l<=maxBound = l
+    | otherwise               = error ("Invalid Level " ++ show i)
+    where l = Level (fromInteger i)
+
+instance Bounded Level where
+  maxBound = Level (finiteBitSize (undefined :: Word) - 1)
+  minBound = Level 0
 
 newtype LocCode v = LocCode {unLocCode :: v Word}
 
 deriving instance Eq (v Word) => Eq (LocCode v)
 deriving instance Show (v Word) => Show (LocCode v)
 
-
-instance Bounded Level where
-  maxBound = Level (finiteBitSize (undefined :: Word) - 1)
-  minBound = Level 0
+diffCode :: VectorSpace v => LocCode v -> LocCode v -> LocCode v
+diffCode (LocCode a) (LocCode b) = LocCode (liftA2 xor a b)
 
 maxValue :: Level -> Word
 maxValue (Level l) = 2 ^ l
@@ -176,15 +221,18 @@ qtLocCode QuadTree{qtExtent=extent, qtLevel=level} (Point p)
         ret = fmap (truncate . (*m)) p'
 {-# INLINE qtLocCode #-}
 
-traverseFromLevel
+traverseToLevel
   :: VectorSpace v
-  => QNode v srid a -> Level -> LocCode v -> (QNode v srid a, Level)
-traverseFromLevel node level code = go node level
+  => (QNode v srid a, Level) -> Level -> LocCode v -> [(QNode v srid a, Level)]
+traverseToLevel nodelevel level code = go nodelevel []
   where
-    go n@(QLeaf _) l   = (n,l)
-    go n l | l<1       = (n,0)
-    go (QNode (V v)) l = go (v `V.unsafeIndex` ixFromLocCode (l-1) code) (l-1)
-{-# INLINE traverseFromLevel #-}
+    go nl@((QLeaf _), _)  acc             = nl:acc
+    go nl@(_,l)           acc | l<=level  = nl:acc
+    go nl@(QNode (V v),l) acc             = let n' = v `V.unsafeIndex` ix
+                                                ix = ixFromLocCode l' code
+                                                l' = l - 1
+                                            in go (n',l') (nl:acc)
+{-# INLINE traverseToLevel #-}
 
 ixFromLocCode
   :: VectorSpace v
@@ -201,9 +249,10 @@ lookupByPoint
 lookupByPoint qt@QuadTree{..} p
   = case qtLocCode qt p of
       Just code ->
-        let (node, level) = traverseFromLevel qtRoot qtLevel code
+        let (node, level) = head (traverseToLevel (qtRoot,qtLevel) 0 code)
+            cellCode      = cellLocCode code level
         in case node of
-          QLeaf v -> Just (v, calculateExtent qtExtent qtLevel level code)
+          QLeaf v -> Just (v, calculateExtent qtExtent qtLevel level cellCode)
           QNode _ -> error "QuadTree.lookupByPoint: traverse gave me a QNode!"
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -212,17 +261,19 @@ calculateExtent
   :: VectorSpace v
   => Extent v srid -> Level -> Level -> LocCode v -> Extent v srid
 calculateExtent maxExtent maxLevel (Level level) (LocCode code)
-  = Extent (divIt leafCode) (divIt ((+) <$> leafCode <*> pure (bit level)))
+  = Extent (divIt code) (divIt ((+) <$> code <*> pure (bit level)))
   where
     divIt     = (+ eMin') . (* eSize') . fmap ((/ maxVal) . fromIntegral)
     maxVal    = fromIntegral (maxValue maxLevel)
     eMin'     = eMin maxExtent
     eSize'    = eSize maxExtent
-    leafCode
-      | level == 0 = code
-      | otherwise  = fmap (.&. mask) code
-    mask = complement (U.sum (U.generate level bit))
 {-# INLINE calculateExtent #-}
+
+cellLocCode :: VectorSpace v => LocCode v -> Level -> LocCode v
+cellLocCode code (Level level)
+  | level == 0 = code
+  | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
+  where mask = complement (U.sum (U.generate level bit))
 
 traceRay :: QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a]
 traceRay qt from@(Point (V2 x0 y0)) to@(Point (V2 x1 y1))
@@ -241,43 +292,36 @@ traceRay qt from@(Point (V2 x0 y0)) to@(Point (V2 x1 y1))
             in go next (v:ps)
     slope = (y1-y0) / (x1-x0)
     epsilon = 1e-6
-    delta = F.minimum (qtMinBox qt) / 2
     xIntersect (Point (V2 x y)) (Extent (V2 _ miny) (V2 _ maxy))
       | abs(x1-x0) < epsilon = (x, y')
       | otherwise            = (x + ((y' - y) / slope), y')
-      where y' = if y1>y0 then maxy else miny-delta
+      where y' = if y1>y0 then maxy else miny-epsilon
     yIntersect (Point (V2 x y)) (Extent (V2 minx _) (V2 maxx _))
       | abs(y1-y0) < epsilon = (x', y)
       | otherwise            = (x', y + ((x' - x) * slope))
-      where x' = if x1>x0 then maxx else minx-delta
+      where x' = if x1>x0 then maxx else minx-epsilon
 {-# INLINE traceRay #-}
 
 
 innerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
-innerExtent (Q qv) e = Extent eMin' eMax'
+innerExtent (Q qv) (Extent lo hi) = Extent lo' hi'
   where
-    eMin' = fromVectorN $ V $ V.zipWith3 buildMin vh lo hi 
-    eMax' = fromVectorN $ V $ V.zipWith3 buildMax vh lo hi 
-    buildMin First  l _ = l
-    buildMin Second l h = (l+h) / 2
-    buildMax First  l h = (l+h) / 2
-    buildMax Second _ h = h
-    V lo = toVectorN (eMin e)
-    V hi = toVectorN (eMax e)
-    V vh = toVectorN qv
+    lo'             = liftA3 mkLo qv lo hi
+    hi'             = liftA3 mkHi qv lo hi
+    mkLo First  l _ = l
+    mkLo Second l h = (l+h) / 2
+    mkHi First  l h = (l+h) / 2
+    mkHi Second _ h = h
 {-# INLINE innerExtent #-}
 
 
 outerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
-outerExtent (Q qv) e = Extent eMin' eMax'
+outerExtent (Q qv) (Extent lo hi) = Extent lo' hi'
   where
-    eMin' = fromVectorN $ V $ V.zipWith3 buildMin vh lo hi 
-    eMax' = fromVectorN $ V $ V.zipWith3 buildMax vh lo hi 
-    buildMin First  l _ = l
-    buildMin Second l h = 2*l - h
-    buildMax First  l h = 2*h - l
-    buildMax Second _ h = h
-    V lo = toVectorN (eMin e)
-    V hi = toVectorN (eMax e)
-    V vh = toVectorN qv
+    lo'             = liftA3 mkLo qv lo hi
+    hi'             = liftA3 mkHi qv lo hi
+    mkLo First  l _ = l
+    mkLo Second l h = 2*l - h
+    mkHi First  l h = 2*h - l
+    mkHi Second _ h = h
 {-# INLINE outerExtent #-}

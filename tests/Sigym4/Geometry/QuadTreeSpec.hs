@@ -10,7 +10,7 @@ import Data.List
 import Data.Proxy
 import qualified Data.Foldable as F
 import Data.Functor.Identity (runIdentity)
-import Test.Hspec (Spec, hspec, describe)
+import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
 import Sigym4.Geometry
@@ -30,6 +30,7 @@ spec = do
   quadTreeSpec "V3" (Proxy :: Proxy V3)
   quadTreeSpec "V4" (Proxy :: Proxy V4)
   quadTreeSpec "V5" (Proxy :: Proxy (V 5))
+  quadTreeSpec "V6" (Proxy :: Proxy (V 6))
 
   {-
   describe "traceRay" $ do
@@ -43,6 +44,10 @@ quadTreeSpec
   :: forall v. (VectorSpace v, Show (v Halve))
   => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
+
+  describe "neighbors " $ do
+    it " has correct length" $ 
+      length (neighbors :: [Neighbor v]) == 3^(dim (Proxy :: Proxy v)) - 1
 
   describe "innerExtent " $ do
     prop "is smaller" $ \(q, (ext :: Extent v srid)) ->
@@ -80,7 +85,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
     prop "qtMinBox is constant after grows" $ \(dir,(ext :: Extent v srid),l) ->
       let q = runIdentity (generate (Leaf ()) ext 0)
           q2 = foldr (const growIt) q ([1..n] :: [Int])
-          Level n = l
+          n = unLevel l
           growIt = runIdentity . grow (Leaf ()) dir
       in qtMinBox q2 `almostEqVertex` qtMinBox q && qtLevel q2 == l
 
@@ -112,7 +117,7 @@ newtype EQT v = EQT (QuadTree v 0 (Extent v 0), Point v 0, Point v 0)
 instance VectorSpace v => Arbitrary (EQT v) where
   arbitrary = do
     ext <- arbitrary
-    level <- Level <$> choose (0,3)
+    level <- fromInteger <$> choose (0,5)
     qt <- generate build ext level
     p  <- genPoint ext
     p1  <- genPoint ext
