@@ -31,6 +31,14 @@ spec = do
   quadTreeSpec "V4" (Proxy :: Proxy V4)
   quadTreeSpec "V5" (Proxy :: Proxy (V 5))
 
+  {-
+  describe "traceRay" $ do
+
+    prop "all extents intersect ray" $ \(EQT eqt) -> 
+      let (qt,p,p1) = traceShowId eqt
+      in all (`intersects` LineString [p,p1]) (traceRay qt p p1)
+   -}
+
 quadTreeSpec
   :: forall v. (VectorSpace v, Show (v Halve))
   => String -> Proxy v -> Spec
@@ -88,15 +96,6 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
         Nothing      -> not (qtExtent qt `contains` p)
         Just (e1,e2) -> e1 `almostEqExt` e2 && e1 `contains` p
 
-  {-
-  describe "traceRay" $ do
-
-    prop "all extents intersect ray" $ \(EQT eqt) -> 
-      let (qt,p,p1) = traceShowId eqt
-      in all (`intersects` LineString [p,p1]) (traceRay qt p p1)
-   -}
-{-# INLINE quadTreeSpec #-}
-
 almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool
 almostEqExt (Extent a0 a1) (Extent b0 b1)
   =  a0 `almostEqVertex` b0 && a1 `almostEqVertex` b1
@@ -111,7 +110,7 @@ newtype EQT v = EQT (QuadTree v 0 (Extent v 0), Point v 0, Point v 0)
   deriving Show
 
 instance VectorSpace v => Arbitrary (EQT v) where
-  arbitrary = resize 5 $ do
+  arbitrary = do
     ext <- arbitrary
     level <- Level <$> choose (0,3)
     qt <- generate build ext level

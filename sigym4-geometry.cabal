@@ -22,6 +22,12 @@ source-repository head
   type:              git
   location:          https://github.com/meteogrid/sigym4-geometry
 
+flag herbie
+  description: Enable `herbie`.
+  default: False
+  manual: True
+
+
 library
   exposed-modules:    Sigym4.Geometry
                     , Sigym4.Geometry.Types
@@ -50,6 +56,14 @@ library
                        -fwarn-incomplete-patterns
                        -fwarn-incomplete-uni-patterns
                        -funbox-strict-fields
+                       -O2
+                       -fdicts-cheap
+
+  if flag(herbie)
+    build-depends: HerbiePlugin >= 0.1 && < 0.2
+    ghc-options: -fplugin=Herbie
+    cpp-options: -DHERBIE
+
 
 test-suite main
   type:              exitcode-stdio-1.0
@@ -73,7 +87,7 @@ test-suite main
   hs-source-dirs:    tests
   main-is:           Spec.hs
   default-language:  Haskell2010
-  ghc-options:       -Wall -threaded
+  ghc-options:       -Wall -threaded -O2
 
 benchmark bench
   type:              exitcode-stdio-1.0
