@@ -20,6 +20,7 @@ module Sigym4.Geometry.Types (
   , MultiLineString (..)
   , LinearRing (..)
   , Vertex
+  , SqMatrix
   , Point (..)
   , MultiPoint (..)
   , Polygon (..)
@@ -125,7 +126,7 @@ import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
@@ -135,7 +136,7 @@ import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.V4 as V4 hiding (vector, point)
 import Linear.V as VN hiding (dim)
-import Linear.Matrix ((!*), (*!), inv22, inv33, inv44)
+import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
 
@@ -146,7 +147,7 @@ type Vertex v = v Double
 type SqMatrix v = v (Vertex v)
 
 -- | A vector space
-class ( Num (Vertex v), Fractional (Vertex v), Dim (VsDim v)
+class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (v Double)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
@@ -154,7 +155,7 @@ class ( Num (Vertex v), Fractional (Vertex v), Dim (VsDim v)
   => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
 
-    inv :: SqMatrix v -> SqMatrix v
+    inv :: SqMatrix v -> Maybe (SqMatrix v)
 
     dim :: Proxy v -> Int
     dim = const (reflectDim (Proxy :: Proxy (VsDim v)))
@@ -183,9 +184,15 @@ class ( Num (Vertex v), Fractional (Vertex v), Dim (VsDim v)
               , inv
      #-}
 
+checkDetWith :: (Fractional a, Ord a) => (b -> a) -> b -> Maybe b
+checkDetWith f m
+  | abs (f m) < epsilon = Nothing
+  | otherwise           = Just m
+  where epsilon = 1e-6
+
 instance VectorSpace V2 where
     type VsDim V2 = 2
-    inv = inv22
+    inv = fmap inv22 . checkDetWith det22
     toVectorN (V2 u v) = V [u, v]
     fromVectorN (V v) = V2 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
     {-# INLINE toVectorN #-}
@@ -194,7 +201,7 @@ instance VectorSpace V2 where
 
 instance VectorSpace V3 where
     type VsDim V3 = 3
-    inv = inv33
+    inv = fmap inv33 . checkDetWith det33
     toVectorN (V3 u v z) = V [u, v, z]
     fromVectorN (V v)
       = V3 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1) (v `V.unsafeIndex` 2)
@@ -204,7 +211,7 @@ instance VectorSpace V3 where
 
 instance VectorSpace V4 where
     type VsDim V4 = 4
-    inv = inv44
+    inv = fmap inv44 . checkDetWith det44
     toVectorN (V4 u v z t) = V [u, v, z, t]
     fromVectorN (V v) = V4 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
                            (v `V.unsafeIndex` 2) (v `V.unsafeIndex` 3)
@@ -385,7 +392,8 @@ northUpGeoTransform e s
 
 gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
-  where m   = inv (gtMatrix gt)
+  where m   = fromMaybe (error "non inversible transform matrix") $
+              inv (gtMatrix gt)
         v0  = gtOrigin gt
 
 

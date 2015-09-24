@@ -4,6 +4,8 @@
            , FlexibleInstances
            , KindSignatures
            , DataKinds
+           , TypeOperators
+           , ScopedTypeVariables
            , CPP
            #-}
 module Sigym4.Geometry.Algorithms (
@@ -12,6 +14,8 @@ module Sigym4.Geometry.Algorithms (
   , HasCentroid(..)
   , HasContains(..)
   , HasIntersects(..)
+  , Direction
+  , lineHyperplaneIntersection
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -20,10 +24,14 @@ import Control.Applicative (pure)
 import Control.Applicative (liftA2)
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
+import Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
+import Linear.Matrix ((!*))
+import Data.Maybe (fromJust, isJust)
+import GHC.TypeLits
 
 class HasContains a b where
     contains :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
@@ -221,3 +229,26 @@ vBetweenC l h p = l `vLte` p && p `vLte` h
 {-# INLINE vBetween #-}
 {-# INLINE vBetweenC #-}
 
+type Direction v = Vertex v
+
+lineHyperplaneIntersection
+  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
+  => Vertex v -> Direction v -> Vertex v -> V (VsDim v - 1) (Direction v)
+  -> Maybe (Vertex v)
+lineHyperplaneIntersection lineOrigin lineDirection planeOrigin planeDirections
+  | isJust invA = Just (lineOrigin + fmap (*lineDelta) lineDirection)
+  | otherwise   = Nothing
+  where
+    invA        = inv a
+    x           = fromJust invA !* (lineOrigin - planeOrigin)
+    lineDelta   = negate (V.head (toVector (toVectorN x)))
+    planeDirs   = toVector (toVectorN planeDirections)
+    lineDir     = toVector (toVectorN lineDirection)
+    d           = dim (Proxy :: Proxy v)
+    a           = fromVectorN (V (V.generate d genRow))
+    genRow i    = fromVectorN (V (V.generate d (genCell i)))
+    genCell i j = v `V.unsafeIndex` i
+      where
+        v | j==0      = lineDir
+          | otherwise = toVector (toVectorN (planeDirs `V.unsafeIndex` (j-1)))
+{-# INLINE lineHyperplaneIntersection #-}
