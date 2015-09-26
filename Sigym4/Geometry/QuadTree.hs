@@ -337,7 +337,12 @@ lookupByPoint qt@QuadTree{..} p
             ext           = calculateForwardExtent qt level cellCode
         in Just (leafValue node, ext)
       Nothing -> Nothing
-{-# INLINE lookupByPoint #-}
+
+{-# SPECIALISE lookupByPoint
+      :: QuadTree V2 srid a -> Point V2 srid -> Maybe (a, Extent V2 srid) #-}
+
+{-# SPECIALISE lookupByPoint
+      :: QuadTree V3 srid a -> Point V3 srid -> Maybe (a, Extent V3 srid) #-}
 
 leafValue :: QNode v srid a -> a
 leafValue (QLeaf v) = v
@@ -402,48 +407,11 @@ traceRay qt@QuadTree{..} from to
 #endif
 
 
-{-# SPECIALISE INLINE traceRay
+{-# SPECIALISE traceRay
       :: QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
 
-{-# SPECIALISE INLINE traceRay
+{-# SPECIALISE traceRay
       :: QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
-
-commonNeighborAncestor
-  :: VectorSpace v
-  => QuadTree v srid a -> Neighbor v -> [(QNode v srid a, Level, LocCode v)]
-  -> [(QNode v srid a, Level, LocCode v)]
-commonNeighborAncestor qt ns path
-  | isNothing neighborCode = []
-  | otherwise              = go path
-  where
-    go p
-      | null p          = []
-#if ASSERTS
-      | commonLevel == 0 = error "no pue ser"
-#endif
-#if DEBUG
-      | traceShow ("go cn", commonLevel, l, map (\(_,l',_)->l') p) False
-      = undefined
-#endif
-      | l < commonLevel = go (tail p)
-      | otherwise       = p
-      where (_, Level l, _) = head p
-    (_,level,code) = head path
-    commonLevel    = commonAncestorLevel (LocCode (fromJust neighborCode)) code
-    neighborCode   = sequence (liftA2 setComp (unNg ns) (unLocCode code))
-    setComp Up   c = if c+cellSize < maxCode then Just (c+cellSize) else Nothing
-    setComp Down c = if c/=0                 then Just (c-1)        else Nothing
-    setComp Same c = Just c
-    cellSize       = bit (unLevel level)
-    maxCode        = bit (unLevel (qtLevel qt))
-
-commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Int
-commonAncestorLevel (LocCode a) (LocCode b)
-  = F.maximum (fmap componentLevel diff)
-  where
-    componentLevel d = numBits - countLeadingZeros d
-    diff     = liftA2 xor a b
-    numBits = finiteBitSize (undefined :: Word)
 
 neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> [Neighbor v]
 neighborsToCheck (QtVertex from) (QtVertex to)
@@ -455,6 +423,7 @@ neighborsToCheck (QtVertex from) (QtVertex to)
     checkComp Up   from' to' = not (nearZero (to'-from')) && to'  > from'
     checkComp _    _     _   = False
 {-# INLINE neighborsToCheck #-}
+
 
 mkNeighborChecker
   :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1)
