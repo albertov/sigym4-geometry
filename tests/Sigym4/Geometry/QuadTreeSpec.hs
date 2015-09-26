@@ -1,11 +1,13 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Sigym4.Geometry.QuadTreeSpec (main, spec) where
 
 import Control.Applicative (liftA2)
+import Control.Monad (when)
 import Data.List
 import Data.Proxy
 import qualified Data.Foldable as F
@@ -20,6 +22,7 @@ import qualified Data.Vector as V
 import qualified Data.Semigroup as SG
 import Data.List.NonEmpty (fromList)
 import Arbitrary ()
+import GHC.TypeLits
 
 main :: IO ()
 main = hspec spec
@@ -32,16 +35,9 @@ spec = do
   quadTreeSpec "V5" (Proxy :: Proxy (V 5))
   quadTreeSpec "V6" (Proxy :: Proxy (V 6))
 
-  {-
-  describe "traceRay" $ do
-
-    prop "all extents intersect ray" $ \(EQT eqt) -> 
-      let (qt,p,p1) = traceShowId eqt
-      in all (`intersects` LineString [p,p1]) (traceRay qt p p1)
-   -}
 
 quadTreeSpec
-  :: forall v. (VectorSpace v, Show (v Halve))
+  :: forall v. (VectorSpace v, Show (v Halve), KnownNat (VsDim v - 1), Show (v Word), Eq (v Word), Show (v NeighborDir))
   => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
@@ -101,13 +97,22 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
         Nothing      -> not (qtExtent qt `contains` p)
         Just (e1,e2) -> e1 `almostEqExt` e2 && e1 `contains` p
 
+  when (dim (Proxy :: Proxy v) <= 2) $
+    describe "traceRay" $ do
+      prop "does not repeat elements" $
+        \(EQT (qt,p,p1) :: EQT v) ->
+            let els = traceRay qt p p1
+            in not (any (uncurry almostEqExt) (zip els (tail els)))
+               || length (take 2 els) == 1
+
+      prop "last contains to" $
+        \(EQT (qt,p,p1) :: EQT v) ->
+            last (traceRay qt p p1) `contains` p1
+
+
 almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool
 almostEqExt (Extent a0 a1) (Extent b0 b1)
   =  a0 `almostEqVertex` b0 && a1 `almostEqVertex` b1
-
-almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
-almostEqVertex a b = liftBinBool (<=) (fmap abs (a-b)) (pure epsilon)
-  where epsilon = 1e-6
 
 liftBinBool f a =  F.all id . liftA2 f a
 

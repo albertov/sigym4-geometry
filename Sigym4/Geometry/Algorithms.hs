@@ -6,6 +6,7 @@
            , DataKinds
            , TypeOperators
            , ScopedTypeVariables
+           , InstanceSigs
            , CPP
            #-}
 module Sigym4.Geometry.Algorithms (
@@ -16,12 +17,16 @@ module Sigym4.Geometry.Algorithms (
   , HasIntersects(..)
   , Direction
   , lineHyperplaneIntersection
+  , almostEqVertex
+  , combinations
+  , extentCorners
 ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (pure)
 #endif
 import Control.Applicative (liftA2)
+import Control.Monad (replicateM)
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
 import Data.Proxy (Proxy(..))
@@ -29,8 +34,9 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
-import Linear.Matrix ((!*))
-import Data.Maybe (fromJust, isJust)
+import Linear.Matrix ((!*), identity)
+import Data.List (tails)
+import Data.Maybe (fromJust, isJust, catMaybes)
 import GHC.TypeLits
 
 class HasContains a b where
@@ -104,7 +110,9 @@ instance HasContains Extent GeometryCollection where
 
 
 class HasIntersects a b where
-  intersects :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
+  intersects
+    :: (VectorSpace v, KnownNat (VsDim v -1))
+    => a v (srid::Nat) -> b v (srid::Nat) -> Bool
 
 instance HasIntersects Extent Point where
   intersects = contains
@@ -121,6 +129,42 @@ instance HasIntersects Extent Extent where
   {-# INLINABLE intersects #-}
 
 
+instance HasIntersects Extent LineString where
+  intersects
+    :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1))
+    => Extent v (srid::Nat) -> LineString v (srid::Nat) -> Bool
+  ext@Extent{eMin=lo, eMax=hi} `intersects` LineString ps
+    = U.any id
+    $ U.zipWith segmentIntersects ps (U.tail ps)
+    where
+      planes :: [V (VsDim v - 1) (Direction v)]
+      planes = map (V . V.fromList) $
+               combinations (dim (Proxy :: Proxy v) - 1)
+               (V.toList (toVector (toVectorN (identity :: SqMatrix v))))
+      corners = filter (not . almostEqVertex lo) (extentCorners ext)
+      segmentIntersects pa@(Point a) pb@(Point b)
+        | ext `contains` pa = True
+        | ext `contains` pb = True
+        | otherwise         = U.any inRange (U.fromList planeIntersections)
+        where
+          inRange v = vBetweenC lo hi v && not (any (almostEqVertex v) corners)
+          planeIntersections = catMaybes [lineHyperplaneIntersection (b-a) a p o
+                                         | p<-planes, o<-[lo,hi]]
+  {-# INLINABLE intersects #-}
+
+extentCorners 
+  :: forall v srid. VectorSpace v
+  => Extent v srid -> [Vertex v]
+extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
+  where
+    d = dim (Proxy :: Proxy v)
+    vlo = toVector (toVectorN lo)
+    vhi = toVector (toVectorN hi)
+    mkCorner l = fromVectorN $ V $
+                   V.zipWith3 (\i l h -> if i then h else l)
+                              (V.fromList l) vlo vhi
+
+
 class HasCentroid a where
     centroid :: (VectorSpace v) => a v (srid::Nat) -> Point v (srid::Nat)
 
@@ -129,7 +173,7 @@ instance HasCentroid Point where
     {-# INLINABLE centroid #-}
 
 instance HasCentroid Extent where
-    centroid e = Point $ eMin e + (eSize e / 2)
+    centroid e = Point $ (eMin e + eMax e) / 2
     {-# INLINABLE centroid #-}
 
 
@@ -233,9 +277,9 @@ type Direction v = Vertex v
 
 lineHyperplaneIntersection
   :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
-  => Vertex v -> Direction v -> Vertex v -> V (VsDim v - 1) (Direction v)
+  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
   -> Maybe (Vertex v)
-lineHyperplaneIntersection lineOrigin lineDirection planeOrigin planeDirections
+lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
   | isJust invA = Just (lineOrigin + fmap (*lineDelta) lineDirection)
   | otherwise   = Nothing
   where
@@ -252,3 +296,14 @@ lineHyperplaneIntersection lineOrigin lineDirection planeOrigin planeDirections
         v | j==0      = lineDir
           | otherwise = toVector (toVectorN (planeDirs `V.unsafeIndex` (j-1)))
 {-# INLINE lineHyperplaneIntersection #-}
+
+almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
+almostEqVertex a b = liftBinBool (<=) (fmap abs (a-b)) (pure epsilon)
+  where epsilon = 1e-6
+{-# INLINE almostEqVertex #-}
+
+combinations 0 _ = [[]]
+combinations n lst = do
+    (x:xs) <- tails lst
+    rest   <- combinations (n-1) xs
+    return $ x : rest

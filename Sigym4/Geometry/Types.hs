@@ -151,7 +151,7 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
       , Show (Vertex v), Eq (Vertex v), U.Unbox (v Double)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
-      , Metric v, Applicative v, Foldable v)
+      , Metric v, Applicative v, Foldable v, Traversable v)
   => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
 
