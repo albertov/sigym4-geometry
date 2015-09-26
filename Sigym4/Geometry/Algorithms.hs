@@ -160,9 +160,9 @@ extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
     d = dim (Proxy :: Proxy v)
     vlo = toVector (toVectorN lo)
     vhi = toVector (toVectorN hi)
-    mkCorner l = fromVectorN $ V $
+    mkCorner ls = fromVectorN $ V $
                    V.zipWith3 (\i l h -> if i then h else l)
-                              (V.fromList l) vlo vhi
+                              (V.fromList ls) vlo vhi
 
 
 class HasCentroid a where
@@ -298,8 +298,7 @@ lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
 {-# INLINE lineHyperplaneIntersection #-}
 
 almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
-almostEqVertex a b = liftBinBool (<=) (fmap abs (a-b)) (pure epsilon)
-  where epsilon = 1e-6
+almostEqVertex a b = nearZero (a-b)
 {-# INLINE almostEqVertex #-}
 
 combinations 0 _ = [[]]

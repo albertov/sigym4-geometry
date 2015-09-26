@@ -111,6 +111,7 @@ module Sigym4.Geometry.Types (
   , module V3
   , module V4
   , module VN
+  , module Linear.Epsilon
 ) where
 
 import Prelude hiding (product)
@@ -135,6 +136,7 @@ import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.V4 as V4 hiding (vector, point)
+import Linear.Epsilon
 import Linear.V as VN hiding (dim)
 import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
@@ -148,7 +150,8 @@ type SqMatrix v = v (Vertex v)
 
 -- | A vector space
 class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
-      , Show (Vertex v), Eq (Vertex v), U.Unbox (v Double)
+      , Show (Vertex v), Eq (Vertex v), Epsilon (Vertex v)
+      , U.Unbox (Vertex v)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v, Traversable v)

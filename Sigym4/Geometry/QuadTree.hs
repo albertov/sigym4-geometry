@@ -125,10 +125,20 @@ instance VectorSpace v => Bounded (Neighbor v) where
   {-# INLINE maxBound #-}
 
 neighbors :: forall v. VectorSpace v => [Neighbor v]
-neighbors = do
+neighbors = sortBy vertexNeighborsFirst $ do
   n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (V.all (==Same) n))
   return (Ng (fromVectorN (V n)))
+  where
+    vertexNeighborsFirst a b
+      | not (hasSame a), hasSame b = LT
+      | hasSame a, not (hasSame b) = GT
+      | otherwise                  = EQ
+
+hasSame :: VectorSpace v => Neighbor v -> Bool
+hasSame = F.any (==Same) . unNg
+{-# INLINE hasSame #-}
+
 
 newtype Level = Level {unLevel :: Int}
   deriving (Eq, Ord, Show)
@@ -156,17 +166,7 @@ instance Bounded Level where
   maxBound = Level (finiteBitSize (undefined :: Word) - 1)
   minBound = Level 0
 
-newtype LocCode v = LocCode {unLocCode :: v Word}
 
-deriving instance Eq (v Word) => Eq (LocCode v)
-deriving instance Show (v Word) => Show (LocCode v)
-
-maxValue :: Level -> Word
-maxValue (Level l) = 2 ^ l
-
-qtMinBox :: VectorSpace v => QuadTree v srid a -> Vertex v
-qtMinBox QuadTree{qtLevel=l, qtExtent=e}
-  = fmap (/ (fromIntegral (maxValue l))) (eSize e)
 
 generate
   :: (Monad m, VectorSpace v)
@@ -220,25 +220,83 @@ grow build dir (QuadTree oldRoot ext oldLevel)
     newExt = outerExtent dir ext
 
 
+
+newtype LocCode v = LocCode {unLocCode :: v Word}
+
+deriving instance Eq (v Word) => Eq (LocCode v)
+deriving instance Show (v Word) => Show (LocCode v)
+
+newtype QtVertex v = QtVertex {unQtVertex :: Vertex v}
+deriving instance VectorSpace v => Show (QtVertex v)
+deriving instance VectorSpace v => Eq (QtVertex v)
+
+
+maxValue :: Level -> Word
+maxValue (Level l) = 2 ^ l
+
+qtMinBox :: VectorSpace v => QuadTree v srid a -> Vertex v
+qtMinBox QuadTree{qtLevel=l, qtExtent=e}
+  = fmap (/ (fromIntegral (maxValue l))) (eSize e)
+
+
+qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
+qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
+  = QtVertex ((v/(hi-lo) - (lo/(hi-lo))))
+{-# INLINE qtBackward #-}
+
+qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
+qtForward QuadTree{qtExtent=Extent lo hi} (QtVertex v)
+  = Point (lo + v*(hi-lo))
+{-# INLINE qtForward #-}
+
+qtVertex2LocCode
+  :: VectorSpace v => QuadTree v srid a -> QtVertex v -> LocCode v
+qtVertex2LocCode qt = LocCode . fmap (truncate . (*m)) . unQtVertex
+  where m = fromIntegral (maxValue (qtLevel qt))
+
+qtLocCode2Vertex
+  :: VectorSpace v => QuadTree v srid a -> LocCode v -> QtVertex v
+qtLocCode2Vertex qt = QtVertex  . fmap ((/m) . fromIntegral) . unLocCode
+  where m = fromIntegral (maxValue (qtLevel qt))
+
+
+validVertex :: VectorSpace v => QtVertex v -> Bool
+validVertex = contains (Extent (pure 0) (pure 1)) . Point . unQtVertex
+
 qtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
-qtLocCode QuadTree{qtExtent=ext, qtLevel=level} (Point p)
-  | Extent (pure 0) (pure 1) `contains` Point p' = Just (LocCode ret)
-  | otherwise                                    = Nothing
-  where p'  = (p - eMin ext) / eSize ext
-        m   = fromIntegral (maxValue level)
-        ret = fmap (truncate . (*m)) p'
+qtLocCode qt p
+  | validVertex qv = Just (qtVertex2LocCode qt qv)
+  | otherwise      = Nothing
+  where qv = qtBackward qt p
 {-# INLINE qtLocCode #-}
 
 unsafeQtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> LocCode v
-unsafeQtLocCode QuadTree{qtExtent=ext, qtLevel=level} (Point p)
-  = LocCode (fmap (truncate . (*m)) p')
-  where p'  = (p - eMin ext) / eSize ext
-        m   = fromIntegral (maxValue level)
+unsafeQtLocCode qt = qtVertex2LocCode qt . qtBackward qt
 {-# INLINE unsafeQtLocCode #-}
+
+calculateExtent
+  :: VectorSpace v
+  => QuadTree v srid a -> Level -> LocCode v -> Extent v srid
+calculateExtent qt level code = Extent lo hi
+  where
+    Point lo  = qtForward qt (qtLocCode2Vertex qt code)
+    Point hi  = qtForward qt (qtLocCode2Vertex qt code')
+    code'     = LocCode (fmap (+cellSize) (unLocCode code))
+    cellSize  = bit (unLevel level)
+{-# INLINE calculateExtent #-}
+
+
+qtCellCode
+  :: VectorSpace v => Level -> LocCode v -> LocCode v
+qtCellCode (Level l) code
+  | l == 0     = code
+  | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
+  where mask = complement (U.sum (U.generate l bit))
+{-# INLINE qtCellCode #-}
 
 traverseToLevel
   :: VectorSpace v
@@ -248,35 +306,13 @@ traverseToLevel node start end code = go (node, start, cellCode start)
   where
     go nl@((QLeaf _),_,_)   = nl
     go nl@(_,l,_) | l<=end  = nl
-    go nl@(QNode (V v),l,_) = let n' = v `V.unsafeIndex` ix
-                                  ix = ixFromLocCode l' code
-                                  l' = l - 1
-                              in go (n',l',cellCode l')
-    cellCode (Level l)
-      | l == 0     = code
-      | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
-      where mask = complement (U.sum (U.generate l bit))
+    go (QNode (V v),l,_) = let n' = v `V.unsafeIndex` ix
+                               ix = ixFromLocCode l' code
+                               l' = l - 1
+                           in go (n',l',cellCode l')
+    cellCode = flip qtCellCode code
 {-# INLINE traverseToLevel #-}
 
-{-
-traverseToLevel
-  :: VectorSpace v
-  => QNode v srid a -> Level -> Level -> LocCode v
-  -> [(QNode v srid a, Level, LocCode v)]
-traverseToLevel node start end code = go (node, start, cellCode start) []
-  where
-    go nl@((QLeaf _),_,_)   acc           = nl:acc
-    go nl@(_,l,_)           acc | l<=end  = nl:acc
-    go nl@(QNode (V v),l,_) acc           = let n' = v `V.unsafeIndex` ix
-                                                ix = ixFromLocCode l' code
-                                                l' = l - 1
-                                            in go (n',l',cellCode l') (nl:acc)
-    cellCode (Level l)
-      | l == 0     = code
-      | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
-      where mask = complement (U.sum (U.generate l bit))
-{-# INLINE traverseToLevel #-}
--}
 
 ixFromLocCode
   :: VectorSpace v
@@ -294,7 +330,7 @@ lookupByPoint qt@QuadTree{..} p
   = case qtLocCode qt p of
       Just c ->
         let (node,level,cellCode) = traverseToLevel qtRoot qtLevel 0 c
-            ext           = calculateExtent qtExtent qtLevel level cellCode
+            ext           = calculateExtent qt level cellCode
         in Just (leafValue node, ext)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -304,17 +340,6 @@ leafValue (QLeaf v) = v
 leafValue _         = error "expected a leaf"
 {-# INLINE leafValue #-}
 
-calculateExtent
-  :: VectorSpace v
-  => Extent v srid -> Level -> Level -> LocCode v -> Extent v srid
-calculateExtent maxExtent maxLevel (Level level) (LocCode code)
-  = Extent (divIt code) (divIt ((+) <$> code <*> pure (bit level)))
-  where
-    divIt     = (+ eMin') . (* eSize') . fmap ((/ maxVal) . fromIntegral)
-    maxVal    = fromIntegral (maxValue maxLevel)
-    eMin'     = eMin maxExtent
-    eSize'    = eSize maxExtent
-{-# INLINE calculateExtent #-}
 
 traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Show (v Word), Eq (v Word), Show (v NeighborDir))
          => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
@@ -333,7 +358,7 @@ traceRay qt@QuadTree{..} from@(Point fromV) to@(Point toV)
       | otherwise          = val:(go (fromJust mNext))
       where
         (node, level, cellCode) = traverseToLevel qtRoot qtLevel 0 code
-        ext           = calculateExtent qtExtent qtLevel level cellCode
+        ext           = calculateExtent qt level cellCode
         val           = leafValue node
         (neigh, isec) = getIntersection ext
         --LocCode iseccode = cellLocCode (unsafeQtLocCode qt intersection) level
@@ -351,12 +376,12 @@ traceRay qt@QuadTree{..} from@(Point fromV) to@(Point toV)
 
     getIntersection :: Extent v srid -> (Neighbor v, Point v srid)
     getIntersection ext = case catMaybes matches of
-                           [] -> error "no matches"
-                           m  -> head m
+                           []        -> error "no matches"
+                           ((n,v):_) -> (n, Point v)
       where matches = map ($ ext) checkers
 
     toCheck = neighborsToCheck fromV toV
-    checkers = map (mkNeighborChecker from to) toCheck
+    checkers = map (mkNeighborChecker fromV toV) toCheck
 
 {-
 traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Show (v Word), Eq (v Word), Show (v NeighborDir))
@@ -443,42 +468,30 @@ commonAncestorLevel (LocCode a) (LocCode b)
 
 neighborsToCheck :: VectorSpace v => Vertex v -> Vertex v -> [Neighbor v]
 neighborsToCheck from to
-  = filter checkNeighbor (sortBy neighborCompare neighbors)
+  = filter checkNeighbor neighbors
   where
-    checkNeighbor (Ng ns) = F.all id (liftA3 checkComp ns from to)
-    signs                 = fmap signum (to-from)
-    checkComp Same _ _    = True
-    checkComp Down from' to' = -epsilon > (to'-from')
-    checkComp Up   from' to' = (to'-from') > epsilon
+    checkNeighbor (Ng ns)    = F.all id (liftA3 checkComp ns from to)
+    checkComp Same _ _       = True
+    checkComp Down from' to' = not (nearZero (to'-from')) && from'> to'
+    checkComp Up   from' to' = not (nearZero (to'-from')) && to'  > from'
     checkComp _    _     _   = False
-    neighborCompare a b
-      | not (hasSame a), hasSame b = LT
-      | hasSame a, not (hasSame b) = GT
-      | otherwise                  = EQ
 {-# INLINE neighborsToCheck #-}
-
-epsilon = 1e-12
-
-hasSame :: VectorSpace v => Neighbor v -> Bool
-hasSame = F.any (==Same) . unNg
-{-# INLINE hasSame #-}
 
 mkNeighborChecker
   :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1), Show (v NeighborDir))
-  => Point v srid -> Point v srid -> Neighbor v
-  -> (Extent v srid -> Maybe (Neighbor v, Point v srid))
+  => Vertex v -> Vertex v -> Neighbor v
+  -> (Extent v srid -> Maybe (Neighbor v, Vertex v))
 mkNeighborChecker from to ng@(Ng ns) ext@(Extent lo hi)
   = case intersection origin of
       Nothing                      -> error "should not happen"
 #if DEBUG
       Just vertex | traceShow ("checkNg: ", ext,ng,vertex,inRange vertex) False -> undefined
 #endif
-      Just vertex | inRange vertex -> Just (ng, Point vertex)
+      Just vertex | inRange vertex -> Just (ng, vertex)
       _                            -> Nothing
   where
-    Point lineOrigin = from
-    lineDir          = _pVertex to - lineOrigin
-    intersection  = lineHyperplaneIntersection lineDir lineOrigin planeDirs
+    lineDir       = to - from
+    intersection  = lineHyperplaneIntersection lineDir from planeDirs
 
     origin = liftA3 originComp ns lo hi
 
@@ -501,8 +514,8 @@ mkNeighborChecker from to ng@(Ng ns) ext@(Extent lo hi)
     inRange v = F.all id (inRangeComp <$> ns <*> lo <*> hi <*> v)
 
     inRangeComp Same lo' hi' v = lo' <= v && v <= hi'
-    inRangeComp Up   _   hi' v = abs (hi'-v) <= epsilon
-    inRangeComp Down lo' _   v = abs (v-lo') <= epsilon
+    inRangeComp Up   _   hi' v = nearZero (hi'-v)
+    inRangeComp Down lo' _   v = nearZero (v-lo')
     
 {-# INLINE mkNeighborChecker #-}
   
