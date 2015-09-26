@@ -97,7 +97,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
         Nothing      -> not (qtExtent qt `contains` p)
         Just (e1,e2) -> e1 `almostEqExt` e2 && e1 `contains` p
 
-  when (dim (Proxy :: Proxy v) <= 2) $
+  when (dim (Proxy :: Proxy v) <= 4) $
     describe "traceRay" $ do
       prop "does not repeat elements" $
         \(EQT (qt,p,p1) :: EQT v) ->

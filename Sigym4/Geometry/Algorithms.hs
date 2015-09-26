@@ -39,6 +39,10 @@ import Data.List (tails)
 import Data.Maybe (fromJust, isJust, catMaybes)
 import GHC.TypeLits
 
+#if DEBUG
+import Debug.Trace
+#endif
+
 class HasContains a b where
     contains :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
 
@@ -280,6 +284,9 @@ lineHyperplaneIntersection
   => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
   -> Maybe (Vertex v)
 lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
+#if DEBUG
+  | traceShow ("lineIsec", a, lineDirection, planeDirections) False = undefined
+#endif
   | isJust invA = Just (lineOrigin + fmap (*lineDelta) lineDirection)
   | otherwise   = Nothing
   where

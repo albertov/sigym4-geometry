@@ -129,7 +129,7 @@ import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U

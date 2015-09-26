@@ -34,17 +34,15 @@ module Sigym4.Geometry.QuadTree (
 
   -- | internal (exposed for testing)
   , innerExtent
-  , qtLocCode
   , outerExtent
   , neighbors
-  , neighborsToCheck
-  , mkNeighborChecker
 ) where
 
 
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
 import Control.Exception (assert)
 import Data.Maybe (catMaybes, isNothing, fromJust)
+import Data.Either (isRight)
 import Control.Monad (liftM, guard)
 import Data.Proxy (Proxy(..))
 import Data.Bits
@@ -52,6 +50,7 @@ import Data.List (sortBy)
 import qualified Data.Vector as V
 import qualified Data.Foldable as F
 import qualified Data.Vector.Unboxed as U
+import Linear.Matrix (identity)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -264,10 +263,6 @@ validVertex = contains (Extent (pure 0) (pure 1)) . Point . unQtVertex
 {-# INLINE validVertex #-}
 
 
-qtValidCode :: VectorSpace v => QuadTree v srid a -> LocCode v -> Bool
-qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
-{-# INLINE qtValidCode #-}
-
 qtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
@@ -350,8 +345,12 @@ leafValue _         = error "expected a leaf"
 {-# INLINE leafValue #-}
 
 
-traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Show (v Word), Eq (v Word), Show (v NeighborDir))
-         => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
+traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Eq (v Word)
+#if DEBUG
+  , Show a, Show (v Word), Show (v NeighborDir)
+#endif
+  )
+  => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
   | almostEqVertex (unQtVertex fromV) (unQtVertex toV) = []
   | not (validVertex fromV) = []
@@ -397,53 +396,17 @@ traceRay qt@QuadTree{..} from to
     toCheck = neighborsToCheck fromV toV
     checkers = map (mkNeighborChecker fromV toV) toCheck
 
-{-
-traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Show (v Word), Eq (v Word), Show (v NeighborDir))
-         => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
-traceRay qt@QuadTree{..} from@(Point fromV) to@(Point toV)
-  | from == to = []
-  | otherwise  = case qtLocCode qt from of
-#if DEBUG
-                   _ | traceShow ("trace from:",qtExtent,qtLevel,from,to) False -> undefined
+#if ASSERTS
+    qtValidCode :: VectorSpace v => QuadTree v srid a -> LocCode v -> Bool
+    qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
 #endif
-                   Just code -> go (traverseToLevel qtRoot qtLevel 0 code)
-                   Nothing   -> []
-  where
-    go path
-      | null path          = []
-#if DEBUG
-      | traceShow ("go", head path, next, length ancestorPath) False = undefined
-#endif
-      | null ancestorPath  = [val]
-      | ext `contains` to  = [val]
-      | otherwise          = val:(go nextPath)
-      where
-        (node,level,cellCode) = head path
-        ext           = calculateExtent qtExtent qtLevel level cellCode
-        val           = leafValue node
-        (neigh, isec) = getIntersection ext
-        ancestorPath  = commonNeighborAncestor qt neigh path
-        (nextNode,nextLevel,_) = head ancestorPath
-        nextPath      = traverseToLevel nextNode nextLevel 0 next ++ tail ancestorPath
-        --LocCode iseccode = cellLocCode (unsafeQtLocCode qt intersection) level
-        LocCode iseccode = unsafeQtLocCode qt isec
-        next = LocCode (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode))
-        mkNext Down _ c = (c-1)
-        mkNext Up   _ c = (c+cellSize)
-        mkNext Same i _ = i
-        cellSize        = bit (unLevel level)
 
-    getIntersection :: Extent v srid -> (Neighbor v, Point v srid)
-    getIntersection ext = case catMaybes matches of
-                           [] -> error "no matches"
-                           m  -> head m
-      where matches = map ($ ext) checkers
 
-    toCheck = neighborsToCheck fromV toV
-    checkers = map (mkNeighborChecker from to) toCheck
-    -}
-                        
-{-# INLINE traceRay #-}
+{-# SPECIALISE INLINE traceRay
+      :: QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
+
+{-# SPECIALISE INLINE traceRay
+      :: QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
 
 commonNeighborAncestor
   :: VectorSpace v
@@ -494,15 +457,19 @@ neighborsToCheck (QtVertex from) (QtVertex to)
 {-# INLINE neighborsToCheck #-}
 
 mkNeighborChecker
-  :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1), Show (v NeighborDir))
+  :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1)
+#if DEBUG
+  , Show (v NeighborDir)
+#endif
+  )
   => QtVertex v -> QtVertex v -> Neighbor v
   -> (Extent v srid -> Maybe (Neighbor v, Vertex v))
-mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) ext@(Extent lo hi)
+mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
   = case intersection origin of
-      Nothing                      -> error "should not happen"
 #if DEBUG
-      Just vertex | traceShow ("checkNg: ", ext,ng,vertex,inRange vertex) False -> undefined
+      _ | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False -> undefined
 #endif
+      Nothing                      -> error "should not happen"
       Just vertex | inRange vertex -> Just (ng, vertex)
       _                            -> Nothing
   where
@@ -517,18 +484,20 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) ext@(Extent lo hi)
 
     epsilon = 1e-12
 
-    nv = toVector (toVectorN ns)
 
     planeDirs :: V (VsDim v - 1) (Direction v) 
-    planeDirs = V $ V.generate numPlanes
-                (\j -> fromVectorN (V (V.imap (genPlaneDirComp j) nv)))
-
-    genPlaneDirComp
-      | hasSame ng = \_ _ n -> if n==Same then 1 else 0
-      | otherwise  = \j i _ -> if j==i    then 1 else 0
-
-    numPlanes = dim (Proxy :: Proxy v) - 1
-
+    planeDirs = V (V.generate numPlanes pickPlane)
+       where
+        pickPlane i
+          | i < nMusts    = either id id (must `V.unsafeIndex` i)
+          | otherwise     = either id id (perhaps `V.unsafeIndex` (i-nMusts))
+        (must,perhaps)    = V.unstablePartition isRight (V.imap makeNormal nv)
+        makeNormal i Same = Right (idmatrix `V.unsafeIndex` i)
+        makeNormal i _    = Left  (idmatrix `V.unsafeIndex` i)
+        idmatrix          = toVector (toVectorN (identity :: SqMatrix v))
+        numPlanes         = dim (Proxy :: Proxy v) - 1
+        nv                = toVector (toVectorN ns)
+        nMusts            = V.length must
 
     inRange v = F.all id (inRangeComp <$> ns <*> lo <*> hi <*> v)
 
