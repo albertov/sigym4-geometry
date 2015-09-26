@@ -32,6 +32,11 @@ flag debug
   default: False
   manual: True
 
+flag asserts
+  description: Enable Assertions
+  default: False
+  manual: True
+
 
 library
   exposed-modules:    Sigym4.Geometry
@@ -70,6 +75,8 @@ library
   if flag(debug)
     cpp-options: -DDEBUG
 
+  if flag(asserts)
+    cpp-options: -DASSERTS
 
 test-suite main
   type:              exitcode-stdio-1.0

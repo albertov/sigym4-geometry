@@ -74,6 +74,8 @@ module Sigym4.Geometry.Types (
   , withSrid
 
   , eSize
+  , coords
+  , fromCoords
 
   -- lenses & prisms
   , pVertex
@@ -165,27 +167,18 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
     {-# INLINE dim #-}
 
     toVectorN   :: v a -> V (VsDim v) a
-    toVectorN = V . V.fromList . coords
-    {-# INLINE toVectorN #-}
-
-    coords :: v a -> [a]
-    coords vn = let V v = toVectorN vn in V.toList v
-    {-# INLINE coords #-}
-
 
     fromVectorN :: V (VsDim v) a -> v a
-    fromVectorN = fromJust . fromCoords . V.toList . toVector
-    {-# INLINE fromVectorN #-}
-
-    fromCoords :: [a] -> Maybe (v a)
-    fromCoords = fmap fromVectorN . fromVector . V.fromList
-    {-# INLINE fromCoords #-}
 
 
-    {-# MINIMAL (toVectorN | coords)
-              , (fromVectorN | fromCoords)
-              , inv
-     #-}
+coords :: VectorSpace v => v a -> [a]
+coords vn = let V v = toVectorN vn in V.toList v
+{-# INLINE coords #-}
+
+fromCoords :: VectorSpace v => [a] -> Maybe (v a)
+fromCoords = fmap fromVectorN . fromVector . V.fromList
+{-# INLINE fromCoords #-}
+
 
 checkDetWith :: (Epsilon a) => (b -> a) -> b -> Maybe b
 checkDetWith f m

@@ -261,6 +261,12 @@ qtLocCode2Vertex qt = QtVertex  . fmap ((/m) . fromIntegral) . unLocCode
 
 validVertex :: VectorSpace v => QtVertex v -> Bool
 validVertex = contains (Extent (pure 0) (pure 1)) . Point . unQtVertex
+{-# INLINE validVertex #-}
+
+
+qtValidCode :: VectorSpace v => QuadTree v srid a -> LocCode v -> Bool
+qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
+{-# INLINE qtValidCode #-}
 
 qtLocCode
   :: VectorSpace v
@@ -349,15 +355,22 @@ traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Sho
 traceRay qt@QuadTree{..} from to
   | almostEqVertex (unQtVertex fromV) (unQtVertex toV) = []
   | not (validVertex fromV) = []
+  | not (validVertex toV)   = []
 #if DEBUG
   | traceShow ("trace from:",qtExtent,qtLevel,from,to) False = undefined
 #endif
   | otherwise  = go (qtVertex2LocCode qt fromV)
   where
     go code
+#if DEBUG
+      | traceShow ("go", code) False = undefined
+#endif
+#if ASSERTS
+      | not (qtValidCode qt code) = error "bad vertex"
+      | next     == code          = error "loop!"
+#endif
       | cellCode == cellCodeTo = [val]
-      | isNothing mNext        = [val]
-      | otherwise              = val:(go (fromJust mNext))
+      | otherwise              = val:(go next)
       where
         (node, level, cellCode) = traverseToLevel qtRoot qtLevel 0 code
         cellCodeTo    = qtCellCode level codeTo 
@@ -365,16 +378,11 @@ traceRay qt@QuadTree{..} from to
         val           = leafValue node
         (neigh, isec) = getIntersection ext
         LocCode iseccode = qtVertex2LocCode qt isec
-        mNext = fmap LocCode (sequence (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode)))
-        mkNext Down _ c
-          | c==0      = Nothing
-          | otherwise = Just (c-1)
-        mkNext Up   _ c
-          | (c+cellSize) < maxCode = Just (c+cellSize)
-          | otherwise              = Nothing
-        mkNext Same i _ = Just i
+        next = LocCode (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode))
+        mkNext Down _ c = c - 1
+        mkNext Up   _ c = c + cellSize
+        mkNext Same i _ = i
         cellSize        = bit (unLevel level)
-        maxCode         = bit (unLevel qtLevel)
 
     fromV  = qtBackward qt from
     toV    = qtBackward qt to
@@ -446,8 +454,10 @@ commonNeighborAncestor qt ns path
   | otherwise              = go path
   where
     go p
-      | commonLevel == 0 = error "no pue ser"
       | null p          = []
+#if ASSERTS
+      | commonLevel == 0 = error "no pue ser"
+#endif
 #if DEBUG
       | traceShow ("go cn", commonLevel, l, map (\(_,l',_)->l') p) False
       = undefined
@@ -501,8 +511,11 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) ext@(Extent lo hi)
 
     origin = liftA3 originComp ns lo hi
 
-    originComp Up _   hi' = hi'
-    originComp _  lo' _   = lo'
+    originComp Up   _   hi' = hi'
+    originComp Same lo' _   = lo'
+    originComp Down lo' _   = lo'-epsilon
+
+    epsilon = 1e-12
 
     nv = toVector (toVectorN ns)
 
@@ -519,9 +532,9 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) ext@(Extent lo hi)
 
     inRange v = F.all id (inRangeComp <$> ns <*> lo <*> hi <*> v)
 
-    inRangeComp Same lo' hi' v = lo' <= v && v <= hi'
+    inRangeComp Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
+    inRangeComp Down lo' _   v = nearZero (v-lo'+epsilon)
     inRangeComp Up   _   hi' v = nearZero (hi'-v)
-    inRangeComp Down lo' _   v = nearZero (v-lo')
     
 {-# INLINE mkNeighborChecker #-}
   
