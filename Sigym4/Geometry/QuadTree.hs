@@ -34,7 +34,6 @@ module Sigym4.Geometry.QuadTree (
 
   -- | internal (exposed for testing)
   , innerExtent
-  , unsafeQtLocCode
   , qtLocCode
   , outerExtent
   , neighbors
@@ -272,21 +271,25 @@ qtLocCode qt p
   where qv = qtBackward qt p
 {-# INLINE qtLocCode #-}
 
-unsafeQtLocCode
+calculateForwardExtent
   :: VectorSpace v
-  => QuadTree v srid a -> Point v srid -> LocCode v
-unsafeQtLocCode qt = qtVertex2LocCode qt . qtBackward qt
-{-# INLINE unsafeQtLocCode #-}
+  => QuadTree v srid a -> Level -> LocCode v -> Extent v srid
+calculateForwardExtent qt level code = Extent lo hi
+  where
+    Extent lo' hi' = calculateExtent qt level code
+    Point lo       = qtForward qt (QtVertex lo')
+    Point hi       = qtForward qt (QtVertex hi')
+{-# INLINE calculateForwardExtent #-}
 
 calculateExtent
   :: VectorSpace v
-  => QuadTree v srid a -> Level -> LocCode v -> Extent v srid
+  => QuadTree v srid a -> Level -> LocCode v -> Extent v 0
 calculateExtent qt level code = Extent lo hi
   where
-    Point lo  = qtForward qt (qtLocCode2Vertex qt code)
-    Point hi  = qtForward qt (qtLocCode2Vertex qt code')
-    code'     = LocCode (fmap (+cellSize) (unLocCode code))
-    cellSize  = bit (unLevel level)
+    QtVertex lo = qtLocCode2Vertex qt code
+    QtVertex hi = qtLocCode2Vertex qt code'
+    code'       = LocCode (fmap (+cellSize) (unLocCode code))
+    cellSize    = bit (unLevel level)
 {-# INLINE calculateExtent #-}
 
 
@@ -330,7 +333,7 @@ lookupByPoint qt@QuadTree{..} p
   = case qtLocCode qt p of
       Just c ->
         let (node,level,cellCode) = traverseToLevel qtRoot qtLevel 0 c
-            ext           = calculateExtent qt level cellCode
+            ext           = calculateForwardExtent qt level cellCode
         in Just (leafValue node, ext)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -343,26 +346,25 @@ leafValue _         = error "expected a leaf"
 
 traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Show a, Show (v Word), Eq (v Word), Show (v NeighborDir))
          => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
-traceRay qt@QuadTree{..} from@(Point fromV) to@(Point toV)
-  | from == to = []
-  | otherwise  = case qtLocCode qt from of
+traceRay qt@QuadTree{..} from to
+  | almostEqVertex (unQtVertex fromV) (unQtVertex toV) = []
+  | not (validVertex fromV) = []
 #if DEBUG
-                   _ | traceShow ("trace from:",qtExtent,qtLevel,from,to) False -> undefined
+  | traceShow ("trace from:",qtExtent,qtLevel,from,to) False = undefined
 #endif
-                   Just code -> go code
-                   Nothing   -> []
+  | otherwise  = go (qtVertex2LocCode qt fromV)
   where
     go code
-      | ext `contains` to  = [val]
-      | isNothing mNext    = [val]
-      | otherwise          = val:(go (fromJust mNext))
+      | cellCode == cellCodeTo = [val]
+      | isNothing mNext        = [val]
+      | otherwise              = val:(go (fromJust mNext))
       where
         (node, level, cellCode) = traverseToLevel qtRoot qtLevel 0 code
+        cellCodeTo    = qtCellCode level codeTo 
         ext           = calculateExtent qt level cellCode
         val           = leafValue node
         (neigh, isec) = getIntersection ext
-        --LocCode iseccode = cellLocCode (unsafeQtLocCode qt intersection) level
-        LocCode iseccode = unsafeQtLocCode qt isec
+        LocCode iseccode = qtVertex2LocCode qt isec
         mNext = fmap LocCode (sequence (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode)))
         mkNext Down _ c
           | c==0      = Nothing
@@ -374,10 +376,14 @@ traceRay qt@QuadTree{..} from@(Point fromV) to@(Point toV)
         cellSize        = bit (unLevel level)
         maxCode         = bit (unLevel qtLevel)
 
-    getIntersection :: Extent v srid -> (Neighbor v, Point v srid)
+    fromV  = qtBackward qt from
+    toV    = qtBackward qt to
+    codeTo = qtVertex2LocCode qt toV
+
+    getIntersection :: Extent v 0 -> (Neighbor v, QtVertex v)
     getIntersection ext = case catMaybes matches of
                            []        -> error "no matches"
-                           ((n,v):_) -> (n, Point v)
+                           ((n,v):_) -> (n, QtVertex v)
       where matches = map ($ ext) checkers
 
     toCheck = neighborsToCheck fromV toV
@@ -466,8 +472,8 @@ commonAncestorLevel (LocCode a) (LocCode b)
     diff     = liftA2 xor a b
     numBits = finiteBitSize (undefined :: Word)
 
-neighborsToCheck :: VectorSpace v => Vertex v -> Vertex v -> [Neighbor v]
-neighborsToCheck from to
+neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> [Neighbor v]
+neighborsToCheck (QtVertex from) (QtVertex to)
   = filter checkNeighbor neighbors
   where
     checkNeighbor (Ng ns)    = F.all id (liftA3 checkComp ns from to)
@@ -479,9 +485,9 @@ neighborsToCheck from to
 
 mkNeighborChecker
   :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1), Show (v NeighborDir))
-  => Vertex v -> Vertex v -> Neighbor v
+  => QtVertex v -> QtVertex v -> Neighbor v
   -> (Extent v srid -> Maybe (Neighbor v, Vertex v))
-mkNeighborChecker from to ng@(Ng ns) ext@(Extent lo hi)
+mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) ext@(Extent lo hi)
   = case intersection origin of
       Nothing                      -> error "should not happen"
 #if DEBUG

@@ -187,11 +187,11 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
               , inv
      #-}
 
-checkDetWith :: (Fractional a, Ord a) => (b -> a) -> b -> Maybe b
+checkDetWith :: (Epsilon a) => (b -> a) -> b -> Maybe b
 checkDetWith f m
-  | abs (f m) < epsilon = Nothing
-  | otherwise           = Just m
-  where epsilon = 1e-6
+  | nearZero (f m) = Nothing
+  | otherwise      = Just m
+{-# INLINE checkDetWith #-}
 
 instance VectorSpace V2 where
     type VsDim V2 = 2
