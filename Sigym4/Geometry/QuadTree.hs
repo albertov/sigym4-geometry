@@ -44,6 +44,7 @@ import Control.Exception (assert)
 import Data.Maybe (catMaybes)
 import Data.Either (isRight)
 import Control.Monad (liftM, guard)
+import Control.Monad.Fix (MonadFix(mfix))
 import Data.Proxy (Proxy(..))
 import Data.Bits
 import Data.List (sortBy)
@@ -66,13 +67,20 @@ data QuadTree v (srid :: Nat) a
       qtRoot   :: QNode v srid a
     , qtExtent :: {-# UNPACK #-} !(Extent v srid)
     , qtLevel  :: {-# UNPACK #-} !Level
-  } deriving (Show, Functor)
+  } deriving (Show)
 
 
 data QNode v (srid :: Nat) a
-  = QLeaf a
-  | QNode (V (2 ^ VsDim v) (QNode v srid a))
-  deriving (Show, Functor)
+  = QLeaf { qParent   :: Maybe (QNode v srid a)
+          , qData     :: a
+          }
+  | QNode { qParent   :: Maybe (QNode v srid a)
+          , qChildren :: V (2 ^ VsDim v) (QNode v srid a)
+          }
+
+instance Show a => Show (QNode v srid a) where
+  show QLeaf{..} = concat (["QLeaf {qData = ", show qData, "}"] :: [String])
+  show QNode{..} = concat (["QNode {qChildren = ", show qChildren, "}"] :: [String])
 
 data Node m v (srid::Nat) a
   = Leaf a
@@ -167,17 +175,17 @@ instance Bounded Level where
 
 
 generate
-  :: (Monad m, VectorSpace v)
+  :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Level -> m (QuadTree v srid a)
 generate build ext level
   | level > maxBound || level < minBound
   = fail "QuadTree.generate: invalid level"
   | otherwise
-  = QuadTree <$> genNode ext level build
+  = QuadTree <$> genNode Nothing ext level build
              <*> pure ext
              <*> pure level
 generate2
-  :: (Monad m, VectorSpace v)
+  :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Vertex v -> m (QuadTree v srid a)
 generate2 build ext minBox = generate build effectiveExt level
   where effectiveExt = Extent (eMin ext) (eMin ext + delta)
@@ -188,33 +196,36 @@ generate2 build ext minBox = generate build effectiveExt level
 
 
 genNode
-  :: (Monad m, VectorSpace v)
-  => Extent v srid -> Level -> Node m v srid a -> m (QNode v srid a)
-genNode _   _ (Leaf v) = return (QLeaf v)
-genNode ext level (Node f)
-  | level > 0 = genQNode $ \q -> do
-                  next <- liftM snd (f (innerExtent q ext))
-                  genNode (innerExtent q ext) (level-1) next
-  | otherwise = liftM (QLeaf . fst) (f ext)
+  :: (MonadFix m, VectorSpace v)
+  => Maybe (QNode v srid a) -> Extent v srid -> Level -> Node m v srid a
+  -> m (QNode v srid a)
+genNode parent _   _ (Leaf v) = return (QLeaf parent v)
+genNode parent ext level (Node f)
+  | level > 0 = mfix (\node -> genQNode parent $ \q -> do
+                        next <- liftM snd (f (innerExtent q ext))
+                        genNode (Just node) (innerExtent q ext) (level-1) next)
+  | otherwise = liftM (QLeaf parent . fst) (f ext)
 
 genQNode
-  :: forall m v srid a. (Monad m, VectorSpace v)
-  => (Quadrant v -> m (QNode v srid a)) -> m (QNode v srid a)
-genQNode f = liftM (QNode . V) (V.generateM numNodes (f . toEnum))
+  :: forall m v srid a. (MonadFix m, VectorSpace v)
+  => Maybe (QNode v srid a) -> (Quadrant v -> m (QNode v srid a))
+  -> m (QNode v srid a)
+genQNode parent f = liftM (QNode parent . V) (V.generateM numNodes (f . toEnum))
   where numNodes = 2 ^ dim (Proxy :: Proxy v) 
 
 grow
-  :: (Monad m, VectorSpace v)
+  :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Quadrant v -> QuadTree v srid a -> m (QuadTree v srid a)
 grow build dir (QuadTree oldRoot ext oldLevel)
   | oldLevel + 1 > maxBound = fail "QuadTree.grow: cannot grow"
   | otherwise
   = QuadTree <$> newRoot <*> pure newExt <*> pure (oldLevel + 1)
   where
-    newRoot = genQNode $ \q ->
-      if q == dir
-        then (return oldRoot)
-        else genNode (innerExtent q newExt) oldLevel build
+    newRoot
+      = mfix (\node -> genQNode Nothing $ \q ->
+              if q == dir
+                then (return oldRoot)
+                else genNode (Just node) (innerExtent q newExt) oldLevel build)
     newExt = outerExtent dir ext
 
 
@@ -308,12 +319,12 @@ traverseToLevel
   -> (QNode v srid a, Level, LocCode v)
 traverseToLevel node start end code = go (node, start, cellCode start)
   where
-    go nl@((QLeaf _),_,_)   = nl
-    go nl@(_,l,_) | l<=end  = nl
-    go (QNode (V v),l,_) = let n' = v `V.unsafeIndex` ix
-                               ix = ixFromLocCode l' code
-                               l' = l - 1
-                           in go (n',l',cellCode l')
+    go nl@((QLeaf{}),_,_)          = nl
+    go nl@(_,l,_) | l<=end         = nl
+    go (QNode {qChildren=V v},l,_) = let n' = v `V.unsafeIndex` ix
+                                         ix = ixFromLocCode l' code
+                                         l' = l - 1
+                                     in go (n',l',cellCode l')
     cellCode = flip qtCellCode code
 {-# INLINE traverseToLevel #-}
 
@@ -335,7 +346,7 @@ lookupByPoint qt@QuadTree{..} p
       Just c ->
         let (node,level,cellCode) = traverseToLevel qtRoot qtLevel 0 c
             ext           = calculateForwardExtent qt level cellCode
-        in Just (leafValue node, ext)
+        in Just (leafData node, ext)
       Nothing -> Nothing
 
 {-# SPECIALISE lookupByPoint
@@ -344,10 +355,10 @@ lookupByPoint qt@QuadTree{..} p
 {-# SPECIALISE lookupByPoint
       :: QuadTree V3 srid a -> Point V3 srid -> Maybe (a, Extent V3 srid) #-}
 
-leafValue :: QNode v srid a -> a
-leafValue (QLeaf v) = v
-leafValue _         = error "expected a leaf"
-{-# INLINE leafValue #-}
+leafData :: QNode v srid a -> a
+leafData QLeaf{..} = qData
+leafData _         = error "expected a leaf"
+{-# INLINE leafData #-}
 
 
 traceRay :: forall v srid a. (VectorSpace v, KnownNat (VsDim v - 1), Eq (v Word)
@@ -363,9 +374,9 @@ traceRay qt@QuadTree{..} from to
 #if DEBUG
   | traceShow ("traceRay from:",qtExtent,qtLevel,from,to) False = undefined
 #endif
-  | otherwise  = go (qtVertex2LocCode qt fromV)
+  | otherwise  = go (qtVertex2LocCode qt fromV) qtRoot qtLevel
   where
-    go code
+    go code startNode startLevel
 #if DEBUG
       | traceShow ("go", code) False = undefined
 #endif
@@ -374,15 +385,23 @@ traceRay qt@QuadTree{..} from to
       | next     == code          = error "traceRay: got in a loop"
 #endif
       | cellCode == cellCodeTo = [val]
-      | otherwise              = val:(go next)
+      | otherwise              = val:(go next ancestor ancestorLevel)
       where
-        (node, level, cellCode) = traverseToLevel qtRoot qtLevel 0 code
+        (node, level, cellCode) = traverseToLevel startNode startLevel 0 code
         cellCodeTo    = qtCellCode level codeTo 
         ext           = calculateExtent qt level cellCode
-        val           = leafValue node
+        val           = leafData node
         (neigh, isec) = getIntersection ext
         LocCode iseccode = qtVertex2LocCode qt isec
         next = LocCode (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode))
+        ancestorLevel = commonAncestorLevel code next
+        ancestor      = commonAncestor (Just node) level
+
+        commonAncestor (Just n) l
+          | l==ancestorLevel     = n
+          | otherwise            = commonAncestor (qParent n) (l+1)
+        commonAncestor Nothing _ = error "this should never happen"
+
         mkNext Down _ c = c - 1
         mkNext Up   _ c = c + cellSize
         mkNext Same i _ = i
@@ -413,6 +432,14 @@ traceRay qt@QuadTree{..} from to
 {-# SPECIALISE traceRay
       :: QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
 #endif
+
+commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
+commonAncestorLevel (LocCode a) (LocCode b)
+  = Level (F.maximum (fmap componentLevel diff))
+  where
+    componentLevel d = maxLevel - countLeadingZeros d + 1
+    diff             = liftA2 xor a b
+    Level maxLevel   = maxBound
 
 neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> [Neighbor v]
 neighborsToCheck (QtVertex from) (QtVertex to)

@@ -8,6 +8,7 @@ module Sigym4.Geometry.QuadTreeSpec (main, spec) where
 
 import Control.Applicative (liftA2)
 import Control.Monad (when)
+import Control.Monad.Fix
 import Data.List
 import Data.Proxy
 import qualified Data.Foldable as F
@@ -15,6 +16,7 @@ import Data.Functor.Identity (runIdentity)
 import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
+import Test.QuickCheck.Gen (Gen(MkGen))
 import Sigym4.Geometry
 import Sigym4.Geometry.QuadTree
 import Sigym4.Geometry.Algorithms
@@ -139,3 +141,6 @@ instance VectorSpace v => Arbitrary (EQT v) where
                (V.zipWithM (\a b -> choose (a,b-epsilon)) lo' hi')
         where lo' = toVector (toVectorN lo)
               hi' = toVector (toVectorN hi)
+
+instance MonadFix Gen where
+  mfix f = MkGen (\r n -> let MkGen f'=f v; v=f' r n in v)
