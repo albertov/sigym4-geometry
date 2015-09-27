@@ -128,6 +128,7 @@ import Data.Monoid (Monoid(..))
 import Control.Lens
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
+import Control.DeepSeq (NFData(rnf))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
 import qualified Data.Vector as V
@@ -153,7 +154,7 @@ type SqMatrix v = v (Vertex v)
 -- | A vector space
 class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
       , Show (Vertex v), Eq (Vertex v), Epsilon (Vertex v)
-      , U.Unbox (Vertex v)
+      , U.Unbox (Vertex v), NFData (Vertex v)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v, Traversable v)
@@ -445,10 +446,11 @@ mkGeoReference :: Extent V2 srid -> Size V2 -> Either String (GeoReference V2 sr
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
 newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
-deriving instance VectorSpace v => Show (Point v srid)
-deriving instance VectorSpace v => Eq (Point v srid)
-deriving instance Hashable (v Double) => Hashable (Point v srid)
-deriving instance Storable (v Double) => Storable (Point v srid)
+deriving instance VectorSpace v     => Show (Point v srid)
+deriving instance VectorSpace v     => Eq (Point v srid)
+deriving instance NFData (Vertex v) => NFData (Point v srid)
+deriving instance Hashable (Vertex v) => Hashable (Point v srid)
+deriving instance Storable (Vertex v) => Storable (Point v srid)
 
 pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\p v -> p { _pVertex = v })
@@ -523,16 +525,16 @@ newtype TIN v srid = TIN {
 makeLenses ''TIN
 
 data Geometry v (srid::Nat)
-    = GeoPoint (Point v srid)
-    | GeoMultiPoint (MultiPoint v srid)
-    | GeoLineString (LineString v srid)
-    | GeoMultiLineString (MultiLineString v srid)
-    | GeoPolygon (Polygon v srid)
-    | GeoMultiPolygon (MultiPolygon v srid)
-    | GeoTriangle (Triangle v srid)
-    | GeoPolyhedralSurface (PolyhedralSurface v srid)
-    | GeoTIN (TIN v srid)
-    | GeoCollection (GeometryCollection v srid)
+    = GeoPoint !(Point v srid)
+    | GeoMultiPoint !(MultiPoint v srid)
+    | GeoLineString !(LineString v srid)
+    | GeoMultiLineString !(MultiLineString v srid)
+    | GeoPolygon !(Polygon v srid)
+    | GeoMultiPolygon !(MultiPolygon v srid)
+    | GeoTriangle !(Triangle v srid)
+    | GeoPolyhedralSurface !(PolyhedralSurface v srid)
+    | GeoTIN !(TIN v srid)
+    | GeoCollection !(GeometryCollection v srid)
     deriving (Eq, Show)
 
 newtype GeometryCollection v srid = GeometryCollection {
@@ -580,31 +582,41 @@ mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
 
 pointCoordinates :: VectorSpace v => Point v srid -> [Double]
 pointCoordinates = views pVertex coords
+{-# INLINE pointCoordinates #-}
 
 lineStringCoordinates :: VectorSpace v => LineString v srid -> [[Double]]
 lineStringCoordinates = vectorCoordinates . _lsPoints
+{-# INLINE lineStringCoordinates #-}
 
 linearRingCoordinates :: VectorSpace v => LinearRing v srid -> [[Double]]
 linearRingCoordinates = vectorCoordinates . _lrPoints
+{-# INLINE linearRingCoordinates #-}
 
 polygonCoordinates :: VectorSpace v => Polygon v srid -> [[[Double]]]
 polygonCoordinates = V.toList . V.map linearRingCoordinates . polygonRings
+{-# INLINE polygonCoordinates #-}
 
 polygonRings :: Polygon v srid -> V.Vector (LinearRing v srid)
 polygonRings (Polygon ir rs) = V.cons ir rs
+{-# INLINE polygonRings #-}
 
 triangleCoordinates :: VectorSpace v => Triangle v srid -> [[Double]]
 triangleCoordinates (Triangle a b c) = map pointCoordinates [a, b, c, a]
+{-# INLINE triangleCoordinates #-}
 
 vectorCoordinates :: VectorSpace v => U.Vector (Point v srid) -> [[Double]]
 vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
+{-# INLINE vectorCoordinates #-}
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
 data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
-    _fGeom :: g v srid
-  , _fData :: d
+    _fGeom :: !(g v srid)
+  , _fData :: !d
   } deriving (Eq, Show, Functor)
 makeLenses ''FeatureT
+
+instance (NFData d, NFData (g v srid)) => NFData (FeatureT g v srid d) where
+  rnf (Feature g v) = rnf g `seq` rnf v
 
 type Feature = FeatureT Geometry
 

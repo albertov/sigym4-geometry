@@ -61,6 +61,7 @@ library
                      , aeson
                      , semigroups
                      , transformers
+                     , deepseq
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -fwarn-incomplete-patterns
@@ -100,7 +101,7 @@ test-suite main
   hs-source-dirs:    tests
   main-is:           Spec.hs
   default-language:  Haskell2010
-  ghc-options:       -Wall -threaded
+  ghc-options:       -Wall -rtsopts -with-rtsopts=-K1K
   cpp-options:     -DASSERTS
 
 benchmark bench

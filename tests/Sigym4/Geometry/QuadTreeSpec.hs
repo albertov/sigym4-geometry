@@ -21,6 +21,7 @@ import Sigym4.Geometry
 import Sigym4.Geometry.QuadTree
 import Sigym4.Geometry.Algorithms
 import qualified Data.Vector as V
+import qualified Data.Vector.Generic as G
 import qualified Data.Semigroup as SG
 import Data.List.NonEmpty (fromList)
 import Arbitrary ()
@@ -45,7 +46,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
   describe "neighbors " $ do
     it " has correct length" $ 
-      length (neighbors :: [Neighbor v]) == 3^(dim (Proxy :: Proxy v)) - 1
+      G.length (neighbors :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
 
   describe "innerExtent " $ do
     prop "is smaller" $ \(q, (ext :: Extent v srid)) ->
@@ -110,6 +111,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
       prop "last contains to" $
         \(EQT (qt,p,p1) :: EQT v) ->
             last (traceRay qt p p1) `contains` p1
+            
 
 
 almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool

@@ -20,6 +20,7 @@ module Sigym4.Geometry.QuadTree (
   , Node (..)
   , Level (unLevel)
   , Neighbor
+  , Neighbors
   , NeighborDir (..)
 
   , generate
@@ -41,16 +42,16 @@ module Sigym4.Geometry.QuadTree (
 
 
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
-import Data.Maybe (catMaybes)
 import Data.Either (isRight)
 import Control.Monad (liftM, guard)
 import Control.Monad.Fix (MonadFix(mfix))
 import Data.Proxy (Proxy(..))
 import Data.Bits
 import Data.List (sortBy)
-import qualified Data.Vector as V
 import qualified Data.Foldable as F
+import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Generic as G
 import Linear.Matrix (identity)
 
 import Sigym4.Geometry
@@ -122,6 +123,8 @@ data NeighborDir = Down | Same | Up
 
 newtype Neighbor v = Ng {unNg :: v NeighborDir}
 
+type Neighbors v = V.Vector (Neighbor v)
+
 deriving instance Show (v NeighborDir) => Show (Neighbor v)
 
 instance VectorSpace v => Bounded (Neighbor v) where
@@ -130,8 +133,8 @@ instance VectorSpace v => Bounded (Neighbor v) where
   maxBound = Ng (pure Up)
   {-# INLINE maxBound #-}
 
-neighbors :: forall v. VectorSpace v => [Neighbor v]
-neighbors = sortBy vertexNeighborsFirst $ do
+neighbors :: forall v. VectorSpace v => Neighbors v
+neighbors = G.fromList $ sortBy vertexNeighborsFirst $ do
   n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (V.all (==Same) n))
   return (Ng (fromVectorN (V n)))
@@ -140,10 +143,10 @@ neighbors = sortBy vertexNeighborsFirst $ do
       | not (hasSame a), hasSame b = LT
       | hasSame a, not (hasSame b) = GT
       | otherwise                  = EQ
-
-hasSame :: VectorSpace v => Neighbor v -> Bool
-hasSame = F.any (==Same) . unNg
-{-# INLINE hasSame #-}
+    hasSame = F.any (==Same) . unNg
+{-# NOINLINE neighbors #-}
+{-# SPECIALISE neighbors :: Neighbors V2 #-}
+{-# SPECIALISE neighbors :: Neighbors V3 #-}
 
 
 newtype Level = Level {unLevel :: Int}
@@ -262,11 +265,13 @@ qtVertex2LocCode
   :: VectorSpace v => QuadTree v srid a -> QtVertex v -> LocCode v
 qtVertex2LocCode qt = LocCode . fmap (truncate . (*m)) . unQtVertex
   where m = fromIntegral (maxValue (qtLevel qt))
+{-# INLINE qtVertex2LocCode #-}
 
 qtLocCode2Vertex
   :: VectorSpace v => QuadTree v srid a -> LocCode v -> QtVertex v
 qtLocCode2Vertex qt = QtVertex  . fmap ((/m) . fromIntegral) . unLocCode
   where m = fromIntegral (maxValue (qtLevel qt))
+{-# INLINE qtLocCode2Vertex #-}
 
 
 validVertex :: VectorSpace v => QtVertex v -> Bool
@@ -321,9 +326,9 @@ traverseToLevel node start end code = go (node, start, cellCode start)
   where
     go nl@((QLeaf{}),_,_)          = nl
     go nl@(_,l,_) | l<=end         = nl
-    go (QNode {qChildren=V v},l,_) = let n' = v `V.unsafeIndex` ix
-                                         ix = ixFromLocCode l' code
-                                         l' = l - 1
+    go (QNode {qChildren=V v},l,_) = let !n' = v `V.unsafeIndex` ix
+                                         !ix = ixFromLocCode l' code
+                                         !l' = l - 1
                                      in go (n',l',cellCode l')
     cellCode = flip qtCellCode code
 {-# INLINE traverseToLevel #-}
@@ -376,7 +381,7 @@ traceRay qt@QuadTree{..} from to
 #endif
   | otherwise  = go (qtVertex2LocCode qt fromV) qtRoot qtLevel
   where
-    go code startNode startLevel
+    go !code !startNode !startLevel
 #if DEBUG
       | traceShow ("go", code) False = undefined
 #endif
@@ -397,7 +402,7 @@ traceRay qt@QuadTree{..} from to
         ancestorLevel = commonAncestorLevel code next
         ancestor      = findAncestor node level
 
-        findAncestor n !l
+        findAncestor !n !l
           | l==ancestorLevel = n
           | otherwise        = findAncestor (qParent n) (l+1)
 
@@ -411,17 +416,19 @@ traceRay qt@QuadTree{..} from to
     codeTo = qtVertex2LocCode qt toV
 
     getIntersection :: Extent v 0 -> (Neighbor v, QtVertex v)
-    getIntersection ext = case catMaybes matches of
-                           ((n,v):_) -> (n, QtVertex v)
-                           []        -> error "no matches"
-      where matches = map ($ ext) checkers
-
-    toCheck = neighborsToCheck fromV toV
-    checkers = map (mkNeighborChecker fromV toV) toCheck
-
+    getIntersection ext = G.head
+                        . checkNotEmpty
+                        . G.map snd
+                        . G.filter fst
+                        . G.map (\n -> neighborIntersection fromV toV n ext)
+                        $ neighborsToCheck fromV toV
 #if ASSERTS
-    qtValidCode :: VectorSpace v => QuadTree v srid a -> LocCode v -> Bool
     qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
+    checkNotEmpty l
+      | G.null l  = error "no neighbors intersects"
+      | otherwise = l
+#else
+    checkNotEmpty = id
 #endif
 
 #if !DEBUG
@@ -439,10 +446,11 @@ commonAncestorLevel (LocCode a) (LocCode b)
     componentLevel d = maxLevel - countLeadingZeros d + 1
     diff             = liftA2 xor a b
     Level maxLevel   = maxBound
+{-# INLINE commonAncestorLevel #-}
 
-neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> [Neighbor v]
+neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbors v
 neighborsToCheck (QtVertex from) (QtVertex to)
-  = filter checkNeighbor neighbors
+  = G.filter checkNeighbor neighbors
   where
     checkNeighbor (Ng ns)    = F.all id (liftA3 checkComp ns from to)
     checkComp Same _ _       = True
@@ -451,20 +459,20 @@ neighborsToCheck (QtVertex from) (QtVertex to)
 {-# INLINE neighborsToCheck #-}
 
 
-mkNeighborChecker
+neighborIntersection
   :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1)
 #if DEBUG
   , Show (v NeighborDir)
 #endif
   )
-  => QtVertex v -> QtVertex v -> Neighbor v
-  -> (Extent v srid -> Maybe (Neighbor v, Vertex v))
-mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
+  => QtVertex v -> QtVertex v
+  -> Neighbor v -> Extent v srid -> (Bool, (Neighbor v, QtVertex v))
+neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
 #if DEBUG
   | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False = undefined
 #endif
-  | inRange vertex = Just (ng, vertex)
-  | otherwise      = Nothing
+  | inRange vertex = (True, (ng, QtVertex vertex))
+  | otherwise      = (False, (ng, QtVertex vertex))
   where
 #if ASSERTS
     vertex = maybe
@@ -503,7 +511,7 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
     inRangeComp Down lo' _   v = nearZero (v-lo'+epsilon)
     inRangeComp Up   _   hi' v = nearZero (hi'-v)
     
-{-# INLINE mkNeighborChecker #-}
+{-# INLINE neighborIntersection #-}
   
 
 
