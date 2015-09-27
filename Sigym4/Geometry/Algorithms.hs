@@ -17,6 +17,7 @@ module Sigym4.Geometry.Algorithms (
   , HasIntersects(..)
   , Direction
   , lineHyperplaneIntersection
+  , lineHyperplaneMaybeIntersection
   , almostEqVertex
   , combinations
   , extentCorners
@@ -36,12 +37,8 @@ import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
 import Linear.Matrix ((!*), identity)
 import Data.List (tails)
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (catMaybes)
 import GHC.TypeLits
-
-#if DEBUG
-import Debug.Trace
-#endif
 
 class HasContains a b where
     contains :: (VectorSpace v) => a v (srid::Nat) -> b v (srid::Nat) -> Bool
@@ -152,8 +149,8 @@ instance HasIntersects Extent LineString where
         | otherwise         = U.any inRange (U.fromList planeIntersections)
         where
           inRange v = vBetweenC lo hi v && not (any (almostEqVertex v) corners)
-          planeIntersections = map snd $ filter fst
-                                [ lineHyperplaneIntersection (b-a) a p o
+          planeIntersections = catMaybes 
+                                [ lineHyperplaneMaybeIntersection (b-a) a p o
                                 | p<-planes, o<-[lo,hi]]
   {-# INLINABLE intersects #-}
 
@@ -166,7 +163,7 @@ extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
     vlo = toVector (toVectorN lo)
     vhi = toVector (toVectorN hi)
     mkCorner ls = fromVectorN $ V $
-                   V.zipWith3 (\i l h -> if i then h else l)
+                   V.zipWith3 (\up l h -> if up then h else l)
                               (V.fromList ls) vlo vhi
 
 
@@ -280,11 +277,32 @@ vBetweenC l h p = l `vLte` p && p `vLte` h
 
 type Direction v = Vertex v
 
+lineHyperplaneMaybeIntersection
+  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
+  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
+  -> Maybe (Vertex v)
+lineHyperplaneMaybeIntersection lineDirection lineOrigin planeDirections planeOrigin
+  | valid     = Just v
+  | otherwise = Nothing
+  where
+    (valid,v) = lineHyperplaneIntersection'
+                  lineDirection lineOrigin planeDirections planeOrigin
+{-# INLINE lineHyperplaneMaybeIntersection #-}
+
 lineHyperplaneIntersection
   :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
   => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
+  -> Vertex v
+lineHyperplaneIntersection lineDirection lineOrigin planeDirections
+  = snd . lineHyperplaneIntersection' lineDirection lineOrigin planeDirections
+{-# INLINE lineHyperplaneIntersection #-}
+
+
+lineHyperplaneIntersection'
+  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
+  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
   -> (Bool, Vertex v)
-lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
+lineHyperplaneIntersection' lineDirection lineOrigin planeDirections planeOrigin
   = (invertible a, lineOrigin + fmap (*lineDelta) lineDirection)
   where
     x           = inv a !* (lineOrigin - planeOrigin)
@@ -298,12 +316,13 @@ lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
       where
         v | j==0      = lineDir
           | otherwise = toVector (toVectorN (planeDirs `V.unsafeIndex` (j-1)))
-{-# INLINE lineHyperplaneIntersection #-}
+{-# INLINE lineHyperplaneIntersection' #-}
 
 almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
 almostEqVertex a b = nearZero (a-b)
 {-# INLINE almostEqVertex #-}
 
+combinations :: Int -> [a] -> [[a]]
 combinations 0 _ = [[]]
 combinations n lst = do
     (x:xs) <- tails lst

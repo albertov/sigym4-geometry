@@ -397,7 +397,7 @@ gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
   where v0  = gtOrigin gt
         m
-#ifdef ASSERTS
+#if ASSERTS
           | not (invertible (gtMatrix gt)) = error "gtMatrix is not invertible"
 #endif
           | otherwise                      = inv (gtMatrix gt)

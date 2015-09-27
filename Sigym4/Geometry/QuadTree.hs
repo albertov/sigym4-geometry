@@ -41,7 +41,7 @@ module Sigym4.Geometry.QuadTree (
 
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
 import Control.Exception (assert)
-import Data.Maybe (catMaybes, isNothing, fromJust)
+import Data.Maybe (catMaybes)
 import Data.Either (isRight)
 import Control.Monad (liftM, guard)
 import Data.Proxy (Proxy(..))
@@ -394,8 +394,8 @@ traceRay qt@QuadTree{..} from to
 
     getIntersection :: Extent v 0 -> (Neighbor v, QtVertex v)
     getIntersection ext = case catMaybes matches of
-                           []        -> error "no matches"
                            ((n,v):_) -> (n, QtVertex v)
+                           []        -> error "no matches"
       where matches = map ($ ext) checkers
 
     toCheck = neighborsToCheck fromV toV
@@ -422,7 +422,6 @@ neighborsToCheck (QtVertex from) (QtVertex to)
     checkComp Same _ _       = True
     checkComp Down from' to' = not (nearZero (to'-from')) && from'> to'
     checkComp Up   from' to' = not (nearZero (to'-from')) && to'  > from'
-    checkComp _    _     _   = False
 {-# INLINE neighborsToCheck #-}
 
 
@@ -438,23 +437,26 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
 #if DEBUG
   | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False = undefined
 #endif
-#if ASSERTS
-  | not valid      = error "the impossible! does not intersect with neighbor"
-#endif
   | inRange vertex = Just (ng, vertex)
   | otherwise      = Nothing
   where
-    lineDir         = to - from
-    (valid, vertex) = lineHyperplaneIntersection lineDir from planeDirs origin
+#if ASSERTS
+    vertex = maybe
+               (error "The impossible! no intersection found with neighbor")
+               id
+               (lineHyperplaneMaybeIntersection lineDir from planeDirs origin)
+#else
+    vertex = lineHyperplaneIntersection lineDir from planeDirs origin
+#endif
 
-    origin = liftA3 originComp ns lo hi
+    lineDir                 = to - from
 
+    origin                  = liftA3 originComp ns lo hi
     originComp Up   _   hi' = hi'
     originComp Same lo' _   = lo'
     originComp Down lo' _   = lo'-epsilon
 
     epsilon = 1e-12
-
 
     planeDirs :: V (VsDim v - 1) (Direction v) 
     planeDirs = V (V.generate numPlanes pickPlane)
@@ -471,7 +473,6 @@ mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
         nMusts            = V.length must
 
     inRange v = F.all id (inRangeComp <$> ns <*> lo <*> hi <*> v)
-
     inRangeComp Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
     inRangeComp Down lo' _   v = nearZero (v-lo'+epsilon)
     inRangeComp Up   _   hi' v = nearZero (hi'-v)
