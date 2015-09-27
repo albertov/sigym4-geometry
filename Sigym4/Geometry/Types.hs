@@ -153,7 +153,7 @@ type SqMatrix v = v (Vertex v)
 
 -- | A vector space
 class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
-      , Show (Vertex v), Eq (Vertex v), Epsilon (Vertex v)
+      , Show (Vertex v), Eq (Vertex v), Ord (Vertex v), Epsilon (Vertex v)
       , U.Unbox (Vertex v), NFData (Vertex v)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
@@ -446,9 +446,10 @@ mkGeoReference :: Extent V2 srid -> Size V2 -> Either String (GeoReference V2 sr
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
 newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
-deriving instance VectorSpace v     => Show (Point v srid)
-deriving instance VectorSpace v     => Eq (Point v srid)
-deriving instance NFData (Vertex v) => NFData (Point v srid)
+deriving instance VectorSpace v       => Show (Point v srid)
+deriving instance VectorSpace v       => Eq (Point v srid)
+deriving instance VectorSpace v       => Ord (Point v srid)
+deriving instance NFData (Vertex v)   => NFData (Point v srid)
 deriving instance Hashable (Vertex v) => Hashable (Point v srid)
 deriving instance Storable (Vertex v) => Storable (Point v srid)
 
