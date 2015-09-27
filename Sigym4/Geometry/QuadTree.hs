@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE KindSignatures #-}
@@ -40,7 +41,6 @@ module Sigym4.Geometry.QuadTree (
 
 
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
-import Control.Exception (assert)
 import Data.Maybe (catMaybes)
 import Data.Either (isRight)
 import Control.Monad (liftM, guard)
@@ -71,10 +71,10 @@ data QuadTree v (srid :: Nat) a
 
 
 data QNode v (srid :: Nat) a
-  = QLeaf { qParent   :: Maybe (QNode v srid a)
+  = QLeaf { qParent   :: QNode v srid a   -- undefined if root
           , qData     :: a
           }
-  | QNode { qParent   :: Maybe (QNode v srid a)
+  | QNode { qParent   :: QNode v srid a   -- undefined if root
           , qChildren :: V (2 ^ VsDim v) (QNode v srid a)
           }
 
@@ -181,7 +181,7 @@ generate build ext level
   | level > maxBound || level < minBound
   = fail "QuadTree.generate: invalid level"
   | otherwise
-  = QuadTree <$> genNode Nothing ext level build
+  = QuadTree <$> genNode undefined ext level build
              <*> pure ext
              <*> pure level
 generate2
@@ -197,18 +197,18 @@ generate2 build ext minBox = generate build effectiveExt level
 
 genNode
   :: (MonadFix m, VectorSpace v)
-  => Maybe (QNode v srid a) -> Extent v srid -> Level -> Node m v srid a
+  => QNode v srid a -> Extent v srid -> Level -> Node m v srid a
   -> m (QNode v srid a)
 genNode parent _   _ (Leaf v) = return (QLeaf parent v)
 genNode parent ext level (Node f)
   | level > 0 = mfix (\node -> genQNode parent $ \q -> do
                         next <- liftM snd (f (innerExtent q ext))
-                        genNode (Just node) (innerExtent q ext) (level-1) next)
+                        genNode node (innerExtent q ext) (level-1) next)
   | otherwise = liftM (QLeaf parent . fst) (f ext)
 
 genQNode
   :: forall m v srid a. (MonadFix m, VectorSpace v)
-  => Maybe (QNode v srid a) -> (Quadrant v -> m (QNode v srid a))
+  => QNode v srid a -> (Quadrant v -> m (QNode v srid a))
   -> m (QNode v srid a)
 genQNode parent f = liftM (QNode parent . V) (V.generateM numNodes (f . toEnum))
   where numNodes = 2 ^ dim (Proxy :: Proxy v) 
@@ -222,10 +222,10 @@ grow build dir (QuadTree oldRoot ext oldLevel)
   = QuadTree <$> newRoot <*> pure newExt <*> pure (oldLevel + 1)
   where
     newRoot
-      = mfix (\node -> genQNode Nothing $ \q ->
+      = mfix (\node -> genQNode undefined $ \q ->
               if q == dir
                 then (return oldRoot)
-                else genNode (Just node) (innerExtent q newExt) oldLevel build)
+                else genNode node (innerExtent q newExt) oldLevel build)
     newExt = outerExtent dir ext
 
 
@@ -395,12 +395,11 @@ traceRay qt@QuadTree{..} from to
         LocCode iseccode = qtVertex2LocCode qt isec
         next = LocCode (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode))
         ancestorLevel = commonAncestorLevel code next
-        ancestor      = commonAncestor (Just node) level
+        ancestor      = findAncestor node level
 
-        commonAncestor (Just n) l
-          | l==ancestorLevel     = n
-          | otherwise            = commonAncestor (qParent n) (l+1)
-        commonAncestor Nothing _ = error "this should never happen"
+        findAncestor n !l
+          | l==ancestorLevel = n
+          | otherwise        = findAncestor (qParent n) (l+1)
 
         mkNext Down _ c = c - 1
         mkNext Up   _ c = c + cellSize
