@@ -36,7 +36,7 @@ import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
 import Linear.Matrix ((!*), identity)
 import Data.List (tails)
-import Data.Maybe (fromJust, isJust, catMaybes)
+import Data.Maybe (fromJust, isJust)
 import GHC.TypeLits
 
 #if DEBUG
@@ -152,8 +152,9 @@ instance HasIntersects Extent LineString where
         | otherwise         = U.any inRange (U.fromList planeIntersections)
         where
           inRange v = vBetweenC lo hi v && not (any (almostEqVertex v) corners)
-          planeIntersections = catMaybes [lineHyperplaneIntersection (b-a) a p o
-                                         | p<-planes, o<-[lo,hi]]
+          planeIntersections = map snd $ filter fst
+                                [ lineHyperplaneIntersection (b-a) a p o
+                                | p<-planes, o<-[lo,hi]]
   {-# INLINABLE intersects #-}
 
 extentCorners 
@@ -282,16 +283,11 @@ type Direction v = Vertex v
 lineHyperplaneIntersection
   :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
   => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
-  -> Maybe (Vertex v)
+  -> (Bool, Vertex v)
 lineHyperplaneIntersection lineDirection lineOrigin planeDirections planeOrigin
-#if DEBUG
-  | traceShow ("lineIsec", a, lineDirection, planeDirections) False = undefined
-#endif
-  | isJust invA = Just (lineOrigin + fmap (*lineDelta) lineDirection)
-  | otherwise   = Nothing
+  = (invertible a, lineOrigin + fmap (*lineDelta) lineDirection)
   where
-    invA        = inv a
-    x           = fromJust invA !* (lineOrigin - planeOrigin)
+    x           = inv a !* (lineOrigin - planeOrigin)
     lineDelta   = negate (V.head (toVector (toVectorN x)))
     planeDirs   = toVector (toVectorN planeDirections)
     lineDir     = toVector (toVectorN lineDirection)

@@ -361,7 +361,7 @@ traceRay qt@QuadTree{..} from to
   | not (validVertex fromV) = []
   | not (validVertex toV)   = []
 #if DEBUG
-  | traceShow ("trace from:",qtExtent,qtLevel,from,to) False = undefined
+  | traceShow ("traceRay from:",qtExtent,qtLevel,from,to) False = undefined
 #endif
   | otherwise  = go (qtVertex2LocCode qt fromV)
   where
@@ -370,8 +370,8 @@ traceRay qt@QuadTree{..} from to
       | traceShow ("go", code) False = undefined
 #endif
 #if ASSERTS
-      | not (qtValidCode qt code) = error "bad vertex"
-      | next     == code          = error "loop!"
+      | not (qtValidCode qt code) = error "traceRay: reached bad vertex"
+      | next     == code          = error "traceRay: got in a loop"
 #endif
       | cellCode == cellCodeTo = [val]
       | otherwise              = val:(go next)
@@ -406,12 +406,13 @@ traceRay qt@QuadTree{..} from to
     qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
 #endif
 
-
+#if !DEBUG
 {-# SPECIALISE traceRay
       :: QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
 
 {-# SPECIALISE traceRay
       :: QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
+#endif
 
 neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> [Neighbor v]
 neighborsToCheck (QtVertex from) (QtVertex to)
@@ -434,16 +435,17 @@ mkNeighborChecker
   => QtVertex v -> QtVertex v -> Neighbor v
   -> (Extent v srid -> Maybe (Neighbor v, Vertex v))
 mkNeighborChecker (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
-  = case intersection origin of
 #if DEBUG
-      _ | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False -> undefined
+  | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False = undefined
 #endif
-      Nothing                      -> error "should not happen"
-      Just vertex | inRange vertex -> Just (ng, vertex)
-      _                            -> Nothing
+#if ASSERTS
+  | not valid      = error "the impossible! does not intersect with neighbor"
+#endif
+  | inRange vertex = Just (ng, vertex)
+  | otherwise      = Nothing
   where
-    lineDir       = to - from
-    intersection  = lineHyperplaneIntersection lineDir from planeDirs
+    lineDir         = to - from
+    (valid, vertex) = lineHyperplaneIntersection lineDir from planeDirs origin
 
     origin = liftA3 originComp ns lo hi
 

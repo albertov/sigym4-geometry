@@ -76,6 +76,7 @@ module Sigym4.Geometry.Types (
   , eSize
   , coords
   , fromCoords
+  , invertible
 
   -- lenses & prisms
   , pVertex
@@ -129,7 +130,6 @@ import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
@@ -160,7 +160,8 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
   => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
 
-    inv :: SqMatrix v -> Maybe (SqMatrix v)
+    inv :: SqMatrix v -> SqMatrix v
+    det :: SqMatrix v -> Double
 
     dim :: Proxy v -> Int
     dim = const (reflectDim (Proxy :: Proxy (VsDim v)))
@@ -180,49 +181,55 @@ fromCoords = fmap fromVectorN . fromVector . V.fromList
 {-# INLINE fromCoords #-}
 
 
-checkDetWith :: (Epsilon a) => (b -> a) -> b -> Maybe b
-checkDetWith f m
-  | nearZero (f m) = Nothing
-  | otherwise      = Just m
-{-# INLINE checkDetWith #-}
+invertible :: VectorSpace v => SqMatrix v -> Bool
+invertible = not . nearZero . det
+{-# INLINE invertible #-}
 
 instance VectorSpace V2 where
     type VsDim V2 = 2
-    inv = fmap inv22 . checkDetWith det22
+    inv = inv22
+    det = det22
     toVectorN (V2 u v) = V [u, v]
     fromVectorN (V v) = V2 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
+    {-# INLINE det #-}
 
 instance VectorSpace V3 where
     type VsDim V3 = 3
-    inv = fmap inv33 . checkDetWith det33
+    inv = inv33
+    det = det33
     toVectorN (V3 u v z) = V [u, v, z]
     fromVectorN (V v)
       = V3 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1) (v `V.unsafeIndex` 2)
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
+    {-# INLINE det #-}
 
 instance VectorSpace V4 where
     type VsDim V4 = 4
-    inv = fmap inv44 . checkDetWith det44
+    inv = inv44
+    det = det44
     toVectorN (V4 u v z t) = V [u, v, z, t]
     fromVectorN (V v) = V4 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
                            (v `V.unsafeIndex` 2) (v `V.unsafeIndex` 3)
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
+    {-# INLINE det #-}
 
 instance KnownNat n => VectorSpace (V n) where
     type VsDim (V n) = n
     inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
+    det = error ("det not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
     toVectorN   = id
     fromVectorN = id
     {-# INLINE toVectorN #-}
     {-# INLINE fromVectorN #-}
     {-# INLINE inv #-}
+    {-# INLINE det #-}
 
 
 newtype Offset (t :: OffsetType) = Offset {unOff :: Int}
@@ -361,7 +368,7 @@ scalarSize = product . unSize
 
 
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
--- 'Pixel' coordinates and back. gtMatrix *must* be inversible so smart
+-- 'Pixel' coordinates and back. gtMatrix *must* be invertible so smart
 -- constructors are provided
 data GeoTransform v (srid :: Nat) = GeoTransform 
       { gtMatrix :: !(SqMatrix v)
@@ -388,9 +395,12 @@ northUpGeoTransform e s
 
 gtForward :: VectorSpace v => GeoTransform v srid -> Point v srid -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
-  where m   = fromMaybe (error "non inversible transform matrix") $
-              inv (gtMatrix gt)
-        v0  = gtOrigin gt
+  where v0  = gtOrigin gt
+        m
+#ifdef ASSERTS
+          | not (invertible (gtMatrix gt)) = error "gtMatrix is not invertible"
+#endif
+          | otherwise                      = inv (gtMatrix gt)
 
 
 gtBackward :: VectorSpace v => GeoTransform v srid -> Pixel v -> Point v srid
