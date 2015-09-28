@@ -46,7 +46,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
   describe "neighbors " $ do
     it " has correct length" $ 
-      G.length (neighbors :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
+      length (neighbors :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
 
   describe "innerExtent " $ do
     prop "is smaller" $ \(q, (ext :: Extent v srid)) ->

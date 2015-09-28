@@ -123,7 +123,7 @@ data NeighborDir = Down | Same | Up
 
 newtype Neighbor v = Ng {unNg :: v NeighborDir}
 
-type Neighbors v = V.Vector (Neighbor v)
+type Neighbors v = [Neighbor v]
 
 deriving instance Show (v NeighborDir) => Show (Neighbor v)
 
@@ -134,7 +134,7 @@ instance VectorSpace v => Bounded (Neighbor v) where
   {-# INLINE maxBound #-}
 
 neighbors :: forall v. VectorSpace v => Neighbors v
-neighbors = G.fromList $ sortBy vertexNeighborsFirst $ do
+neighbors = sortBy vertexNeighborsFirst $ do
   n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (V.all (==Same) n))
   return (Ng (fromVectorN (V n)))
@@ -144,9 +144,8 @@ neighbors = G.fromList $ sortBy vertexNeighborsFirst $ do
       | hasSame a, not (hasSame b) = GT
       | otherwise                  = EQ
     hasSame = F.any (==Same) . unNg
-{-# NOINLINE neighbors #-}
-{-# SPECIALISE neighbors :: Neighbors V2 #-}
-{-# SPECIALISE neighbors :: Neighbors V3 #-}
+{-# SPECIALISE INLINE neighbors :: Neighbors V2 #-}
+{-# SPECIALISE INLINE neighbors :: Neighbors V3 #-}
 
 
 newtype Level = Level {unLevel :: Int}
@@ -416,16 +415,16 @@ traceRay qt@QuadTree{..} from to
     codeTo = qtVertex2LocCode qt toV
 
     getIntersection :: Extent v 0 -> (Neighbor v, QtVertex v)
-    getIntersection ext = G.head
+    getIntersection ext = head
                         . checkNotEmpty
-                        . G.map snd
-                        . G.filter fst
-                        . G.map (\n -> neighborIntersection fromV toV n ext)
+                        . map snd
+                        . filter fst
+                        . map (\n -> neighborIntersection fromV toV n ext)
                         $ neighborsToCheck fromV toV
 #if ASSERTS
     qtValidCode QuadTree{qtLevel=l} = F.all (<maxValue l) . unLocCode
     checkNotEmpty l
-      | G.null l  = error "no neighbors intersects"
+      | null l    = error "no neighbors intersects"
       | otherwise = l
 #else
     checkNotEmpty = id
@@ -450,7 +449,7 @@ commonAncestorLevel (LocCode a) (LocCode b)
 
 neighborsToCheck :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbors v
 neighborsToCheck (QtVertex from) (QtVertex to)
-  = G.filter checkNeighbor neighbors
+  = filter checkNeighbor neighbors
   where
     checkNeighbor (Ng ns)    = F.all id (liftA3 checkComp ns from to)
     checkComp Same _ _       = True
