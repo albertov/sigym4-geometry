@@ -475,20 +475,21 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
   | otherwise      = (False, (ng, QtVertex vertex))
   where
 #if ASSERTS
-    vertex = maybe
-               (error "The impossible! no intersection found with neighbor")
-               id
-               (lineHyperplaneMaybeIntersection lineDir from planeDirs origin)
+    vertex  = maybe
+                (error "The impossible! no intersection found with neighbor")
+                id
+                (lineHyperplaneMaybeIntersection lineDir from planeDirs origin)
 #else
-    vertex = lineHyperplaneIntersection lineDir from planeDirs origin
+    vertex  = lineHyperplaneIntersection lineDir from planeDirs origin
 #endif
 
-    lineDir                 = to - from
+    lineDir = to - from
 
-    origin                  = liftA3 originComp ns lo hi
-    originComp Up   _   hi' = hi'
-    originComp Same lo' _   = lo'
-    originComp Down lo' _   = lo'-epsilon
+    origin  = liftA3 go ns lo hi
+      where
+        go Up   _   hi' = hi'
+        go Same lo' _   = lo'
+        go Down lo' _   = lo'-epsilon
 
     epsilon = 1e-12
 
@@ -506,10 +507,11 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
         nv                = toVector (toVectorN ns)
         nMusts            = V.length must
 
-    inRange v = F.all id (inRangeComp <$> ns <*> lo <*> hi <*> v)
-    inRangeComp Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
-    inRangeComp Down lo' _   v = nearZero (v-lo'+epsilon)
-    inRangeComp Up   _   hi' v = nearZero (hi'-v)
+    inRange v = F.all id (go <$> ns <*> lo <*> hi <*> v)
+      where
+        go Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
+        go Down lo' _   v = nearZero (v-lo'+epsilon)
+        go Up   _   hi' v = nearZero (hi'-v)
     
 {-# INLINE neighborIntersection #-}
   
