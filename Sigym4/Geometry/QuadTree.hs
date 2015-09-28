@@ -51,7 +51,6 @@ import Data.List (sortBy)
 import qualified Data.Foldable as F
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Generic as G
 import Linear.Matrix (identity)
 
 import Sigym4.Geometry
@@ -506,7 +505,7 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
         nv                = toVector (toVectorN ns)
         nMusts            = V.length must
 
-    inRange v = F.all id (go <$> ns <*> lo <*> hi <*> v)
+    inRange vx = F.all id (go <$> ns <*> lo <*> hi <*> vx)
       where
         go Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
         go Down lo' _   v = nearZero (v-lo'+epsilon)
