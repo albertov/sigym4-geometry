@@ -137,7 +137,7 @@ neighbors :: forall v. VectorSpace v => Neighbors v
 neighbors = sortBy vertexNeighborsFirst $ do
   n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (V.all (==Same) n))
-  return (Ng (fromVectorN (V n)))
+  return $! Ng (fromVectorN (V n))
   where
     vertexNeighborsFirst a b
       | not (hasSame a), hasSame b = LT
