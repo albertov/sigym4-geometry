@@ -10,6 +10,7 @@ import Control.Applicative (liftA2)
 import Control.Monad (when)
 import Control.Monad.Fix
 import Data.List
+import Data.List.NonEmpty (fromList)
 import Data.Proxy
 import qualified Data.Foldable as F
 import Data.Functor.Identity (runIdentity)
@@ -17,15 +18,17 @@ import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
 import Test.QuickCheck.Gen (Gen(MkGen))
-import Sigym4.Geometry
-import Sigym4.Geometry.QuadTree
-import Sigym4.Geometry.Algorithms
 import qualified Data.Vector as V
-import qualified Data.Vector.Generic as G
 import qualified Data.Semigroup as SG
-import Data.List.NonEmpty (fromList)
-import Arbitrary ()
 import GHC.TypeLits
+
+import Arbitrary ()
+
+import Sigym4.Geometry
+import Sigym4.Geometry.Algorithms
+import Sigym4.Geometry.QuadTree
+import Sigym4.Geometry.QuadTree.Internal.Types
+import Sigym4.Geometry.QuadTree.Internal.Algorithms
 
 main :: IO ()
 main = hspec spec
@@ -40,7 +43,7 @@ spec = do
 
 
 quadTreeSpec
-  :: forall v. (VectorSpace v, Show (v Halve), KnownNat (VsDim v - 1), Show (v Word), Eq (v Word), Show (v NeighborDir))
+  :: forall v. (VectorSpace v, Show (v Half), KnownNat (VsDim v - 1), Show (v Word), Eq (v Word), Show (v NeighborDir))
   => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
