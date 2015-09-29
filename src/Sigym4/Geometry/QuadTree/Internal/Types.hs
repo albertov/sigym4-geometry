@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -15,18 +16,18 @@
 
 module Sigym4.Geometry.QuadTree.Internal.Types where
 
-
+import Control.Monad (liftM, replicateM, guard)
 import Control.Applicative ((<$>), (<*>), pure, liftA2)
-import Control.Monad (guard)
-import Data.Proxy (Proxy(..))
+import Linear.Matrix (identity)
 import Data.Bits
 import Data.List (sortBy)
+import Data.Proxy (Proxy(..))
 import qualified Data.Foldable as F
-import qualified Data.Vector as V
-import qualified Data.Vector.Generic as G
+
 import Language.Haskell.TH.Syntax
 
 import Sigym4.Geometry
+import Sigym4.Geometry.Algorithms
 
 import GHC.TypeLits
 
@@ -68,14 +69,13 @@ deriving instance Show (v Half) => Show (Quadrant v)
 
 
 instance VectorSpace v => Enum (Quadrant v) where
-  fromEnum
-    = V.sum . V.imap (\i qv -> (fromEnum qv `unsafeShiftL` i))
-    . toVector . toVectorN . unQuadrant
+  fromEnum = snd . F.foldl' go (0::Int,0) . unQuadrant
+    where go (!i,!s) v = (i+1, s + (fromEnum v `unsafeShiftL` i))
   {-# INLINE fromEnum #-}
 
   toEnum ix
-    = Quadrant . fromVectorN . V
-    $ V.generate d (\i -> if ix `testBit` i then Second else First)
+    = Quadrant . unsafeFromCoords
+    $ map (\i -> if ix `testBit` i then Second else First) [0..d-1]
     where d = dim (Proxy :: Proxy v)
   {-# INLINE toEnum #-}
 
@@ -88,46 +88,18 @@ instance VectorSpace v => Bounded (Quadrant v) where
 data NeighborDir = Down | Same | Up
   deriving (Show, Eq, Enum, Bounded)
 
-newtype Neighbor v = Ng {unNg :: v NeighborDir}
-
-type Neighbors v = [Neighbor v]
-
-deriving instance Show (v NeighborDir) => Show (Neighbor v)
-
-instance VectorSpace v => Bounded (Neighbor v) where
-  minBound = Ng (pure Down)
-  {-# INLINE minBound #-}
-  maxBound = Ng (pure Up)
-  {-# INLINE maxBound #-}
-
-
-neighbors :: forall v. VectorSpace v => Neighbors v
-neighbors = sortBy vertexNeighborsFirst $ do
-  n <- V.replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
-  guard (not (V.all (==Same) n))
-  return $! Ng (fromVectorN (V n))
-  where
-    vertexNeighborsFirst a b
-      | not (hasSame a), hasSame b = LT
-      | hasSame a, not (hasSame b) = GT
-      | otherwise                  = EQ
-    hasSame = F.any (==Same) . unNg
-{-# NOINLINE neighbors #-}
-
-
-mkNeighbors
-  :: forall v. VectorSpace v => Q (TExp (Neighbors v))
-mkNeighbors = unsafeTExpCoerce (lift (neighbors :: Neighbors v))
-
 instance Lift (NeighborDir) where
     lift Up   = [| Up |]
     lift Down = [| Down |]
     lift Same = [| Same |]
 
+data Neighbor v = Ng { ngDirection :: !(v NeighborDir)
+                     , ngNormals   :: !(V (VsDim v - 1) (Direction v))
+                     }
 
-instance VectorSpace v => Lift (Neighbor v) where
-    lift (Ng v) = let l = G.toList (toVector (toVectorN v))
-                  in [| Ng (fromVectorN (V (G.fromList l))) |]
+type Neighbors v = [Neighbor v]
+
+deriving instance (Show (v NeighborDir), Show (v Double)) => Show (Neighbor v)
 
 
 
@@ -167,3 +139,44 @@ deriving instance Show (v Word) => Show (LocCode v)
 newtype QtVertex v = QtVertex {unQtVertex :: Vertex v}
 deriving instance VectorSpace v => Show (QtVertex v)
 deriving instance VectorSpace v => Eq (QtVertex v)
+
+
+neighborsDefault
+  :: forall v. (VectorSpace v, KnownNat (VsDim v -1))
+  => Neighbors v
+neighborsDefault = sortBy vertexNeighborsFirst $ do
+  n <- replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
+  guard (not (all (==Same) n))
+  let dir = unsafeFromCoords n
+  return $! Ng dir (mkNormals dir)
+  where
+    vertexNeighborsFirst a b
+      | not (hasSame a), hasSame b = LT
+      | hasSame a, not (hasSame b) = GT
+      | otherwise                  = EQ
+    hasSame = F.any (==Same) . ngDirection
+
+    mkNormals :: v NeighborDir -> V (VsDim v - 1) (Direction v) 
+    mkNormals dir = unsafeFromCoords (take numPlanes (must++perhaps))
+       where
+        (_, must, perhaps)       = F.foldl' makeNormal (0, [], []) dir
+        makeNormal (!i,m,p) Same = (i+1, unit i:m, p       )
+        makeNormal (!i,m,p) _    = (i+1, m       , unit i:p)
+        numPlanes                = dim (Proxy :: Proxy v) - 1
+        unit                     = (!!) (coords (identity :: SqMatrix v))
+
+
+mkNeighbors
+  :: forall v. (VectorSpace v, KnownNat (VsDim v -1)) => Q (TExp (Neighbors v))
+mkNeighbors = unsafeTExpCoerce $ liftM ListE $
+  mapM liftNeighbor (neighborsDefault :: Neighbors v)
+
+
+liftNeighbor
+  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1)) => Neighbor v -> Q Exp
+liftNeighbor (Ng v ns) =
+  [| Ng (unsafeFromCoords dirs) (unsafeFromCoords $planes) |]
+  where
+    planes = liftM ListE (mapM (\n -> [|unsafeFromCoords n|]) ls)
+    dirs   = coords v
+    ls     = map coords (coords ns)

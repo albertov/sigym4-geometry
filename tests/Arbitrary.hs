@@ -13,22 +13,22 @@ import Control.Applicative ((<$>))
 #else
 import Control.Applicative ((<$>), (<*>))
 #endif
+import Control.Monad (replicateM)
 import Data.Maybe (fromJust)
 import Data.Vector (fromList)
 import Data.Proxy (Proxy(..))
 import qualified Data.Vector.Unboxed as U
-import qualified Data.Vector.Generic as G
 
 import Sigym4.Geometry
 import Sigym4.Geometry.QuadTree
 
 instance {-# INCOHERENT #-} forall v. VectorSpace v
   => Arbitrary (Vertex v) where
-  arbitrary = (fromVectorN . V) <$> G.replicateM n arbitrary
+  arbitrary = unsafeFromCoords <$> replicateM n arbitrary
     where n = dim (Proxy :: Proxy v)
 
 positiveV :: forall v. VectorSpace v => Gen (Vertex v)
-positiveV = (fromVectorN . V) <$> G.replicateM n (choose (1, 1000))
+positiveV = unsafeFromCoords <$> replicateM n (choose (1, 1000))
   where n = dim (Proxy :: Proxy v)
 
 instance VectorSpace v => Arbitrary (Size v) where

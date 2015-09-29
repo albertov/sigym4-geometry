@@ -27,7 +27,7 @@ module Sigym4.Geometry.Algorithms (
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative (pure)
 #endif
-import Control.Applicative (liftA2)
+import Control.Applicative (liftA2, liftA3)
 import Control.Monad (replicateM)
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
@@ -36,7 +36,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
-import Linear.Matrix ((!*), identity)
+import Linear.Matrix ((!*), identity, transpose)
 import Data.List (tails)
 import Data.Maybe (catMaybes)
 import GHC.TypeLits
@@ -140,9 +140,9 @@ instance HasIntersects Extent LineString where
     $ U.zipWith segmentIntersects ps (U.tail ps)
     where
       planes :: [V (VsDim v - 1) (Direction v)]
-      planes = map (V . V.fromList) $
-               combinations (dim (Proxy :: Proxy v) - 1)
-               (V.toList (toVector (toVectorN (identity :: SqMatrix v))))
+      planes = map unsafeFromCoords $
+                 combinations (dim (Proxy :: Proxy v) - 1)
+                 (coords (identity :: SqMatrix v))
       corners = filter (not . almostEqVertex lo) (extentCorners ext)
       segmentIntersects pa@(Point a) pb@(Point b)
         | ext `contains` pa = True
@@ -161,11 +161,7 @@ extentCorners
 extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
   where
     d = dim (Proxy :: Proxy v)
-    vlo = toVector (toVectorN lo)
-    vhi = toVector (toVectorN hi)
-    mkCorner ls = fromVectorN $ V $
-                   V.zipWith3 (\up l h -> if up then h else l)
-                              (V.fromList ls) vlo vhi
+    mkCorner = liftA3 (\l h up -> if up then h else l) lo hi . unsafeFromCoords
 
 
 class HasCentroid a where
@@ -307,16 +303,9 @@ lineHyperplaneIntersection' lineDirection lineOrigin planeDirections planeOrigin
   = (invertible a, lineOrigin + fmap (*lineDelta) lineDirection)
   where
     x           = inv a !* (lineOrigin - planeOrigin)
-    lineDelta   = negate (V.head (toVector (toVectorN x)))
-    planeDirs   = toVector (toVectorN planeDirections)
-    lineDir     = toVector (toVectorN lineDirection)
-    d           = dim (Proxy :: Proxy v)
-    a           = fromVectorN (V (V.generate d genRow))
-    genRow i    = fromVectorN (V (V.generate d (genCell i)))
-    genCell i j = v `V.unsafeIndex` i
-      where
-        v | j==0      = lineDir
-          | otherwise = toVector (toVectorN (planeDirs `V.unsafeIndex` (j-1)))
+    a           = transpose at
+    lineDelta   = negate (head (coords x))
+    at          = unsafeFromCoords (lineDirection:coords planeDirections)
 {-# INLINE lineHyperplaneIntersection' #-}
 
 almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
@@ -326,7 +315,7 @@ almostEqVertex a b = nearZero (a-b)
 combinations :: Int -> [a] -> [[a]]
 combinations = go
   where
-    go !n []  = [[]]
+    go !_ []  = [[]]
     go !n lst = do
       (x:xs) <- tails lst
       rest   <- go (n-1) xs

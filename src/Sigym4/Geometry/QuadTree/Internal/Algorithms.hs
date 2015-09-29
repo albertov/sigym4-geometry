@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE BangPatterns #-}
@@ -17,15 +19,15 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms where
 
 
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
-import Data.Either (isRight)
 import Control.Monad (liftM)
 import Control.Monad.Fix (MonadFix(mfix))
 import Data.Proxy (Proxy(..))
 import Data.Bits
+import Language.Haskell.TH.Syntax
 import qualified Data.Foldable as F
 import qualified Data.Vector as V
+import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
-import Linear.Matrix (identity)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -188,10 +190,8 @@ traverseToLevel node start end code = go (node, start, cellCode start)
 ixFromLocCode
   :: VectorSpace v
   => Level -> LocCode v -> Int
-ixFromLocCode (Level l)
-  = V.foldl' (.|.) 0
-  . V.imap (\i v -> fromEnum (v `testBit` l) `unsafeShiftL` i)
-  . toVector . toVectorN . unLocCode
+ixFromLocCode (Level l) = snd . F.foldl' go (0::Int,0) . unLocCode
+  where go (!i,!s) v = (i+1, s + (fromEnum (v `testBit` l) `unsafeShiftL` i))
 {-# INLINE ixFromLocCode #-}
 
 lookupByPoint
@@ -245,7 +245,7 @@ traceRay qt@QuadTree{..} from to
         val           = leafData node
         (neigh, isec) = getIntersection ext
         LocCode iseccode = qtVertex2LocCode qt isec
-        next = LocCode (liftA3 mkNext (unNg neigh) iseccode (unLocCode cellCode))
+        next = LocCode (liftA3 mkNext (ngDirection neigh) iseccode (unLocCode cellCode))
         ancestorLevel = commonAncestorLevel code next
         ancestor      = findAncestor node level
 
@@ -279,7 +279,13 @@ traceRay qt@QuadTree{..} from to
     checkNotEmpty = id
 #endif
 
-{-# INLINE traceRay #-}
+{-# SPECIALISE[2] traceRay ::
+      QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
+{-# SPECIALISE[2] traceRay ::
+      QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
+{-# SPECIALISE[2] traceRay ::
+      QuadTree V4 srid a -> Point V4 srid -> Point V4 srid -> [a] #-}
+      
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
@@ -291,8 +297,8 @@ commonAncestorLevel (LocCode a) (LocCode b)
 {-# INLINE commonAncestorLevel #-}
 
 
-checkNeighbor (QtVertex from) (QtVertex to) (Ng ns)
-  = F.all id (liftA3 checkComp ns from to) 
+checkNeighbor (QtVertex from) (QtVertex to) ng
+  = F.all id (liftA3 checkComp (ngDirection ng) from to) 
   where
     checkComp Same _ _       = True
     checkComp Down from' to' = not (nearZero (to'-from')) && from'> to'
@@ -307,7 +313,7 @@ neighborIntersection
   )
   => QtVertex v -> QtVertex v
   -> Neighbor v -> Extent v srid -> (Bool, (Neighbor v, QtVertex v))
-neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
+neighborIntersection (QtVertex from) (QtVertex to) ng (Extent lo hi)
 #if DEBUG
   | traceShow ("checkNg: ", ng,origin,lineDir,planeDirs) False = undefined
 #endif
@@ -325,7 +331,7 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
 
     lineDir = to - from
 
-    origin  = liftA3 go ns lo hi
+    origin  = liftA3 go (ngDirection ng) lo hi
       where
         go Up   _   hi' = hi'
         go Same lo' _   = lo'
@@ -333,10 +339,10 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
 
     epsilon = 1e-12
 
-    planeDirs = neighborPlanes ng
+    planeDirs = ngNormals ng
 
 
-    inRange vx = F.all id (go <$> ns <*> lo <*> hi <*> vx)
+    inRange vx = F.all id (go <$> (ngDirection ng) <*> lo <*> hi <*> vx)
       where
         go Same lo' hi' v = (nearZero (v-lo') || lo' < v) && v < hi'
         go Down lo' _   v = nearZero (v-lo'+epsilon)
@@ -344,22 +350,6 @@ neighborIntersection (QtVertex from) (QtVertex to) ng@(Ng ns) (Extent lo hi)
     
 {-# INLINE neighborIntersection #-}
   
-neighborPlanes
-  :: forall v. VectorSpace v
-  => Neighbor v -> V (VsDim v - 1) (Direction v) 
-neighborPlanes (Ng ns) = V (V.generate numPlanes pickPlane)
-   where
-    pickPlane i
-      | i < nMusts    = either id id (must `V.unsafeIndex` i)
-      | otherwise     = either id id (perhaps `V.unsafeIndex` (i-nMusts))
-    (must,perhaps)    = V.unstablePartition isRight (V.imap makeNormal nv)
-    makeNormal i Same = Right (idmatrix `V.unsafeIndex` i)
-    makeNormal i _    = Left  (idmatrix `V.unsafeIndex` i)
-    idmatrix          = toVector (toVectorN (identity :: SqMatrix v))
-    numPlanes         = dim (Proxy :: Proxy v) - 1
-    nv                = toVector (toVectorN ns)
-    nMusts            = V.length must
-{-# INLINE neighborPlanes #-}
 
 
 innerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
@@ -384,3 +374,24 @@ outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
     mkHi First  l h = 2*h - l
     mkHi Second _ h = h
 {-# INLINE outerExtent #-}
+
+neighbors :: forall v. (VectorSpace v, KnownNat (VsDim v - 1)) => Neighbors v
+neighbors = neighborsDefault
+{-# NOINLINE neighbors #-}
+
+
+neighborsV2 :: Neighbors V2
+neighborsV2 = $$(mkNeighbors)
+{-# INLINE[2] neighborsV2 #-}
+{-# RULES "neighbors/V2"[2] neighbors = neighborsV2 #-}
+
+neighborsV3 :: Neighbors V3
+neighborsV3 = $$(mkNeighbors)
+{-# INLINE[2] neighborsV3 #-}
+{-# RULES "neighbors/V3"[2] neighbors = neighborsV3 #-}
+
+neighborsV4 :: Neighbors V4
+neighborsV4 = $$(mkNeighbors)
+{-# INLINE[2] neighborsV4 #-}
+{-# RULES "neighbors/V4"[2] neighbors = neighborsV4 #-}
+

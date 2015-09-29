@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving
-           , OverloadedLists
            , DataKinds
+           , TypeOperators
            , TypeFamilies
            , GeneralizedNewtypeDeriving
            , TemplateHaskell
@@ -74,8 +74,6 @@ module Sigym4.Geometry.Types (
   , withSrid
 
   , eSize
-  , coords
-  , fromCoords
   , invertible
 
   -- lenses & prisms
@@ -126,11 +124,13 @@ import Data.Foldable (Foldable)
 import Data.Monoid (Monoid(..))
 #endif
 import Control.Lens
+import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData(rnf))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
@@ -157,7 +157,7 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
       , U.Unbox (Vertex v), NFData (Vertex v)
       , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
-      , Metric v, Applicative v, Foldable v, Traversable v)
+      , Metric v, Applicative v, Foldable v, Traversable v, Distributive v)
   => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
 
@@ -168,18 +168,18 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
     dim = const (reflectDim (Proxy :: Proxy (VsDim v)))
     {-# INLINE dim #-}
 
-    toVectorN   :: v a -> V (VsDim v) a
+    coords :: VectorSpace v => v a -> [a]
+    fromCoords :: VectorSpace v => [a] -> Maybe (v a)
 
-    fromVectorN :: V (VsDim v) a -> v a
+    unsafeFromCoords :: VectorSpace v => [a] -> v a
+    unsafeFromCoords = fromMaybe (error "unsafeFromCoords") . fromCoords
+    {-# INLINE CONLIKE [1] unsafeFromCoords #-}
 
+    consRowToMatrix :: (VectorSpace v', CmpNat (VsDim v') (VsDim v - 1) ~ 'EQ)
+       => Vertex v -> v' (Vertex v) -> SqMatrix v
 
-coords :: VectorSpace v => v a -> [a]
-coords vn = let V v = toVectorN vn in V.toList v
-{-# INLINE coords #-}
+    {-# MINIMAL inv, det, coords , fromCoords #-}
 
-fromCoords :: VectorSpace v => [a] -> Maybe (v a)
-fromCoords = fmap fromVectorN . fromVector . V.fromList
-{-# INLINE fromCoords #-}
 
 
 invertible :: VectorSpace v => SqMatrix v -> Bool
@@ -190,45 +190,59 @@ instance VectorSpace V2 where
     type VsDim V2 = 2
     inv = inv22
     det = det22
-    toVectorN (V2 u v) = V [u, v]
-    fromVectorN (V v) = V2 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
-    {-# INLINE toVectorN #-}
-    {-# INLINE fromVectorN #-}
+    coords (V2 u v) = [u, v]
+    fromCoords [u, v] = Just (V2 u v)
+    fromCoords _      = Nothing
+    {-# INLINE CONLIKE [1] coords #-}
+    {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
+
+{-# RULES
+      "unsafeFromCoords/V2" forall u v.
+        unsafeFromCoords (u:v:[]) = V2 u v #-}
 
 instance VectorSpace V3 where
     type VsDim V3 = 3
     inv = inv33
     det = det33
-    toVectorN (V3 u v z) = V [u, v, z]
-    fromVectorN (V v)
-      = V3 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1) (v `V.unsafeIndex` 2)
-    {-# INLINE toVectorN #-}
-    {-# INLINE fromVectorN #-}
+    coords (V3 u v z) = [u, v, z]
+    fromCoords [u, v, z] = Just (V3 u v z)
+    fromCoords _         = Nothing
+    {-# INLINE CONLIKE [1] coords #-}
+    {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
+
+{-# RULES
+      "unsafeFromCoords/V3" forall u v z.
+        unsafeFromCoords (u:v:z:[]) = V3 u v z #-}
+
 
 instance VectorSpace V4 where
     type VsDim V4 = 4
     inv = inv44
     det = det44
-    toVectorN (V4 u v z t) = V [u, v, z, t]
-    fromVectorN (V v) = V4 (v `V.unsafeIndex` 0) (v `V.unsafeIndex` 1)
-                           (v `V.unsafeIndex` 2) (v `V.unsafeIndex` 3)
-    {-# INLINE toVectorN #-}
-    {-# INLINE fromVectorN #-}
+    coords (V4 u v z w) = [u, v, z, w]
+    fromCoords [u, v, z, w] = Just (V4 u v z w)
+    fromCoords _            = Nothing
+    {-# INLINE CONLIKE [1] coords #-}
+    {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
+
+{-# RULES
+      "unsafeFromCoords/V4" forall u v z w.
+        unsafeFromCoords (u:v:z:w:[]) = V4 u v z w #-}
 
 instance KnownNat n => VectorSpace (V n) where
     type VsDim (V n) = n
     inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
     det = error ("det not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
-    toVectorN   = id
-    fromVectorN = id
-    {-# INLINE toVectorN #-}
-    {-# INLINE fromVectorN #-}
+    coords     = G.toList . toVector
+    fromCoords = fromVector . G.fromList
+    {-# INLINE coords #-}
+    {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
 
