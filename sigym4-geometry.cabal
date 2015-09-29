@@ -75,6 +75,8 @@ library
 
   if flag(debug)
     cpp-options: -DDEBUG
+  else
+    ghc-options:  -O2
 
   if flag(asserts)
     cpp-options: -DASSERTS

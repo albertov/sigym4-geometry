@@ -8,6 +8,7 @@
            , ScopedTypeVariables
            , InstanceSigs
            , CPP
+           , BangPatterns
            #-}
 module Sigym4.Geometry.Algorithms (
     HasExtent(..)
@@ -45,51 +46,51 @@ class HasContains a b where
 
 instance HasContains Extent Point where
     Extent{eMin=l, eMax=h} `contains` (Point v) = vBetween l h v
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent Extent where
     Extent{eMin=l1, eMax=h1} `contains` Extent{eMin=l2, eMax=h2}
       = vBetweenC l1 h1 l2 && vBetweenC l1 h1 h2
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent MultiPoint where
     ext `contains` (MultiPoint ps) = V.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 
 instance HasContains Extent LinearRing where
     ext `contains` (LinearRing ps) = U.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent LineString where
     ext `contains` (LineString ps) = U.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent MultiLineString where
     ext `contains` (MultiLineString ps) = V.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent Polygon where
     ext `contains` (Polygon oRing _) = ext `contains` oRing
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent Triangle where
     ext `contains` (Triangle a b c) = ext `contains` a &&
                                       ext `contains` b &&
                                       ext `contains` c
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent MultiPolygon where
     ext `contains` (MultiPolygon ps) = V.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent PolyhedralSurface where
     ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent TIN where
     ext `contains` (TIN ts) = U.all (contains ext) ts
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent Geometry where
     ext `contains` (GeoPoint g)             = ext `contains` g
@@ -102,11 +103,11 @@ instance HasContains Extent Geometry where
     ext `contains` (GeoPolyhedralSurface g) = ext `contains` g
     ext `contains` (GeoTIN g)               = ext `contains` g
     ext `contains` (GeoCollection g)        = ext `contains` g
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 instance HasContains Extent GeometryCollection where
     ext `contains` (GeometryCollection ps) = V.all (contains ext) ps
-    {-# INLINABLE contains #-}
+    {-# INLINE contains #-}
 
 
 
@@ -117,17 +118,17 @@ class HasIntersects a b where
 
 instance HasIntersects Extent Point where
   intersects = contains
-  {-# INLINABLE intersects #-}
+  {-# INLINE intersects #-}
 
 instance HasIntersects Point Extent where
   intersects = flip intersects
-  {-# INLINABLE intersects #-}
+  {-# INLINE intersects #-}
 
 instance HasIntersects Extent Extent where
   Extent{eMin=l1, eMax=h1} `intersects` Extent{eMin=l2, eMax=h2}
     = liftBinBool (>) (eSize intersection) (pure 0)
     where intersection = Extent (liftA2 max l1 l2) (liftA2 min h1 h2)
-  {-# INLINABLE intersects #-}
+  {-# INLINE intersects #-}
 
 
 instance HasIntersects Extent LineString where
@@ -152,7 +153,7 @@ instance HasIntersects Extent LineString where
           planeIntersections = catMaybes 
                                 [ lineHyperplaneMaybeIntersection (b-a) a p o
                                 | p<-planes, o<-[lo,hi]]
-  {-# INLINABLE intersects #-}
+  {-# INLINE intersects #-}
 
 extentCorners 
   :: forall v srid. VectorSpace v
@@ -172,11 +173,11 @@ class HasCentroid a where
 
 instance HasCentroid Point where
     centroid = id
-    {-# INLINABLE centroid #-}
+    {-# INLINE centroid #-}
 
 instance HasCentroid Extent where
     centroid e = Point $ (eMin e + eMax e) / 2
-    {-# INLINABLE centroid #-}
+    {-# INLINE centroid #-}
 
 
 class HasDistance a b where
@@ -184,54 +185,54 @@ class HasDistance a b where
 
 instance HasDistance Point Point where
     distance (Point a) (Point b) = M.distance a b
-    {-# INLINABLE distance #-}
+    {-# INLINE distance #-}
 
 class HasExtent a where
     extent :: (VectorSpace v) => a v (srid::Nat) -> Extent v (srid::Nat)
 
 instance HasExtent Point where
     extent (Point v) = Extent v v
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent MultiPoint where
     extent = extentFromVector . V.convert . _mpPoints
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 
 instance HasExtent LinearRing where
     extent = extentFromVector . V.convert . _lrPoints
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent LineString where
     extent = extentFromVector . V.convert . _lsPoints
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent MultiLineString where
     extent = extentFromVector . _mlLineStrings
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent Polygon where
     extent = extent . _pOuterRing
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent Triangle where
     extent (Triangle a b c) = a' SG.<> b' SG.<> c'
         where a' = extent a
               b' = extent b
               c' = extent c
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent MultiPolygon where
     extent = extentFromVector . _mpPolygons
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent PolyhedralSurface where
     extent = extentFromVector . _psPolygons
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent TIN where
     extent = extentFromVector . V.convert . _tinTriangles
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent Geometry where
     extent (GeoPoint g) = extent g
@@ -244,11 +245,11 @@ instance HasExtent Geometry where
     extent (GeoPolyhedralSurface g) = extent g
     extent (GeoTIN g) = extent g
     extent (GeoCollection g) = extent g
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 instance HasExtent GeometryCollection where
     extent = extentFromVector . _gcGeometries
-    {-# INLINABLE extent #-}
+    {-# INLINE extent #-}
 
 extentFromVector
   :: (HasExtent a, VectorSpace v)
@@ -323,8 +324,11 @@ almostEqVertex a b = nearZero (a-b)
 {-# INLINE almostEqVertex #-}
 
 combinations :: Int -> [a] -> [[a]]
-combinations 0 _ = [[]]
-combinations n lst = do
-    (x:xs) <- tails lst
-    rest   <- combinations (n-1) xs
-    return $ x : rest
+combinations = go
+  where
+    go !n []  = [[]]
+    go !n lst = do
+      (x:xs) <- tails lst
+      rest   <- go (n-1) xs
+      return $ x : rest
+{-# INLINE combinations #-}

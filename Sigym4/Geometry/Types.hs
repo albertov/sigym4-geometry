@@ -410,8 +410,8 @@ gtBackward gt p = Point $ v0 + (unPx p) *! m
         v0 = gtOrigin gt
 
 data GeoReference v srid = GeoReference 
-      { grTransform :: GeoTransform v srid
-      , grSize      :: Size v
+      { grTransform :: !(GeoTransform v srid)
+      , grSize      :: !(Size v)
       }
 deriving instance VectorSpace v => Eq (GeoReference v srid)
 deriving instance VectorSpace v => Show (GeoReference v srid)
@@ -547,6 +547,7 @@ makePrisms ''Geometry
 
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
+{-# INLINE gSrid #-}
 
 withSrid
   :: Integer

@@ -15,7 +15,7 @@ main = do
       decode :: ByteString -> Either String (Geometry V2 0)
       Right geom = decode bs
   defaultMain [
-      bench "decode" $ whnf decode bs
-    , bench "extent" $ whnf (extent :: Geometry V2 0 -> Extent V2 0) geom
+      bench "decode" $ nf decode bs
+    , bench "extent" $ nf (extent :: Geometry V2 0 -> Extent V2 0) geom
     , bench "encode" $ nf (wkbEncode LittleEndian) geom
     ]
