@@ -2,7 +2,6 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds #-}
@@ -28,6 +27,7 @@ import Language.Haskell.TH.Syntax
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
+import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilon)
 
 import GHC.TypeLits
 
@@ -37,8 +37,14 @@ data QuadTree v (srid :: Nat) a
       qtRoot   :: QNode v srid a
     , qtExtent :: {-# UNPACK #-} !(Extent v srid)
     , qtLevel  :: {-# UNPACK #-} !Level
-  } deriving (Show)
+  }
 
+instance VectorSpace v => Show (QuadTree v srid a) where
+  show QuadTree{..} = concat ([
+     "QuadTree { qtExtent = ", show qtExtent, ","
+    ,          " qtLevel = ", show qtLevel, " }"] :: [String])
+
+type Box v = Vertex v
 
 data QNode v (srid :: Nat) a
   = QLeaf { qParent   :: QNode v srid a   -- undefined if root
@@ -93,13 +99,16 @@ instance Lift (NeighborDir) where
     lift Down = [| Down |]
     lift Same = [| Same |]
 
-data Neighbor v = Ng { ngDirection :: !(v NeighborDir)
-                     , ngNormals   :: !(V (VsDim v - 1) (Direction v))
+deriving instance (Show (VPlanes v (Direction v)), Show (v NeighborDir))
+  => Show (Neighbor v)
+
+
+data Neighbor v = Ng { ngPosition :: !(v NeighborDir)
+                     , ngPlanes   :: !(HyperPlaneDirections v)
                      }
 
 type Neighbors v = [Neighbor v]
 
-deriving instance (Show (v NeighborDir), Show (v Double)) => Show (Neighbor v)
 
 
 
@@ -127,56 +136,66 @@ instance Num Level where
     where l = Level (fromInteger i)
 
 instance Bounded Level where
-  maxBound = Level (finiteBitSize (undefined :: Word) - 1)
+  maxBound = Level (finiteBitSize (undefined::Word) `unsafeShiftR` 1)
   minBound = Level 0
+  {-# INLINE maxBound #-}
+  {-# INLINE minBound #-}
+
+qtNearZero :: Double -> Bool
+qtNearZero a = abs a <= $$(machineEpsilon 8)
+{-# INLINE qtNearZero #-}
+
+qtEpsilon :: Double
+qtEpsilon = $$(machineEpsilon 4)
+{-# INLINE qtEpsilon #-}
 
 
 newtype LocCode v = LocCode {unLocCode :: v Word}
 
+deriving instance Num (v Word) => Num (LocCode v)
 deriving instance Eq (v Word) => Eq (LocCode v)
 deriving instance Show (v Word) => Show (LocCode v)
 
 newtype QtVertex v = QtVertex {unQtVertex :: Vertex v}
+deriving instance VectorSpace v => Num (QtVertex v)
 deriving instance VectorSpace v => Show (QtVertex v)
 deriving instance VectorSpace v => Eq (QtVertex v)
 
+isVertexNeighbor :: VectorSpace v => Neighbor v -> Bool
+isVertexNeighbor = not . F.any (==Same) . ngPosition
+{-# INLINE isVertexNeighbor #-}
 
 neighborsDefault
-  :: forall v. (VectorSpace v, KnownNat (VsDim v -1))
-  => Neighbors v
+  :: forall v. HasHyperplanes v => Neighbors v
 neighborsDefault = sortBy vertexNeighborsFirst $ do
   n <- replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (all (==Same) n))
   let dir = unsafeFromCoords n
-  return $! Ng dir (mkNormals dir)
+  return $! Ng dir (mkDirections dir)
   where
     vertexNeighborsFirst a b
-      | not (hasSame a), hasSame b = LT
-      | hasSame a, not (hasSame b) = GT
-      | otherwise                  = EQ
-    hasSame = F.any (==Same) . ngDirection
+      | isVertexNeighbor a
+      , not (isVertexNeighbor b) = LT
+      | isVertexNeighbor b
+      , not (isVertexNeighbor a) = GT
+      | otherwise                = EQ
 
-    mkNormals :: v NeighborDir -> V (VsDim v - 1) (Direction v) 
-    mkNormals dir = unsafeFromCoords (take numPlanes (must++perhaps))
+    mkDirections :: v NeighborDir -> HyperPlaneDirections v
+    mkDirections pos = unsafeFromCoords (take numDirs (must++perhaps))
        where
-        (_, must, perhaps)       = F.foldl' makeNormal (0, [], []) dir
-        makeNormal (!i,m,p) Same = (i+1, unit i:m, p       )
-        makeNormal (!i,m,p) _    = (i+1, m       , unit i:p)
-        numPlanes                = dim (Proxy :: Proxy v) - 1
-        unit                     = (!!) (coords (identity :: SqMatrix v))
+        (_, must, perhaps)          = F.foldl' makeDirection (0, [], []) pos
+        makeDirection (!i,m,p) Same = (i+1, unit i:m, p       )
+        makeDirection (!i,m,p) _    = (i+1, m       , unit i:p)
+        numDirs                     = dim (Proxy :: Proxy v) - 1
+        unit                        = (!!) (coords (identity :: SqMatrix v))
 
 
 mkNeighbors
-  :: forall v. (VectorSpace v, KnownNat (VsDim v -1)) => Q (TExp (Neighbors v))
-mkNeighbors = unsafeTExpCoerce $ liftM ListE $
-  mapM liftNeighbor (neighborsDefault :: Neighbors v)
-
+  :: forall v. HasHyperplanes v => Q (TExp (Neighbors v))
+mkNeighbors = let ns = mapM (fmap unType . liftNeighbor) (neighborsDefault :: Neighbors v)
+              in [|| $$(liftM (TExp . ListE) ns) ||]
 
 liftNeighbor
-  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1)) => Neighbor v -> Q Exp
-liftNeighbor (Ng v ns) =
-  [| Ng (unsafeFromCoords dirs) (unsafeFromCoords $planes) |]
-  where
-    planes = liftM ListE (mapM (\n -> [|unsafeFromCoords n|]) ls)
-    dirs   = coords v
-    ls     = map coords (coords ns)
+  :: forall v. HasHyperplanes v => Neighbor v -> Q (TExp (Neighbor v))
+liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
+  where planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))

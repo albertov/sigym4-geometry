@@ -20,7 +20,6 @@ import Data.Proxy (Proxy(..))
 import qualified Data.Vector.Unboxed as U
 
 import Sigym4.Geometry
-import Sigym4.Geometry.QuadTree
 
 instance {-# INCOHERENT #-} forall v. VectorSpace v
   => Arbitrary (Vertex v) where
@@ -110,13 +109,6 @@ instance (VectorSpace v, Arbitrary (Vertex v))
                          , triangle, psurface, tin
                          ]
 
-instance VectorSpace v => Arbitrary (Quadrant v) where
-  arbitrary = elements [minBound..maxBound]
-
-instance Arbitrary Level where
-  arbitrary = fromInteger <$> choose (lo, hi)
-    where lo = fromIntegral (unLevel minBound)
-          hi = fromIntegral (unLevel maxBound)
 
 resized :: Gen a -> Gen a
 resized = resize 15

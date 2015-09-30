@@ -1,6 +1,8 @@
 module Sigym4.Geometry.QuadTree (
     QuadTree
+  , Box
   , Quadrant (..)
+  , QtError (..)
   , Half (..)
   , Node (..)
   , Level (unLevel)

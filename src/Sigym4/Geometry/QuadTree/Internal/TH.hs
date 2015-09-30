@@ -1,29 +1,24 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns #-}
 
-module Sigym4.Geometry.QuadTree.TH (
-    mkNeighbors
+module Sigym4.Geometry.QuadTree.Internal.TH (
+   machineEpsilon
+ , maxLevel
+ , calculatedEpsilonAndLevel
 ) where
 
-import Control.Monad (forM)
-import Sigym4.Geometry.QuadTree.Internal.Types
-import Sigym4.Geometry.Types
-import qualified Data.Vector.Generic as G
 import Language.Haskell.TH.Syntax
 
 
-mkNeighbors
-  :: forall v. VectorSpace v => Q (TExp (Neighbors v))
-mkNeighbors = unsafeTExpCoerce (lift (neighbors :: Neighbors v))
+calculatedEpsilonAndLevel :: (Int,Double)
+calculatedEpsilonAndLevel = go 0 1
+  where go !n !e | e+1>1     = go (n+1) (e*0.5)
+                 | otherwise = (n,e)
 
-instance Lift (NeighborDir) where
-    lift Up   = [| Up |]
-    lift Down = [| Down |]
-    lift Same = [| Same |]
+machineEpsilon :: Int -> Q (TExp Double)
+machineEpsilon f = let e = 2^f * (snd calculatedEpsilonAndLevel)
+                   in [|| e ||]
 
-
-instance VectorSpace v => Lift (Neighbor v) where
-    lift (Ng v) = let l = G.toList (toVector (toVectorN v))
-                  in [| Ng (fromVectorN (V (G.fromList l))) |]
+maxLevel :: Int -> Q (TExp Int)
+maxLevel f = let e = (fst calculatedEpsilonAndLevel) - f
+             in [|| e ||]

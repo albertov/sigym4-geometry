@@ -1,5 +1,6 @@
-{-# LANGUAGE FunctionalDependencies
-           , RankNTypes
+{-# LANGUAGE UndecidableInstances
+           , MultiParamTypeClasses
+           , TypeFamilies
            , FlexibleContexts
            , FlexibleInstances
            , KindSignatures
@@ -9,6 +10,7 @@
            , InstanceSigs
            , CPP
            , BangPatterns
+           , StandaloneDeriving
            #-}
 module Sigym4.Geometry.Algorithms (
     HasExtent(..)
@@ -16,9 +18,9 @@ module Sigym4.Geometry.Algorithms (
   , HasCentroid(..)
   , HasContains(..)
   , HasIntersects(..)
+  , HasHyperplanes (..)
   , Direction
-  , lineHyperplaneIntersection
-  , lineHyperplaneMaybeIntersection
+  , HyperPlaneDirections
   , almostEqVertex
   , combinations
   , extentCorners
@@ -29,6 +31,7 @@ import Control.Applicative (pure)
 #endif
 import Control.Applicative (liftA2, liftA3)
 import Control.Monad (replicateM)
+import Control.Lens ((^.), (%~), (&))
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
 import Data.Proxy (Proxy(..))
@@ -113,8 +116,7 @@ instance HasContains Extent GeometryCollection where
 
 class HasIntersects a b where
   intersects
-    :: (VectorSpace v, KnownNat (VsDim v -1))
-    => a v (srid::Nat) -> b v (srid::Nat) -> Bool
+    :: HasHyperplanes v => a v (srid::Nat) -> b v (srid::Nat) -> Bool
 
 instance HasIntersects Extent Point where
   intersects = contains
@@ -133,13 +135,13 @@ instance HasIntersects Extent Extent where
 
 instance HasIntersects Extent LineString where
   intersects
-    :: forall v srid. (VectorSpace v, KnownNat (VsDim v -1))
+    :: forall v srid. HasHyperplanes v
     => Extent v (srid::Nat) -> LineString v (srid::Nat) -> Bool
   ext@Extent{eMin=lo, eMax=hi} `intersects` LineString ps
     = U.any id
     $ U.zipWith segmentIntersects ps (U.tail ps)
     where
-      planes :: [V (VsDim v - 1) (Direction v)]
+      planes :: [HyperPlaneDirections v]
       planes = map unsafeFromCoords $
                  combinations (dim (Proxy :: Proxy v) - 1)
                  (coords (identity :: SqMatrix v))
@@ -274,39 +276,79 @@ vBetweenC l h p = l `vLte` p && p `vLte` h
 
 type Direction v = Vertex v
 
-lineHyperplaneMaybeIntersection
-  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
-  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
-  -> Maybe (Vertex v)
-lineHyperplaneMaybeIntersection lineDirection lineOrigin planeDirections planeOrigin
-  | valid     = Just v
-  | otherwise = Nothing
-  where
-    (valid,v) = lineHyperplaneIntersection'
-                  lineDirection lineOrigin planeDirections planeOrigin
-{-# INLINE lineHyperplaneMaybeIntersection #-}
+type HyperPlaneDirections v = VPlanes v (Direction v)
 
-lineHyperplaneIntersection
-  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
-  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
-  -> Vertex v
-lineHyperplaneIntersection lineDirection lineOrigin planeDirections
-  = snd . lineHyperplaneIntersection' lineDirection lineOrigin planeDirections
-{-# INLINE lineHyperplaneIntersection #-}
+class ( VectorSpace v
+      , VectorSpace (VPlanes v)
+      , KnownNat (VsDim v - 1)
+      , CmpNat (VsDim v - 1) (VsDim (VPlanes v)) ~ 'EQ
+      ) => HasHyperplanes v where
+  type VPlanes v :: * -> *
 
+  lineHyperplaneMaybeIntersection
+    :: Direction v -> Vertex v -> HyperPlaneDirections v -> Vertex v
+    -> Maybe (Vertex v)
 
-lineHyperplaneIntersection'
-  :: forall v. (VectorSpace v, KnownNat (VsDim v - 1))
-  => Direction v -> Vertex v -> V (VsDim v - 1) (Direction v) -> Vertex v
-  -> (Bool, Vertex v)
-lineHyperplaneIntersection' lineDirection lineOrigin planeDirections planeOrigin
-  = (invertible a, lineOrigin + fmap (*lineDelta) lineDirection)
-  where
-    x           = inv a !* (lineOrigin - planeOrigin)
-    a           = transpose at
-    lineDelta   = negate (head (coords x))
-    at          = unsafeFromCoords (lineDirection:coords planeDirections)
-{-# INLINE lineHyperplaneIntersection' #-}
+  lineHyperplaneIntersection
+    :: Direction v -> Vertex v -> HyperPlaneDirections v -> Vertex v -> Vertex v
+
+  lineHyperplaneMaybeIntersection lDirection lOrigin pVectors pOrigin
+    | invertible a = Just (lOrigin + fmap (*lineDelta) lDirection)
+    | otherwise    = Nothing
+    where
+      x           = inv a !* (lOrigin - pOrigin)
+      a           = transpose (extendedMatrix lDirection pVectors)
+      lineDelta   = negate (head (coords x))
+  {-# INLINE lineHyperplaneMaybeIntersection #-}
+
+  lineHyperplaneIntersection lDirection lOrigin pVectors pOrigin
+    = lOrigin + fmap (*lineDelta) lDirection
+    where
+      x           = inv a !* (lOrigin - pOrigin)
+      a           = transpose (extendedMatrix lDirection pVectors)
+      lineDelta   = negate (head (coords x))
+  {-# INLINE lineHyperplaneIntersection #-}
+
+  extendedMatrix :: Vertex v -> HyperPlaneDirections v -> SqMatrix v
+  extendedMatrix v dirs = unsafeFromCoords (v:coords dirs)
+  {-# INLINE extendedMatrix #-}
+
+instance HasHyperplanes V2 where
+  type VPlanes V2 = V1
+
+  {-
+  lineHyperplaneIntersection lDir lOrigin (V1 pDir) pOrigin
+    = pOrigin + fmap (*a) pDir
+    where
+      m = transpose (V3 lDir (negate pDir) (pOrigin-lOrigin))
+      a = case (nearZero (m^._x._x), nearZero (m^._y._x)) of
+            (True,  False) -> (m^._x._z / m^._x._y)
+            (False, True)  -> (m^._y._z / m^._y._y)
+            (False, False) ->
+                  let m1 = m  & _x %~ (fmap (/   (m  ^._x._x)))
+                              & _y %~ (fmap (/   (m  ^._y._x)))
+                      m2 = m1 & _y %~ (subtract (m1^._x))
+                  in (m2^._y._z / m2^._y._y)
+            (True,  True)  -> error "lineDirection is null"
+  {-# INLINE lineHyperplaneIntersection #-}
+  -}
+
+  extendedMatrix a (V1 b) = V2 a b
+  {-# INLINE extendedMatrix #-}
+
+instance HasHyperplanes V3 where
+  type VPlanes V3 = V2
+  extendedMatrix a (V2 b c) = V3 a b c
+  {-# INLINE extendedMatrix #-}
+
+instance HasHyperplanes V4 where
+  type VPlanes V4 = V3
+  extendedMatrix a (V3 b c d) = V4 a b c d
+  {-# INLINE extendedMatrix #-}
+
+instance (KnownNat n, KnownNat (n-1)) => HasHyperplanes (V n) where
+  type VPlanes (V n) = V (n - 1)
+
 
 almostEqVertex :: VectorSpace v => Vertex v -> Vertex v -> Bool
 almostEqVertex a b = nearZero (a-b)

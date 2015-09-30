@@ -4,6 +4,7 @@
            , TypeFamilies
            , GeneralizedNewtypeDeriving
            , TemplateHaskell
+           , QuasiQuotes
            , MultiParamTypeClasses
            , FlexibleContexts
            , FlexibleInstances
@@ -108,6 +109,7 @@ module Sigym4.Geometry.Types (
   -- re-exports
   , KnownNat
   , Nat
+  , module V1
   , module V2
   , module V3
   , module V4
@@ -136,6 +138,8 @@ import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
 import Foreign.Storable (Storable)
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
+import Language.Haskell.TH.Syntax
+import Linear.V1 as V1
 import Linear.V2 as V2
 import Linear.V3 as V3
 import Linear.V4 as V4 hiding (vector, point)
@@ -168,80 +172,102 @@ class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
     dim = const (reflectDim (Proxy :: Proxy (VsDim v)))
     {-# INLINE dim #-}
 
-    coords :: VectorSpace v => v a -> [a]
-    fromCoords :: VectorSpace v => [a] -> Maybe (v a)
+    coords :: v a -> [a]
+    fromCoords :: [a] -> Maybe (v a)
 
-    unsafeFromCoords :: VectorSpace v => [a] -> v a
+    unsafeFromCoords :: [a] -> v a
     unsafeFromCoords = fromMaybe (error "unsafeFromCoords") . fromCoords
     {-# INLINE CONLIKE [1] unsafeFromCoords #-}
 
-    consRowToMatrix :: (VectorSpace v', CmpNat (VsDim v') (VsDim v - 1) ~ 'EQ)
-       => Vertex v -> v' (Vertex v) -> SqMatrix v
+    liftTExp :: Lift a => v a -> Q (TExp (v a))
 
-    {-# MINIMAL inv, det, coords , fromCoords #-}
+    {-# MINIMAL inv, det, coords , fromCoords, liftTExp #-}
 
+
+{-# RULES
+
+"unsafeFromCoords/V2" forall u v.
+  unsafeFromCoords (u:v:[]) = V2 u v
+
+"unsafeFromCoords/V3" forall u v z.
+      unsafeFromCoords (u:v:z:[]) = V3 u v z
+
+"unsafeFromCoords/V4"
+ forall u v z w.
+        unsafeFromCoords (u:v:z:w:[]) = V4 u v z w
+  #-}
 
 
 invertible :: VectorSpace v => SqMatrix v -> Bool
 invertible = not . nearZero . det
 {-# INLINE invertible #-}
 
-instance VectorSpace V2 where
-    type VsDim V2 = 2
-    inv = inv22
-    det = det22
-    coords (V2 u v) = [u, v]
-    fromCoords [u, v] = Just (V2 u v)
-    fromCoords _      = Nothing
+instance VectorSpace V1 where
+    type VsDim V1   = 1
+    inv             = (pure 1 /)
+    det (V1 (V1 u)) = u
+    coords (V1 u)   = [u]
+    fromCoords [u]  = Just (V1 u)
+    fromCoords _    = Nothing
+    liftTExp (V1 u) = [|| V1 u ||]
     {-# INLINE CONLIKE [1] coords #-}
     {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
 
-{-# RULES
-      "unsafeFromCoords/V2" forall u v.
-        unsafeFromCoords (u:v:[]) = V2 u v #-}
+instance VectorSpace V2 where
+    type VsDim V2 = 2
+    inv = inv22
+    det = det22
+    coords (V2 u v)   = [u, v]
+    fromCoords [u, v] = Just (V2 u v)
+    fromCoords _      = Nothing
+    liftTExp (V2 u v) = [|| V2 u v ||]
+
+    {-# INLINE CONLIKE [1] coords #-}
+    {-# INLINE fromCoords #-}
+    {-# INLINE inv #-}
+    {-# INLINE det #-}
+
 
 instance VectorSpace V3 where
     type VsDim V3 = 3
     inv = inv33
     det = det33
-    coords (V3 u v z) = [u, v, z]
+    coords (V3 u v z)    = [u, v, z]
     fromCoords [u, v, z] = Just (V3 u v z)
     fromCoords _         = Nothing
+    liftTExp (V3 u v z)  = [|| V3 u v z ||]
     {-# INLINE CONLIKE [1] coords #-}
     {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
-
-{-# RULES
-      "unsafeFromCoords/V3" forall u v z.
-        unsafeFromCoords (u:v:z:[]) = V3 u v z #-}
 
 
 instance VectorSpace V4 where
     type VsDim V4 = 4
     inv = inv44
     det = det44
-    coords (V4 u v z w) = [u, v, z, w]
+    coords (V4 u v z w)     = [u, v, z, w]
     fromCoords [u, v, z, w] = Just (V4 u v z w)
     fromCoords _            = Nothing
+    liftTExp (V4 u v z w)   = [|| V4 u v z w ||]
     {-# INLINE CONLIKE [1] coords #-}
     {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
 
-{-# RULES
-      "unsafeFromCoords/V4" forall u v z w.
-        unsafeFromCoords (u:v:z:w:[]) = V4 u v z w #-}
 
 instance KnownNat n => VectorSpace (V n) where
     type VsDim (V n) = n
     inv = error ("inv not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
     det = error ("det not implemented for V " ++ show (dim (Proxy :: Proxy (V n))))
-    coords     = G.toList . toVector
-    fromCoords = fromVector . G.fromList
-    {-# INLINE coords #-}
+    coords           = G.toList . toVector
+    fromCoords       = fromVector . G.fromList
+    liftTExp (V n)   = let l = G.toList n
+                           d = dim (Proxy :: Proxy (V n))
+                       in [|| V (G.fromListN d l) ||]
+    {-# INLINE CONLIKE [1] coords #-}
     {-# INLINE fromCoords #-}
     {-# INLINE inv #-}
     {-# INLINE det #-}
@@ -357,6 +383,8 @@ data Extent v (srid :: Nat) = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
 deriving instance VectorSpace v => Eq (Extent v srid)
 deriving instance VectorSpace v => Show (Extent v srid)
 
+instance NFData (Vertex v) => NFData (Extent v srid) where
+  rnf (Extent lo hi) = rnf lo `seq` rnf hi `seq` ()
 
 
 eSize :: VectorSpace v => Extent v srid -> Vertex v
@@ -460,12 +488,12 @@ mkGeoReference :: Extent V2 srid -> Size V2 -> Either String (GeoReference V2 sr
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
 newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
-deriving instance VectorSpace v       => Show (Point v srid)
-deriving instance VectorSpace v       => Eq (Point v srid)
-deriving instance VectorSpace v       => Ord (Point v srid)
-deriving instance NFData (Vertex v)   => NFData (Point v srid)
-deriving instance Hashable (Vertex v) => Hashable (Point v srid)
-deriving instance Storable (Vertex v) => Storable (Point v srid)
+deriving instance VectorSpace v          => Show (Point v srid)
+deriving instance VectorSpace v          => Eq (Point v srid)
+deriving instance VectorSpace v          => Ord (Point v srid)
+deriving instance NFData      (Vertex v) => NFData (Point v srid)
+deriving instance Hashable    (Vertex v) => Hashable (Point v srid)
+deriving instance Storable    (Vertex v) => Storable (Point v srid)
 
 pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
 pVertex = lens _pVertex (\p v -> p { _pVertex = v })
