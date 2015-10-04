@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -21,7 +22,8 @@ import Linear.Matrix (identity)
 import Data.Bits
 import Data.List (sortBy)
 import Data.Proxy (Proxy(..))
-import qualified Data.Foldable as F
+import Data.Foldable
+import qualified Data.Vector as V
 
 import Language.Haskell.TH.Syntax
 
@@ -31,13 +33,36 @@ import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilon)
 
 import GHC.TypeLits
 
-
 data QuadTree v (srid :: Nat) a
   = QuadTree {
       qtRoot   :: QNode v srid a
     , qtExtent :: {-# UNPACK #-} !(Extent v srid)
     , qtLevel  :: {-# UNPACK #-} !Level
   }
+
+instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
+  (==) a b = qtExtent a    == qtExtent b
+          && qtLevel  a    == qtLevel b
+          && go (qtRoot a) (qtRoot b)
+    where
+      go (QLeaf _ a)     (QLeaf _ b)     = a == b
+      go (QNode _ (V a)) (QNode _ (V b)) = all id (V.zipWith go a b)
+      go _               _               = False
+
+instance Functor (QuadTree v srid) where
+  fmap f qt@QuadTree{qtRoot=root} = qt {qtRoot=go rootParent root}
+    where
+      go p QLeaf{qData=a} = QLeaf {qData=f a, qParent=p}
+      go p QNode{qChildren=V children}
+        = let n = QNode {qChildren= V (V.map (go n) children), qParent=p} in n
+
+instance Foldable (QuadTree v srid) where
+  foldMap f qt = foldMap f (qtRoot qt)
+
+
+rootParent :: QNode v srid a
+rootParent = error "QuadTree: should not happen, tried to get root's parent"
+
 
 instance VectorSpace v => Show (QuadTree v srid a) where
   show QuadTree{..} = concat ([
@@ -58,6 +83,11 @@ instance Show a => Show (QNode v srid a) where
   show QLeaf{..} = concat (["QLeaf {qData = ", show qData, "}"] :: [String])
   show QNode{..} = concat (["QNode {qChildren = ", show qChildren, "}"] :: [String])
 
+instance Foldable (QNode v srid) where
+  foldMap f QLeaf{qData=a}            = f a
+  foldMap f QNode{qChildren=children} = foldMap (foldMap f) children
+
+
 data Node m v (srid::Nat) a
   = Leaf a
   | Node (Extent v srid -> m (a, Node m v srid a))
@@ -68,14 +98,14 @@ data Half = First | Second
 newtype Quadrant v = Quadrant {unQuadrant :: v Half}
 
 instance VectorSpace v => Eq (Quadrant v) where
-  Quadrant a == Quadrant b = F.all id (liftA2 (==) a b)
+  Quadrant a == Quadrant b = all id (liftA2 (==) a b)
 
 deriving instance Show (v Half) => Show (Quadrant v)
 
 
 
 instance VectorSpace v => Enum (Quadrant v) where
-  fromEnum = snd . F.foldl' go (0::Int,0) . unQuadrant
+  fromEnum = snd . foldl' go (0::Int,0) . unQuadrant
     where go (!i,!s) v = (i+1, s + (fromEnum v `unsafeShiftL` i))
   {-# INLINE fromEnum #-}
 
@@ -142,11 +172,11 @@ instance Bounded Level where
   {-# INLINE minBound #-}
 
 qtNearZero :: Double -> Bool
-qtNearZero a = abs a <= $$(machineEpsilon 8)
+qtNearZero a = abs a <= $$(machineEpsilon 4) -- machineEpsilon << 4
 {-# INLINE qtNearZero #-}
 
 qtEpsilon :: Double
-qtEpsilon = $$(machineEpsilon 4)
+qtEpsilon = $$(machineEpsilon 2)             -- machineEpsilon << 2
 {-# INLINE qtEpsilon #-}
 
 
@@ -162,7 +192,7 @@ deriving instance VectorSpace v => Show (QtVertex v)
 deriving instance VectorSpace v => Eq (QtVertex v)
 
 isVertexNeighbor :: VectorSpace v => Neighbor v -> Bool
-isVertexNeighbor = not . F.any (==Same) . ngPosition
+isVertexNeighbor = not . any (==Same) . ngPosition
 {-# INLINE isVertexNeighbor #-}
 
 neighborsDefault
@@ -183,7 +213,7 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
     mkDirections :: v NeighborDir -> HyperPlaneDirections v
     mkDirections pos = unsafeFromCoords (take numDirs (must++perhaps))
        where
-        (_, must, perhaps)          = F.foldl' makeDirection (0, [], []) pos
+        (_, must, perhaps)          = foldl' makeDirection (0, [], []) pos
         makeDirection (!i,m,p) Same = (i+1, unit i:m, p       )
         makeDirection (!i,m,p) _    = (i+1, m       , unit i:p)
         numDirs                     = dim (Proxy :: Proxy v) - 1

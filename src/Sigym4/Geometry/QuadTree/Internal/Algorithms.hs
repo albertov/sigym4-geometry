@@ -43,9 +43,6 @@ data QtError
   deriving (Show, Eq, Enum)
 
 
-rootParent :: VectorSpace v => QNode v srid a
-rootParent = error "QuadTree: should not happen, tried to get root's parent"
-
 generate
   :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Level

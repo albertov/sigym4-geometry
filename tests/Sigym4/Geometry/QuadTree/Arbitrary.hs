@@ -57,7 +57,7 @@ instance VectorSpace v => Arbitrary (LocCode v) where
 instance VectorSpace v => Arbitrary (RandomQT v) where
   arbitrary = do
     ext <- arbitrary
-    level <- fromInteger <$> choose (0,5)
+    level <- Level <$> choose (unLevel minBound, unLevel maxBound)
     eQt <- generate build ext level
     case eQt of
       Right qt -> do

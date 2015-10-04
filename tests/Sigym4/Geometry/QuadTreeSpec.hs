@@ -62,6 +62,18 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
     it " has correct length" $ 
       length (neighbors :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
 
+  describe "is a functor" $ do
+    prop "fmap id = id" $ \arg ->
+      let RandomQT (qt,_,_) = arg :: RandomQT v
+      in qtLevel qt <= 3 ==> -- else it takes too long
+        fmap id qt == id qt
+
+    prop "fmap (g . f)  = fmap g . fmap f" $ \arg ->
+      let RandomQT (qt,_,_) = arg :: RandomQT v
+      in qtLevel qt <= 3 ==> -- else it takes too long
+         fmap (maximum . eSize) qt == fmap maximum (fmap eSize qt)
+
+
   describe "qtMinBox" $ do
     
     prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v srid) ->
@@ -107,16 +119,20 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
                 qps       = randomOrDelicateOrProbablyInvalid arg
                 (qt,p,p1) = qps
                 els       = traceRay qt p p1
-            in length (take 2 els) <=1 ||
-               not (any (uncurry almostEqExt) (zip els (tail els)))
+                notSameExt a b
+                  | almostEqExt a b = traceShow ("repeated", a, b) False
+                  | otherwise       = True
+            in length (take 2 els) > 1 ==>
+                 all id (zipWith notSameExt els (tail els))
 
       prop "a ray from A to A belonging to Qtree returns a singleton" $
         \arg -> let (qt,p,_) = randomOrDelicate arg :: ExtentAndPoints v
                 in case (traceRay qt p p, qtContainsPoint qt p) of
                      ([], True)  -> error "did not return any els in test"
                      ([], False) -> error "generating invalid delicate points"
-                     ((a:[]), True) ->
-                        a `contains` p || traceShow ("a->a",qtExtent qt, a,p) False
+                     ((a:[]), True)
+                        | a `contains` p                           -> True
+                        | traceShow ("a->a",qtExtent qt, a,p) True -> False
                      _           -> error "traceRay returns junk"
 
       prop "last contains to" $
@@ -141,6 +157,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
 almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool
 almostEqExt (Extent a0 a1) (Extent b0 b1)
-  =  a0 `almostEqVertex` b0 && a1 `almostEqVertex` b1
+  =  a0 `almostEqV` b0 && a1 `almostEqV` b1
+  where almostEqV a b = F.all qtNearZero (abs (a-b))
 
 liftBinBool f a =  F.all id . liftA2 f a
