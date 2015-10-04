@@ -45,9 +45,9 @@ instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
           && qtLevel  a    == qtLevel b
           && go (qtRoot a) (qtRoot b)
     where
-      go (QLeaf _ a)     (QLeaf _ b)     = a == b
-      go (QNode _ (V a)) (QNode _ (V b)) = all id (V.zipWith go a b)
-      go _               _               = False
+      go (QLeaf _ a')     (QLeaf _ b')     = a' == b'
+      go (QNode _ (V a')) (QNode _ (V b')) = all id (V.zipWith go a' b')
+      go _               _                 = False
 
 instance Functor (QuadTree v srid) where
   fmap f qt@QuadTree{qtRoot=root} = qt {qtRoot=go rootParent root}
