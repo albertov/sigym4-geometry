@@ -58,6 +58,7 @@ instance Functor (QuadTree v srid) where
 
 instance Foldable (QuadTree v srid) where
   foldMap f qt = foldMap f (qtRoot qt)
+  {-# INLINE foldMap #-}
 
 
 rootParent :: QNode v srid a
@@ -86,6 +87,7 @@ instance Show a => Show (QNode v srid a) where
 instance Foldable (QNode v srid) where
   foldMap f QLeaf{qData=a}            = f a
   foldMap f QNode{qChildren=children} = foldMap (foldMap f) children
+  {-# INLINE foldMap #-}
 
 
 data Node m v (srid::Nat) a

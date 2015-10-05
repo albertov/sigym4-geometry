@@ -8,15 +8,12 @@ module Sigym4.Geometry.QuadTreeSpec (main, spec) where
 import Control.Applicative (liftA2)
 import Control.Monad (when)
 import Data.Either (isRight)
-import Data.List.NonEmpty (fromList)
 import Data.Proxy
 import qualified Data.Foldable as F
 import Data.Functor.Identity (runIdentity)
-import Test.Hspec (Spec, hspec, describe, it, shouldBe)
+import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
-import Test.QuickCheck.Gen (Gen(MkGen))
-import qualified Data.Semigroup as SG
 
 
 import Sigym4.Geometry
@@ -159,5 +156,3 @@ almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool
 almostEqExt (Extent a0 a1) (Extent b0 b1)
   =  a0 `almostEqV` b0 && a1 `almostEqV` b1
   where almostEqV a b = F.all qtNearZero (abs (a-b))
-
-liftBinBool f a =  F.all id . liftA2 f a

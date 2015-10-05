@@ -31,7 +31,7 @@ import Control.Applicative (pure)
 #endif
 import Control.Applicative (liftA2, liftA3)
 import Control.Monad (replicateM)
-import Control.Lens ((^.), (%~), (&))
+-- import Control.Lens ((^.), (%~), (&))
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
 import Data.Proxy (Proxy(..))
@@ -164,6 +164,7 @@ extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
   where
     d = dim (Proxy :: Proxy v)
     mkCorner = liftA3 (\l h up -> if up then h else l) lo hi . unsafeFromCoords
+{-# INLINE extentCorners #-}
 
 
 class HasCentroid a where

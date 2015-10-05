@@ -9,6 +9,7 @@ module Sigym4.Geometry.QuadTree.Arbitrary where
 
 import Control.Monad.Fix
 import Control.Monad (replicateM, zipWithM)
+import Data.Foldable (toList)
 
 import Data.Proxy (Proxy(Proxy))
 
@@ -84,22 +85,16 @@ instance VectorSpace v => Arbitrary (DelicateQT v) where
   arbitrary = do
     RandomQT (qt,_,_) <- arbitrary
 
-    let c = Point (fmap (+epsilon) (_pVertex (centroid (qtExtent qt))))
-            -- FIXME:
-            -- +epsilon or it might not satisfy "last contains to" since it
-            -- is truncated to the cell to the left
-            -- this is a kludge that should be fixed by using
-            -- calculateForwardExtent in inner/outerExtent
-        ext@(Extent lo hi) = qtExtent qt
-        cs = map Point (extentCorners (Extent lo effectiveMax))
-        candidates = c:cs
-
-        effectiveMax = go maxBound
-          where go !l | qtContainsPoint qt (Point v) = v
+    let candidates = take 100
+                   . map Point
+                   . concat
+                   . map (extentCorners . ensureInQt)
+                   $ qtExtent qt : toList qt
+        ensureInQt (Extent lo hi) = go maxBound
+          where go !l | qtContainsPoint qt (Point v) = Extent lo v
                       | l > qtLevel qt       = go (l-1)
                       | otherwise            = error "calculating effectiveMax"
-                  where v = hi - calculateMinBox ext l
-          
+                  where v = hi - calculateMinBox (qtExtent qt) l
     p1 <- elements candidates
     p2 <- elements (filter (/=p1) candidates)
     return (DelicateQT (qt, p1, p2))
@@ -107,14 +102,11 @@ instance VectorSpace v => Arbitrary (DelicateQT v) where
 instance VectorSpace v => Arbitrary (ProbablyInvalidPointsQT v) where
   arbitrary = do
     RandomQT (qt,_,_) <- arbitrary
-    let c = Point (fmap (+epsilon) (_pVertex (centroid (qtExtent qt))))
-            -- FIXME:
-            -- +epsilon or it might not satisfy "if from..." since it
-            -- is truncated to the cell to the left
-            -- this is a kludge that should be fixed by using
-            -- calculateForwardExtent in inner/outerExtent
-        cs = map Point (extentCorners (qtExtent qt))
-        candidates = c:cs
+    let candidates = take 100
+                   . map Point
+                   . concat
+                   . map extentCorners
+                   $ qtExtent qt : toList qt
     p1 <- elements candidates
     p2 <- elements candidates
     return (ProbablyInvalidPointsQT (qt, p1, p2))
