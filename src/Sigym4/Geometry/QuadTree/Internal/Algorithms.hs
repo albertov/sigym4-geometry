@@ -211,9 +211,9 @@ traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
     go !n@QLeaf{} !l            = TNode n l (qtCellCode l code)
     go !n         !l | l<=end   = TNode n l (qtCellCode l code)
-    go !QNode{qChildren=V v} !l = let n' = v `V.unsafeIndex` ix
-                                      ix = ixFromLocCode l' code
-                                      l' = l - 1
+    go !QNode{qChildren=V v} !l = let !n' = v `V.unsafeIndex` ix
+                                      !ix = ixFromLocCode l' code
+                                      !l' = l - 1
                                   in go n' l'
 {-# INLINE traverseToLevel #-}
 
@@ -228,9 +228,9 @@ qtTraverseToLevel QuadTree{..}
 
 data TraversedNode v srid a
   = TNode
-    { tNode     :: {-# UNPACK #-} !(QNode v srid a)
-    , tLevel    :: {-# UNPACK #-} !Level
-    , tCellCode :: {-# UNPACK #-} !(LocCode v)
+    { tNode     :: QNode v srid a
+    , tLevel    :: Level
+    , tCellCode :: LocCode v
     }
 
 tExtent
@@ -409,6 +409,7 @@ traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
     findAncestor !n !l
       | l==al     = n
       | otherwise = findAncestor (qParent n) (l+1)
+{-# INLINE traverseToCommonAncestor #-}
 
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
