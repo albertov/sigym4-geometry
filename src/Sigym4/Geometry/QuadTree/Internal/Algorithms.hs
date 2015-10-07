@@ -205,9 +205,9 @@ qtCellCode (Level l) code
 
 traverseToLevel
   :: VectorSpace v
-  => QNode v srid a -> Level -> Level -> LocCode v
-  -> TraversedNode v srid a
-traverseToLevel node start end code = go node start
+  => TraversedNode v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
+traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
     go !n@QLeaf{} !l            = TNode n l (qtCellCode l code)
     go !n         !l | l<=end   = TNode n l (qtCellCode l code)
@@ -216,6 +216,15 @@ traverseToLevel node start end code = go node start
                                       l' = l - 1
                                   in go n' l'
 {-# INLINE traverseToLevel #-}
+
+qtTraverseToLevel
+  :: VectorSpace v
+  => QuadTree v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
+qtTraverseToLevel QuadTree{..}
+  = traverseToLevel (TNode qtRoot qtLevel (LocCode (pure 0)))
+{-# INLINE qtTraverseToLevel #-}
+
 
 data TraversedNode v srid a
   = TNode
@@ -249,10 +258,10 @@ quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
 lookupByPoint
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe a
-lookupByPoint qt@QuadTree{..} p
+lookupByPoint qt p
   = case qtLocCode qt p of
       Just c ->
-        let TNode{tNode=node} = traverseToLevel qtRoot qtLevel 0 c
+        let TNode{tNode=node} = qtTraverseToLevel qt 0 c
         in Just (leafData node)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
