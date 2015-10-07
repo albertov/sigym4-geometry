@@ -302,7 +302,7 @@ traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word), Num (v Word)
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
 #if DEBUG
-  | traceShow ("traceRay from:",qtExtent,qtLevel,from,to) False = undefined
+  | traceShow ("traceRay","from",fromV,"to",toV) False = undefined
 #endif
   | isJust (mCodeFrom >> mCodeTo)  = trace (qtTraverseToLevel qt 0 codeFrom)
   | otherwise                      = []
@@ -354,7 +354,10 @@ traceRay qt@QuadTree{..} from to
 
     neighborIntersection level cellCode ng
 #if DEBUG
-      | traceShow ("checkNg: ", ngPosition ng, inRange vertex) False = undefined
+      | traceShow ( "checkNg: ", ngPosition ng, inRange vertex
+                  , "vx", vertex
+                  , "lo", lo, "hi", hi
+                  , "loD", loD, "hiU", hiU) False = undefined
 #endif
       | inRange vertex = (True, (ng, QtVertex vertex))
       | otherwise      = (False, (ng, QtVertex vertex))
