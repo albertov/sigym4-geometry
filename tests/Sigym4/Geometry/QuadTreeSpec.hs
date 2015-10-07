@@ -117,8 +117,8 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
                 (qt,p,p1) = qps
                 els       = traceRay qt p p1
                 notSameExt a b
-                  | almostEqExt a b = traceShow ("repeated", a, b) False
-                  | otherwise       = True
+                  | a == b    = traceShow ("repeated", a, b) False
+                  | otherwise = True
             in length (take 2 els) > 1 ==>
                  all id (zipWith notSameExt els (tail els))
 
@@ -128,7 +128,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
                      ([], True)  -> error "did not return any els in test"
                      ([], False) -> error "generating invalid delicate points"
                      ((a:[]), True)
-                        | a `contains` p                           -> True
+                        | Just a == lookupByPoint qt p             -> True
                         | traceShow ("a->a",qtExtent qt, a,p) True -> False
                      _           -> error "traceRay returns junk"
 
@@ -139,7 +139,10 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
                      ([], True)  -> error "did not return any els in test"
                      ([], False) -> error "generating invalid delicate points"
                      (_, False) -> error "traceRay returns junk"
-                     (els, True) -> last els `contains` p1
+                     (els, True)
+                        | Just (last els) == lookupByPoint qt p1  -> True
+                        | traceShow ("last",qtExtent qt,last els,p1) True -> False
+                     _           -> error "traceRay returns junk"
 
       prop "if from and to are in qtree then head contains from" $
         \arg -> let qps :: ExtentAndPoints v
@@ -148,11 +151,4 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
                 in qtContainsPoint qt p && qtContainsPoint qt p1 ==>
                    case traceRay qt p p1 of
                      []  -> error "did not return any els in property test"
-                     els -> head els `contains` p
-
-
-
-almostEqExt :: VectorSpace v => Extent v t -> Extent v t -> Bool
-almostEqExt (Extent a0 a1) (Extent b0 b1)
-  =  a0 `almostEqV` b0 && a1 `almostEqV` b1
-  where almostEqV a b = F.all qtNearZero (abs (a-b))
+                     els -> Just (head els) == lookupByPoint qt p
