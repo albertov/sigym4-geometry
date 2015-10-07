@@ -304,43 +304,32 @@ traceRay qt@QuadTree{..} from to
 #if DEBUG
   | traceShow ("traceRay from:",qtExtent,qtLevel,from,to) False = undefined
 #endif
-  | isJust (mCodeFrom >> mCodeTo)  = trace codeFrom qtRoot qtLevel
+  | isJust (mCodeFrom >> mCodeTo)  = trace (qtTraverseToLevel qt 0 codeFrom)
   | otherwise                      = []
   where
-    trace !code !startNode !startLevel
+    trace !(tr@TNode{..})
 #if DEBUG
-      | traceShow ("go", code, level) False = undefined
+      | traceShow ("go", tCellCode, tLevel) False = undefined
 #endif
-      | cellCode == cellCodeTo  = [val]
-      | ancestorLevel > qtLevel = [val]
-#if ASSERTS
-      | next     == code          = error "traceRay: got in a loop"
-#endif
-#if DEBUG
-      | traceShow ("go next", next, ancestorLevel) False = undefined
-#endif
-      | otherwise              = val:(trace next ancestor ancestorLevel)
+      | tCellCode == cellCodeTo  = [val]
+      | otherwise = case mAncestor of
+                      Nothing -> [val]
+                      Just t  -> val:(trace (traverseToLevel t 0 next))
       where
-        (node, level, cellCode) = traverseToLevel startNode startLevel 0 code
-        cellCodeTo    = qtCellCode level codeTo 
-        val           = leafData node
-        (neigh, isec) = getIntersection level cellCode
+        cellCodeTo    = qtCellCode tLevel codeTo 
+        val           = leafData tNode
+        (neigh, isec) = getIntersection tLevel tCellCode
         iseccode      = qtVertex2LocCode qt isec
         next
           | iseccode == codeTo = codeTo
           | otherwise          = LocCode $ liftA3 mkNext (ngPosition neigh)
                                                          (unLocCode iseccode)
-                                                         (unLocCode cellCode)
+                                                         (unLocCode tCellCode)
         mkNext Down _ c = c - 1
-        mkNext Up   _ c = c + bit (unLevel level)
+        mkNext Up   _ c = c + maxValue tLevel
         mkNext Same i _ = i
-
-        ancestorLevel = commonAncestorLevel code next
-        ancestor      = findAncestor node level
-
-        findAncestor !n !l
-          | l==ancestorLevel = n
-          | otherwise        = findAncestor (qParent n) (l+1)
+        
+        mAncestor = traverseToCommonAncestor qt tr next
 
     fromV     = qtBackward qt from
     toV       = qtBackward qt to
@@ -395,15 +384,6 @@ traceRay qt@QuadTree{..} from to
 {-# INLINABLE traceRay #-}
 
 
-commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
-commonAncestorLevel (LocCode a) (LocCode b)
-  = Level (F.maximum (fmap componentLevel diff))
-  where
-    componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
-    diff             = liftA2 xor a b
-{-# INLINE commonAncestorLevel #-}
-
-
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
   = F.all id (liftA3 checkComp (ngPosition ng) from to) 
@@ -412,7 +392,6 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
     checkComp Down from' to' = not (qtNearZero (to'-from')) && from'> to'
     checkComp Up   from' to' = not (qtNearZero (to'-from')) && to'  > from'
 {-# INLINE checkNeighbor #-}
-
     
 
 traverseToCommonAncestor
