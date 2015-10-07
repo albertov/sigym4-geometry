@@ -131,17 +131,20 @@ instance Lift (NeighborDir) where
     lift Down = [| Down |]
     lift Same = [| Same |]
 
-deriving instance (Show (VPlanes v (Direction v)), Show (v NeighborDir))
-  => Show (Neighbor v)
-
-
-data Neighbor v = Ng { ngPosition :: !(v NeighborDir)
+data Neighbor v = Ng { ngPosition :: !(NeighborPosition v)
                      , ngPlanes   :: !(HyperPlaneDirections v)
                      }
 
+deriving instance (Show (HyperPlaneDirections v), Show (NeighborPosition v))
+  => Show (Neighbor v)
+
+
 type Neighbors v = [Neighbor v]
+type NeighborPosition v = v NeighborDir
 
-
+oppositePosition :: VectorSpace v => NeighborPosition v -> NeighborPosition v
+oppositePosition = fmap (\p -> case p of {Up->Down; Down->Up; _->p})
+{-# INLINE oppositePosition #-}
 
 
 newtype Level = Level {unLevel :: Int}
@@ -212,7 +215,7 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
       , not (isVertexNeighbor a) = GT
       | otherwise                = EQ
 
-    mkDirections :: v NeighborDir -> HyperPlaneDirections v
+    mkDirections :: NeighborPosition v -> HyperPlaneDirections v
     mkDirections pos = unsafeFromCoords (take numDirs (must++perhaps))
        where
         (_, must, perhaps)          = foldl' makeDirection (0, [], []) pos

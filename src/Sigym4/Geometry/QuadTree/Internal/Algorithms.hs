@@ -206,25 +206,45 @@ qtCellCode (Level l) code
 traverseToLevel
   :: VectorSpace v
   => QNode v srid a -> Level -> Level -> LocCode v
-  -> (QNode v srid a, Level, LocCode v)
-traverseToLevel node start end code = go (node, start, cellCode start)
+  -> TraversedNode v srid a
+traverseToLevel node start end code = go node start
   where
-    go nl@((QLeaf{}),_,_)          = nl
-    go nl@(_,l,_) | l<=end         = nl
-    go (QNode {qChildren=V v},l,_) = let !n' = v `V.unsafeIndex` ix
-                                         !ix = ixFromLocCode l' code
-                                         !l' = l - 1
-                                     in go (n',l',cellCode l')
-    cellCode = flip qtCellCode code
+    go !n@QLeaf{} !l            = TNode n l (qtCellCode l code)
+    go !n         !l | l<=end   = TNode n l (qtCellCode l code)
+    go !QNode{qChildren=V v} !l = let n' = v `V.unsafeIndex` ix
+                                      ix = ixFromLocCode l' code
+                                      l' = l - 1
+                                  in go n' l'
 {-# INLINE traverseToLevel #-}
 
+data TraversedNode v srid a
+  = TNode
+    { tNode     :: {-# UNPACK #-} !(QNode v srid a)
+    , tLevel    :: {-# UNPACK #-} !Level
+    , tCellCode :: {-# UNPACK #-} !(LocCode v)
+    }
+
+tExtent
+  :: VectorSpace v
+  => QuadTree v srid a -> TraversedNode v srid a -> Extent v 0
+tExtent qt TNode{..} = calculateExtent qt tLevel tCellCode
+
+instance Show (LocCode v) => Show (TraversedNode v srid a) where
+  show TNode{..} = concat (["TNode { tLevel = ", show tLevel
+                           ,      ", tCellCode = ", show tCellCode, " }"
+                           ] :: [String]) 
 
 ixFromLocCode
   :: VectorSpace v
   => Level -> LocCode v -> Int
-ixFromLocCode (Level l) = snd . F.foldl' go (0::Int,0) . unLocCode
-  where go (!i,!s) v = (i+1, s + (fromEnum (v `testBit` l) `unsafeShiftL` i))
+ixFromLocCode l = fromEnum . quadrantAtLevel l
 {-# INLINE ixFromLocCode #-}
+
+quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
+quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
+  where toHalf v = if v `testBit` l then Second else First
+{-# INLINE quadrantAtLevel #-}
+
 
 lookupByPoint
   :: VectorSpace v
@@ -232,7 +252,7 @@ lookupByPoint
 lookupByPoint qt@QuadTree{..} p
   = case qtLocCode qt p of
       Just c ->
-        let (node,_,_) = traverseToLevel qtRoot qtLevel 0 c
+        let TNode{tNode=node} = traverseToLevel qtRoot qtLevel 0 c
         in Just (leafData node)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -243,6 +263,27 @@ leafData QLeaf{..} = qData
 leafData _         = error "expected a leaf"
 {-# INLINE leafData #-}
 
+leavesTouching
+  :: forall v srid a. VectorSpace v
+  => NeighborPosition v -> TraversedNode v srid a -> [TraversedNode v srid a]
+leavesTouching pos = go
+  where
+    go :: TraversedNode v srid a -> [TraversedNode v srid a]
+    go !n@TNode{tNode=QLeaf{}} = [n]
+    go !TNode{tNode=QNode{qChildren=V cs}, tLevel=l, tCellCode=code}
+      = concatMap go (map getChild (quadrantsTouching pos))
+      where getChild q = TNode { tNode     = cs `V.unsafeIndex` fromEnum q
+                               , tLevel    = l-1
+                               , tCellCode = setChildBits (l-1) q code}
+
+quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
+quadrantsTouching pos
+  = filter (all id . liftA2 match pos . unQuadrant) [minBound..maxBound]
+  where
+    match Same _      = True
+    match Up   Second = True
+    match Down First  = True
+    match _    _      = False
 
 traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word), Num (v Word)
 #if DEBUG
@@ -364,6 +405,32 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
 {-# INLINE checkNeighbor #-}
 
     
+
+traverseToCommonAncestor
+  :: VectorSpace v
+  => QuadTree v srid a -> TraversedNode v srid a -> LocCode v
+  -> Maybe (TraversedNode v srid a)
+traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
+  | al > maxl = Nothing
+  | otherwise = Just $ TNode { tNode     = findAncestor tNode tLevel
+                             , tLevel    = al
+                             , tCellCode = qtCellCode al tCellCode
+                             }
+  where
+    al = commonAncestorLevel tCellCode code
+    findAncestor !n !l
+      | l==al     = n
+      | otherwise = findAncestor (qParent n) (l+1)
+
+
+commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
+commonAncestorLevel (LocCode a) (LocCode b)
+  = Level (F.maximum (fmap componentLevel diff))
+  where
+    componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
+    diff             = liftA2 xor a b
+{-# INLINE commonAncestorLevel #-}
+
 
 
 innerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
