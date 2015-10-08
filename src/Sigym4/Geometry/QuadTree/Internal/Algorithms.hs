@@ -309,7 +309,8 @@ traceRay qt@QuadTree{..} from to
   where
     trace !(tr@TNode{..})
 #if DEBUG
-      | traceShow ("go", tCellCode, tLevel) False = undefined
+      | traceShow ("go", tCellCode, cellCodeTo
+                  , tLevel, cellExtent) False = undefined
 #endif
       | tCellCode == cellCodeTo  = [val]
       | otherwise = case mAncestor of
@@ -322,10 +323,15 @@ traceRay qt@QuadTree{..} from to
       where
         cellCodeTo    = qtCellCode tLevel codeTo 
         val           = leafData tNode
-        intersections = getIntersections tLevel tCellCode
+        cellExtent    = calculateExtent qt tLevel tCellCode
+        intersections = getIntersections cellExtent
         finalIsecs = filter niFinal intersections
         next
-          | not (null finalIsecs)    = codeTo
+          | not (null finalIsecs)
+#if DEBUG
+          , traceShow ("got it", codeTo) True
+#endif
+          = codeTo
           | not (null intersections)
           = LocCode $ liftA3 mkNext (ngPosition (niNeighbor isec))
                                     (unLocCode  (niCode isec))
@@ -347,17 +353,17 @@ traceRay qt@QuadTree{..} from to
     codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
 
-    getIntersections level cellCode
+    getIntersections cellExtent
       = filter niInRange
-      . map (neighborIntersection level cellCode)
+      . map (neighborIntersection cellExtent)
       . filter (checkNeighbor fromV toV)
       $ neighbors
 
     noIntersectionError = error "no neighbors intersects"
 
-    neighborIntersection level cellCode ng
+    neighborIntersection (Extent lo hi) ng
 #if DEBUG
-      | traceShow ( "checkNg: ", ngPosition ng
+      | traceShow ( "checkNg: ", ng
                   , ("inRange", inRange vertex)
                   , ("isFinal", isFinal)
                   , ("vx", vertex)
@@ -379,7 +385,6 @@ traceRay qt@QuadTree{..} from to
         loD
           | isVertexNeighbor ng = lo
           | otherwise           = fmap (subtract qtEpsilon) lo
-        Extent lo hi = calculateExtent qt level cellCode
         vertex = lineHyperplaneIntersection
                     (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
 
