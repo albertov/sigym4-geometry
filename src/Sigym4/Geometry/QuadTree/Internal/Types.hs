@@ -220,7 +220,10 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
        where
         (_, must, perhaps)          = foldl' makeDirection (0, [], []) pos
         makeDirection (!i,m,p) Same = (i+1, unit i:m, p       )
-        makeDirection (!i,m,p) _    = (i+1, m       , unit i:p)
+        makeDirection (!i,m,p) Up
+          | not (any (==Same) pos)  = (i+1, unit i:m, p       )
+          | otherwise               = (i+1, m       , unit i:p)
+        makeDirection (!i,m,p) Down = (i+1, m       , unit i:p)
         numDirs                     = dim (Proxy :: Proxy v) - 1
         unit                        = (!!) (coords (identity :: SqMatrix v))
 
