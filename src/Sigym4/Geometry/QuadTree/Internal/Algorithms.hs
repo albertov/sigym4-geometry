@@ -21,9 +21,10 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms where
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
 import Control.Monad (liftM)
 import Control.Monad.Fix (MonadFix(mfix))
-import Data.Maybe (isJust, fromMaybe)
+import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
+import Data.List (nub)
 import qualified Data.Foldable as F
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
@@ -34,7 +35,8 @@ import Sigym4.Geometry.QuadTree.Internal.Types
 
 
 #if DEBUG
-import Debug.Trace
+import Debug.Trace (traceShow, trace)
+traceShowMsg msg a = traceShow (msg, a) a
 #endif
 
 data QtError
@@ -233,6 +235,9 @@ data TraversedNode v srid a
     , tCellCode :: LocCode v
     }
 
+instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
+  a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
+
 tExtent
   :: VectorSpace v
   => QuadTree v srid a -> TraversedNode v srid a -> Extent v 0
@@ -294,6 +299,8 @@ quadrantsTouching pos
     match Down First  = True
     match _    _      = False
 
+
+
 traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word), Num (v Word)
 #if DEBUG
   , Show a, Show (v Word), Show (v NeighborDir), Show (VPlanes v (Direction v))
@@ -302,115 +309,132 @@ traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word), Num (v Word)
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
 #if DEBUG
-  | traceShow ("traceRay","from",fromV,"to",toV) False = undefined
+  | traceShow ( "traceRay"
+              , ("from",      fromV)
+              , ("to",        toV)
+              , ("mCodeFrom", mCodeFrom)
+              , ("mCodeTo",   mCodeTo)
+              ) False = undefined
 #endif
-  | isJust (mCodeFrom >> mCodeTo)  = trace (qtTraverseToLevel qt 0 codeFrom)
+  | isJust (mCodeFrom >> mCodeTo)  = traceFrom [tNodeFrom]
   | otherwise                      = []
   where
-    trace !(tr@TNode{..})
+    traceFrom [] = error "no intersections"
+    traceFrom (cur:rest)
 #if DEBUG
-      | traceShow ("go", tCellCode, cellCodeTo
-                  , tLevel, cellExtent) False = undefined
+      | traceShow ("go", tCellCode cur, tLevel cur
+                  , cellExt) False = undefined
 #endif
-      | tCellCode == cellCodeTo  = [val]
-      | otherwise = case mAncestor of
-                      Nothing -> [val]
-                      Just t
+      -- If current cellCode is the same as destination's then we finished
+      | tCellCode cur == cellCodeTo = [value]
 #if DEBUG
-                        | traceShow ("go next", next, codeTo) False -> undefined
+      | null next, trace "no next" False = undefined
 #endif
-                        | otherwise -> val:(trace (traverseToLevel t 0 next))
-      where
-        cellCodeTo    = qtCellCode tLevel codeTo 
-        val           = leafData tNode
-        cellExtent    = calculateExtent qt tLevel tCellCode
-        intersections = getIntersections cellExtent
-        finalIsecs = filter niFinal intersections
-        next
-          | not (null finalIsecs)
-#if DEBUG
-          , traceShow ("got it", codeTo) True
-#endif
-          = codeTo
-          | not (null intersections)
-          = LocCode $ liftA3 mkNext (ngPosition (niNeighbor isec))
-                                    (unLocCode  (niCode isec))
-                                    (unLocCode tCellCode)
-          | otherwise = noIntersectionError
-          where isec = head intersections
+      | null next                   = traceFrom rest
+      | otherwise                   = value : traceFrom next
 
-        mkNext Down _ c = c - 1
-        mkNext Up   _ c = c + maxValue tLevel
-        mkNext Same i _ = i
-        
-        mAncestor = traverseToCommonAncestor qt tr next
+      where
+        next       = nub . catMaybes . map mkNext $
+                      getIntersections fuzzyExt ++ getIntersections cellExt 
+
+        cellCodeTo = qtCellCode (tLevel cur) codeTo 
+
+        value      = leafData (tNode cur)
+
+        cellExt    = calculateExtent qt (tLevel cur) (tCellCode cur)
+
+        fuzzyExt   = Extent (fmap (subtract qtEpsilon) (eMin cellExt))
+                            (fmap (+ qtEpsilon)        (eMax cellExt))
+
+        getIntersections ext
+          = filter (\i -> niInRange i && niInBounds i)
+          . map (neighborIntersection ext)
+          . filter (checkNeighbor fromV toV)
+          $ neighbors
+
+        mkNext Intersection{..} = do
+          nCode <- if niCode == codeTo
+                     then Just codeTo
+                     else liftM LocCode $ sequence $
+                               mkNextCode <$> ngPosition niNeighbor
+                                          <*> unLocCode  niCode
+                                          <*> unLocCode  (tCellCode cur)
+          ancestor <- traverseToCommonAncestor qt cur nCode
+          return (traverseToLevel ancestor 0 nCode)
+
+        mkNextCode Down _ c
+          | c > 0                           = Just (c - 1)
+          | otherwise                       = Nothing
+        mkNextCode Up   _ c
+          | c + cellSize < maxValue qtLevel = Just (c + cellSize)
+          | otherwise                       = Nothing
+        mkNextCode Same i _                 = Just i
+
+        cellSize = maxValue (tLevel cur)
 
     fromV     = qtBackward qt from
     toV       = qtBackward qt to
+    fromV'    = unQtVertex fromV
+    toV'      = unQtVertex toV
     lineDir   = toV - fromV
     mCodeTo   = qtLocCode qt to
     mCodeFrom = qtLocCode qt from
     codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
+    tNodeFrom = qtTraverseToLevel qt 0 codeFrom
 
-    getIntersections cellExtent
-      = filter niInRange
-      . map (neighborIntersection cellExtent)
-      . filter (checkNeighbor fromV toV)
-      $ neighbors
-
-    noIntersectionError = error "no neighbors intersects"
+    inRayBounds (LocCode c) = allLte lo c && allLte c hi
+      where
+        allLte a b = all id (liftA2 (<=) a b)
+        loV = QtVertex (min <$> fromV' <*> toV')
+        hiV = QtVertex (max <$> fromV' <*> toV')
+        lo = unLocCode (qtVertex2LocCode qt loV)
+        hi = unLocCode (qtVertex2LocCode qt hiV)
 
     neighborIntersection (Extent lo hi) ng
 #if DEBUG
-      | traceShow ( "checkNg: ", ng
-                  , ("inRange", inRange vertex)
-                  , ("isFinal", isFinal)
+      | traceShow ( ret
+                  , ("isFinal", all qtNearZero (vertex - unQtVertex toV))
                   , ("vx", vertex)
                   , ("lo", lo, "hi", hi)
-                  , ("loD", loD, "hiU", hiU)
                   ) False = undefined
 #endif
-      | otherwise = Intersection {
-                      niInRange  = inRange vertex
-                    , niFinal    = isFinal
-                    , niCode     = qtVertex2LocCode qt (QtVertex vertex)
-                    , niNeighbor = ng
-                    }
+      | otherwise = ret
       where
-        isFinal = all qtNearZero (vertex - unQtVertex toV)
-        hiU
-          | isVertexNeighbor ng = hi
-          | otherwise           = fmap (+ qtEpsilon) hi
-        loD
-          | isVertexNeighbor ng = lo
-          | otherwise           = fmap (subtract qtEpsilon) lo
+        ret = Intersection {
+                niInRange  = inRange vertex
+              , niInBounds = inRayBounds icode
+              , niCode     = icode
+              , niNeighbor = ng
+              }
+
+        icode = qtVertex2LocCode qt (QtVertex vertex)
         vertex = lineHyperplaneIntersection
                     (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
 
-        pos = ngPosition ng
-
-        origin = go <$> pos <*> loD <*> hiU
+        origin = go <$> ngPosition ng <*> lo <*> hi
           where
             go Up   _   hi'= hi'
             go Same lo' _  = lo'
             go Down lo' _  = lo'
 
-        inRange vx = F.all id (go <$> pos <*> loD <*> hiU <*> vx)
+        inRange vx = all id (go <$> ngPosition ng  <*> lo <*> hi <*> vx)
           where
-            go Same lo' hi' v = (lo'<v || qtNearZero (v-lo')) && v < hi'
-            go Down lo' _   v = qtNearZero (v-lo')
-            go Up   _   hi' v = qtNearZero (hi'-v)
+            go Same lo' hi' v = (lo' < v   || qtNearZero (v-lo')) && v < hi'
+            go Down lo' _   v = qtNearZero (lo'-v)
+            go Up   _   hi' v = qtNearZero (v-hi')
 
 {-# INLINABLE traceRay #-}
 
 data Intersection v
   = Intersection {
-      niInRange   :: Bool
-    , niFinal     :: Bool
+      niNeighbor  :: Neighbor v
+    , niInRange   :: !Bool
+    , niInBounds  :: !Bool
     , niCode      :: LocCode v
-    , niNeighbor  :: Neighbor v
   }
+
+deriving instance (Show (LocCode v), Show (Neighbor v)) => Show (Intersection v)
 
 
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
@@ -418,8 +442,8 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
   = F.all id (liftA3 checkComp (ngPosition ng) from to) 
   where
     checkComp Same _ _       = True
-    checkComp Down from' to' = not (qtNearZero (to'-from')) && from'> to'
-    checkComp Up   from' to' = not (qtNearZero (to'-from')) && to'  > from'
+    checkComp Down from' to' = from'> to'
+    checkComp Up   from' to' = to'  > from'
 {-# INLINE checkNeighbor #-}
     
 

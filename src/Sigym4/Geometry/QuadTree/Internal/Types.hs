@@ -171,7 +171,7 @@ instance Num Level where
     where l = Level (fromInteger i)
 
 instance Bounded Level where
-  maxBound = Level ((finiteBitSize (undefined::Word) `unsafeShiftR` 1) - 1)
+  maxBound = Level 23
   minBound = Level 0
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
