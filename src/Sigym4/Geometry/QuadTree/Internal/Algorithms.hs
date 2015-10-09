@@ -3,7 +3,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds #-}
@@ -334,8 +333,11 @@ traceRay qt@QuadTree{..} from to
       | otherwise                   = value : traceFrom next
 
       where
-        next       = nub . catMaybes . map mkNext $
-                      getIntersections fuzzyExt ++ getIntersections cellExt 
+        next       = nub . catMaybes . map mkNext $ concat [
+                        filter niCodeInBounds   (getIntersections fuzzyExt)
+                      , filter niCodeInBounds   (getIntersections cellExt)
+                      , filter niVertexInBounds (getIntersections cellExt)
+                      ]
 
         cellCodeTo = qtCellCode (tLevel cur) codeTo 
 
@@ -347,13 +349,13 @@ traceRay qt@QuadTree{..} from to
                             (fmap (+ qtEpsilon)        (eMax cellExt))
 
         getIntersections ext
-          = filter (\i -> niInRange i && niInBounds i)
+          = filter niInRange
           . map (neighborIntersection ext)
           . filter (checkNeighbor fromV toV)
           $ neighbors
 
         mkNext Intersection{..} = do
-          nCode <- if niCode == codeTo
+          nCode <- if niFinal
                      then Just codeTo
                      else liftM LocCode $ sequence $
                                mkNextCode <$> ngPosition niNeighbor
@@ -374,8 +376,6 @@ traceRay qt@QuadTree{..} from to
 
     fromV     = qtBackward qt from
     toV       = qtBackward qt to
-    fromV'    = unQtVertex fromV
-    toV'      = unQtVertex toV
     lineDir   = toV - fromV
     mCodeTo   = qtLocCode qt to
     mCodeFrom = qtLocCode qt from
@@ -386,15 +386,20 @@ traceRay qt@QuadTree{..} from to
     inRayBounds (LocCode c) = allLte lo c && allLte c hi
       where
         allLte a b = all id (liftA2 (<=) a b)
-        loV = QtVertex (min <$> fromV' <*> toV')
-        hiV = QtVertex (max <$> fromV' <*> toV')
+        loV = QtVertex (min <$> unQtVertex fromV <*> unQtVertex toV)
+        hiV = QtVertex (max <$> unQtVertex fromV <*> unQtVertex toV)
         lo = unLocCode (qtVertex2LocCode qt loV)
         hi = unLocCode (qtVertex2LocCode qt hiV)
+
+    inRayBoundsV v = all id (qtBetweenC <$> lo <*> hi <*> v)
+      where
+        lo = min <$> unQtVertex fromV <*> unQtVertex toV
+        hi = max <$> unQtVertex fromV <*> unQtVertex toV
 
     neighborIntersection (Extent lo hi) ng
 #if DEBUG
       | traceShow ( ret
-                  , ("isFinal", all qtNearZero (vertex - unQtVertex toV))
+                  , ("isFinal", isFinal)
                   , ("vx", vertex)
                   , ("lo", lo, "hi", hi)
                   ) False = undefined
@@ -402,11 +407,15 @@ traceRay qt@QuadTree{..} from to
       | otherwise = ret
       where
         ret = Intersection {
-                niInRange  = inRange vertex
-              , niInBounds = inRayBounds icode
-              , niCode     = icode
-              , niNeighbor = ng
+                niInRange        = inRange vertex
+              , niCodeInBounds   = inRayBounds icode
+              , niVertexInBounds = inRayBoundsV vertex
+              , niCode           = icode
+              , niFinal          = isFinal
+              , niNeighbor       = ng
               }
+
+        isFinal = all qtNearZero (vertex - unQtVertex toV)
 
         icode = qtVertex2LocCode qt (QtVertex vertex)
         vertex = lineHyperplaneIntersection
@@ -420,18 +429,34 @@ traceRay qt@QuadTree{..} from to
 
         inRange vx = all id (go <$> ngPosition ng  <*> lo <*> hi <*> vx)
           where
-            go Same lo' hi' v = (lo' < v   || qtNearZero (v-lo')) && v < hi'
-            go Down lo' _   v = qtNearZero (lo'-v)
-            go Up   _   hi' v = qtNearZero (v-hi')
+            go Same lo' hi' = qtBetween  lo' hi'
+            go Down lo' _   = qtAlmostEq lo'
+            go Up   _   hi' = qtAlmostEq hi'
 
 {-# INLINABLE traceRay #-}
 
+qtAlmostEq :: Double -> Double -> Bool
+qtAlmostEq a b = qtNearZero (a-b)
+{-# INLINE qtAlmostEq #-}
+
+
+qtBetween :: Double -> Double -> Double -> Bool
+qtBetween lo hi v = (lo < v || qtAlmostEq v lo) && v < hi
+{-# INLINE qtBetween #-}
+
+qtBetweenC :: Double -> Double -> Double -> Bool
+qtBetweenC lo hi v = (lo < v  || qtAlmostEq v lo) &&
+                     (v  < hi || qtAlmostEq v hi)
+{-# INLINE qtBetweenC #-}
+
 data Intersection v
   = Intersection {
-      niNeighbor  :: Neighbor v
-    , niInRange   :: !Bool
-    , niInBounds  :: !Bool
-    , niCode      :: LocCode v
+      niNeighbor       :: Neighbor v
+    , niInRange        :: !Bool
+    , niFinal          :: !Bool
+    , niCodeInBounds   :: !Bool
+    , niVertexInBounds :: !Bool
+    , niCode           :: LocCode v
   }
 
 deriving instance (Show (LocCode v), Show (Neighbor v)) => Show (Intersection v)

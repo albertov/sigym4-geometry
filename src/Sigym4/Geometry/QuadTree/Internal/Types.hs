@@ -171,7 +171,7 @@ instance Num Level where
     where l = Level (fromInteger i)
 
 instance Bounded Level where
-  maxBound = Level 23
+  maxBound = Level 31
   minBound = Level 0
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
