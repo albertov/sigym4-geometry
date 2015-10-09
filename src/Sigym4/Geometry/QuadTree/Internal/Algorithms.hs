@@ -105,6 +105,7 @@ setChildBits (Level l) (Quadrant q) (LocCode code)
 
 maxValue :: Level -> Word
 maxValue (Level l) = bit l
+{-# INLINE maxValue #-}
 
 qtMinBox :: VectorSpace v => QuadTree v srid a -> Box v
 qtMinBox QuadTree{qtLevel=l, qtExtent=e} = calculateMinBox e l
@@ -119,8 +120,7 @@ qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
 qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
   = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
   where ratio   = (v/(hi-lo) - (lo/(hi-lo)))
-        trunc :: Double -> Double
-        trunc = fromIntegral . (truncate :: Double -> Int)
+        trunc = (fromIntegral :: Int -> Double) . truncate
         boxBits = qtEpsLevel - nearZeroBits - 1
         absMax  = fromIntegral (maxValue (Level boxBits))
 {-# INLINE qtBackward #-}
