@@ -31,9 +31,7 @@ import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilon)
 
-import GHC.TypeLits
-
-data QuadTree v (srid :: Nat) a
+data QuadTree (v :: * -> *) (srid :: Nat) a
   = QuadTree {
       qtRoot   :: QNode v srid a
     , qtExtent :: {-# UNPACK #-} !(Extent v srid)
@@ -45,16 +43,16 @@ instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
           && qtLevel  a    == qtLevel b
           && go (qtRoot a) (qtRoot b)
     where
-      go (QLeaf _ a')     (QLeaf _ b')     = a' == b'
-      go (QNode _ (V a')) (QNode _ (V b')) = all id (V.zipWith go a' b')
-      go _               _                 = False
+      go (QLeaf _ a') (QLeaf _ b') = a' == b'
+      go (QNode _ a') (QNode _ b') = all id (V.zipWith go a' b')
+      go _            _            = False
 
 instance Functor (QuadTree v srid) where
   fmap f qt@QuadTree{qtRoot=root} = qt {qtRoot=go rootParent root}
     where
       go p QLeaf{qData=a} = QLeaf {qData=f a, qParent=p}
-      go p QNode{qChildren=V children}
-        = let n = QNode {qChildren= V (V.map (go n) children), qParent=p} in n
+      go p QNode{qChildren=children}
+        = let n = QNode {qChildren= V.map (go n) children, qParent=p} in n
 
 instance Foldable (QuadTree v srid) where
   foldMap f qt = foldMap f (qtRoot qt)
@@ -72,12 +70,12 @@ instance VectorSpace v => Show (QuadTree v srid a) where
 
 type Box v = Vertex v
 
-data QNode v (srid :: Nat) a
+data QNode (v :: * -> *) (srid :: Nat) a
   = QLeaf { qParent   :: QNode v srid a   -- undefined if root
           , qData     :: a
           }
   | QNode { qParent   :: QNode v srid a   -- undefined if root
-          , qChildren :: V (2 ^ VsDim v) (QNode v srid a)
+          , qChildren :: {-# UNPACK #-} !(V.Vector (QNode v srid a))
           }
 
 instance Show a => Show (QNode v srid a) where
@@ -171,7 +169,7 @@ instance Num Level where
     where l = Level (fromInteger i)
 
 instance Bounded Level where
-  maxBound = Level 31
+  maxBound = Level ((finiteBitSize (undefined::Word) `unsafeShiftR` 1) - 1)
   minBound = Level 0
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}

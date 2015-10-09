@@ -23,10 +23,7 @@ import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
-import Data.List (nub)
-import qualified Data.Foldable as F
 import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -64,7 +61,7 @@ generate2 build ext minBox
         delta  = fmap (* maxVal) minBox 
         maxVal = fromIntegral (maxValue level)
         level  = Level (ceiling (logBase 2 nCells))
-        nCells = F.maximum (eSize ext / minBox)
+        nCells = maximum (eSize ext / minBox)
 
 
 
@@ -83,7 +80,7 @@ genQNode
   :: forall m v srid a. (MonadFix m, VectorSpace v)
   => QNode v srid a -> (Quadrant v -> m (QNode v srid a))
   -> m (QNode v srid a)
-genQNode parent f = liftM (QNode parent . V) (V.generateM numNodes (f . toEnum))
+genQNode parent f = liftM (QNode parent) (V.generateM numNodes (f . toEnum))
   where numNodes = 2 ^ dim (Proxy :: Proxy v) 
 
 grow
@@ -164,7 +161,7 @@ qtLocCode
 qtLocCode qt p
   | insideExt
 #if ASSERTS
-  , F.all (\c -> 0<=c && c<1) (unQtVertex p')
+  , all (\c -> 0<=c && c<1) (unQtVertex p')
 #endif
   = Just code
   | otherwise = Nothing
@@ -201,7 +198,7 @@ qtCellCode
 qtCellCode (Level l) code
   | l == 0     = code
   | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
-  where mask = complement (U.sum (U.generate l bit))
+  where mask = complement (bit l - 1)
 {-# INLINE qtCellCode #-}
 
 traverseToLevel
@@ -210,12 +207,12 @@ traverseToLevel
   -> Level -> LocCode v -> TraversedNode v srid a
 traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
-    go !n@QLeaf{} !l            = TNode n l (qtCellCode l code)
-    go !n         !l | l<=end   = TNode n l (qtCellCode l code)
-    go !QNode{qChildren=V v} !l = let !n' = v `V.unsafeIndex` ix
-                                      !ix = ixFromLocCode l' code
-                                      !l' = l - 1
-                                  in go n' l'
+    go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
+    go !n         !l | l<=end = TNode l n (qtCellCode l code)
+    go !QNode{qChildren=v} !l = let !n' = v `V.unsafeIndex` ix
+                                    !ix = ixFromLocCode l' code
+                                    !l' = l - 1
+                                in go n' l'
 {-# INLINE traverseToLevel #-}
 
 qtTraverseToLevel
@@ -223,29 +220,24 @@ qtTraverseToLevel
   => QuadTree v srid a
   -> Level -> LocCode v -> TraversedNode v srid a
 qtTraverseToLevel QuadTree{..}
-  = traverseToLevel (TNode qtRoot qtLevel (LocCode (pure 0)))
+  = traverseToLevel (TNode qtLevel qtRoot (LocCode (pure 0)))
 {-# INLINE qtTraverseToLevel #-}
 
 
 data TraversedNode v srid a
   = TNode
-    { tNode     :: QNode v srid a
-    , tLevel    :: Level
+    { tLevel    :: Level
+    , tNode     :: QNode v srid a
     , tCellCode :: LocCode v
     }
 
 instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
   a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
 
-tExtent
-  :: VectorSpace v
-  => QuadTree v srid a -> TraversedNode v srid a -> Extent v 0
-tExtent qt TNode{..} = calculateExtent qt tLevel tCellCode
-
 instance Show (LocCode v) => Show (TraversedNode v srid a) where
   show TNode{..} = concat (["TNode { tLevel = ", show tLevel
                            ,      ", tCellCode = ", show tCellCode, " }"
-                           ] :: [String]) 
+                           ]) 
 
 ixFromLocCode
   :: VectorSpace v
@@ -283,7 +275,7 @@ leavesTouching pos = go
   where
     go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
-    go !TNode{tNode=QNode{qChildren=V cs}, tLevel=l, tCellCode=code}
+    go !TNode{tNode=QNode{qChildren=cs}, tLevel=l, tCellCode=code}
       = concatMap go (map getChild (quadrantsTouching pos))
       where getChild q = TNode { tNode     = cs `V.unsafeIndex` fromEnum q
                                , tLevel    = l-1
@@ -315,29 +307,27 @@ traceRay qt@QuadTree{..} from to
               , ("mCodeTo",   mCodeTo)
               ) False = undefined
 #endif
-  | isJust (mCodeFrom >> mCodeTo)  = traceFrom [tNodeFrom]
+  | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom]
   | otherwise                      = []
   where
-    traceFrom [] = error "no intersections"
-    traceFrom (cur:rest)
+#if ASSERTS
+    go [] = error "no intersections"
+#else
+    go [] = []
+#endif
+
+    go (!cur:rest)
 #if DEBUG
       | traceShow ("go", tCellCode cur, tLevel cur
-                  , cellExt) False = undefined
+                  , cellExt, null next) False = undefined
 #endif
-      -- If current cellCode is the same as destination's then we finished
       | tCellCode cur == cellCodeTo = [value]
-#if DEBUG
-      | null next, trace "no next" False = undefined
-#endif
-      | null next                   = traceFrom rest
-      | otherwise                   = value : traceFrom next
+      | null next                   = go rest
+      | otherwise                   = value : go next
 
       where
-        next       = nub . catMaybes . map mkNext $ concat [
-                        filter niCodeInBounds   (getIntersections fuzzyExt)
-                      , filter niCodeInBounds   (getIntersections cellExt)
-                      , filter niVertexInBounds (getIntersections cellExt)
-                      ]
+        next       = catMaybes $ map mkNext $
+                       getIntersections fuzzyExt ++ getIntersections cellExt
 
         cellCodeTo = qtCellCode (tLevel cur) codeTo 
 
@@ -349,18 +339,18 @@ traceRay qt@QuadTree{..} from to
                             (fmap (+ qtEpsilon)        (eMax cellExt))
 
         getIntersections ext
-          = filter niInRange
+          = filter niValid
           . map (neighborIntersection ext)
           . filter (checkNeighbor fromV toV)
           $ neighbors
 
-        mkNext Intersection{..} = do
+        mkNext !Intersection{..} = do
           nCode <- if niFinal
                      then Just codeTo
-                     else liftM LocCode $ sequence $
-                               mkNextCode <$> ngPosition niNeighbor
-                                          <*> unLocCode  niCode
-                                          <*> unLocCode  (tCellCode cur)
+                     else liftM LocCode $ sequence $ liftA3
+                               mkNextCode niNeighborPos
+                                          (unLocCode  niCode)
+                                          (unLocCode  (tCellCode cur))
           ancestor <- traverseToCommonAncestor qt cur nCode
           return (traverseToLevel ancestor 0 nCode)
 
@@ -383,23 +373,9 @@ traceRay qt@QuadTree{..} from to
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
     tNodeFrom = qtTraverseToLevel qt 0 codeFrom
 
-    inRayBounds (LocCode c) = allLte lo c && allLte c hi
-      where
-        allLte a b = all id (liftA2 (<=) a b)
-        loV = QtVertex (min <$> unQtVertex fromV <*> unQtVertex toV)
-        hiV = QtVertex (max <$> unQtVertex fromV <*> unQtVertex toV)
-        lo = unLocCode (qtVertex2LocCode qt loV)
-        hi = unLocCode (qtVertex2LocCode qt hiV)
-
-    inRayBoundsV v = all id (qtBetweenC <$> lo <*> hi <*> v)
-      where
-        lo = min <$> unQtVertex fromV <*> unQtVertex toV
-        hi = max <$> unQtVertex fromV <*> unQtVertex toV
-
     neighborIntersection (Extent lo hi) ng
 #if DEBUG
       | traceShow ( ret
-                  , ("isFinal", isFinal)
                   , ("vx", vertex)
                   , ("lo", lo, "hi", hi)
                   ) False = undefined
@@ -407,68 +383,55 @@ traceRay qt@QuadTree{..} from to
       | otherwise = ret
       where
         ret = Intersection {
-                niInRange        = inRange vertex
-              , niCodeInBounds   = inRayBounds icode
-              , niVertexInBounds = inRayBoundsV vertex
-              , niCode           = icode
-              , niFinal          = isFinal
-              , niNeighbor       = ng
+                niValid       = inRange vertex && inRayBounds vertex
+              , niCode        = qtVertex2LocCode qt (QtVertex vertex)
+              , niFinal       = all qtNearZero (vertex - unQtVertex toV)
+              , niNeighborPos = ngPosition ng
               }
 
-        isFinal = all qtNearZero (vertex - unQtVertex toV)
-
-        icode = qtVertex2LocCode qt (QtVertex vertex)
         vertex = lineHyperplaneIntersection
                     (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
 
-        origin = go <$> ngPosition ng <*> lo <*> hi
+        origin = liftA3 origin' (ngPosition ng) lo hi
           where
-            go Up   _   hi'= hi'
-            go Same lo' _  = lo'
-            go Down lo' _  = lo'
+            origin' Up   _   hi'= hi'
+            origin' Same lo' _  = lo'
+            origin' Down lo' _  = lo'
 
-        inRange vx = all id (go <$> ngPosition ng  <*> lo <*> hi <*> vx)
+        inRange vx = all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> vx)
           where
-            go Same lo' hi' = qtBetween  lo' hi'
-            go Down lo' _   = qtAlmostEq lo'
-            go Up   _   hi' = qtAlmostEq hi'
+            inRange' Same lo' hi' = qtBetween  lo' hi'
+            inRange' Down lo' _   = qtAlmostEq lo'
+            inRange' Up   _   hi' = qtAlmostEq hi'
+
+    inRayBounds v = all id (liftA3 qtBetweenC lo hi v)
+      where
+        lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
+        hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
+
 
 {-# INLINABLE traceRay #-}
 
-qtAlmostEq :: Double -> Double -> Bool
-qtAlmostEq a b = qtNearZero (a-b)
-{-# INLINE qtAlmostEq #-}
-
-
-qtBetween :: Double -> Double -> Double -> Bool
-qtBetween lo hi v = (lo < v || qtAlmostEq v lo) && v < hi
-{-# INLINE qtBetween #-}
-
-qtBetweenC :: Double -> Double -> Double -> Bool
-qtBetweenC lo hi v = (lo < v  || qtAlmostEq v lo) &&
-                     (v  < hi || qtAlmostEq v hi)
-{-# INLINE qtBetweenC #-}
 
 data Intersection v
   = Intersection {
-      niNeighbor       :: Neighbor v
-    , niInRange        :: !Bool
-    , niFinal          :: !Bool
-    , niCodeInBounds   :: !Bool
-    , niVertexInBounds :: !Bool
+      niValid          :: !Bool
+    , niNeighborPos    :: NeighborPosition v
+    , niFinal          :: Bool
     , niCode           :: LocCode v
   }
 
-deriving instance (Show (LocCode v), Show (Neighbor v)) => Show (Intersection v)
+deriving instance (Show (LocCode v), Show (NeighborPosition v))
+  => Show (Intersection v)
 
 
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
-  = F.all id (liftA3 checkComp (ngPosition ng) from to) 
+  = all id (liftA3 checkComp (ngPosition ng) from to) 
   where
     checkComp Same _ _       = True
-    checkComp Down from' to' = from'> to'
-    checkComp Up   from' to' = to'  > from'
+    checkComp Down from' to' = from' > to'
+    checkComp Up   from' to' = to'   > from'
 {-# INLINE checkNeighbor #-}
     
 
@@ -492,7 +455,7 @@ traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
-  = Level (F.maximum (fmap componentLevel diff))
+  = Level (maximum (fmap componentLevel diff))
   where
     componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
     diff             = liftA2 xor a b
@@ -527,7 +490,6 @@ neighbors :: forall v. HasHyperplanes v => Neighbors v
 neighbors = neighborsDefault
 {-# NOINLINE neighbors #-}
 
-
 neighborsV2 :: Neighbors V2
 neighborsV2 = $$(mkNeighbors)
 {-# INLINE[2] neighborsV2 #-}
@@ -542,3 +504,16 @@ neighborsV4 :: Neighbors V4
 neighborsV4 = $$(mkNeighbors)
 {-# INLINE[2] neighborsV4 #-}
 {-# RULES "neighbors/V4"[2] neighbors = neighborsV4 #-}
+
+qtAlmostEq :: Double -> Double -> Bool
+qtAlmostEq a b = qtNearZero (a-b)
+{-# INLINE qtAlmostEq #-}
+
+qtBetween :: Double -> Double -> Double -> Bool
+qtBetween lo hi v = (lo < v || qtAlmostEq v lo) && v < hi
+{-# INLINE qtBetween #-}
+
+qtBetweenC :: Double -> Double -> Double -> Bool
+qtBetweenC lo hi v = (lo < v  || qtAlmostEq v lo) &&
+                     (v  < hi || qtAlmostEq v hi)
+{-# INLINE qtBetweenC #-}
