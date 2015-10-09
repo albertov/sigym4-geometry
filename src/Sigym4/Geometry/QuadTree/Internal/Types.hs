@@ -175,11 +175,11 @@ instance Bounded Level where
   {-# INLINE minBound #-}
 
 qtNearZero :: Double -> Bool
-qtNearZero a = abs a <= $$(machineEpsilon 4) -- machineEpsilon * 2^4
+qtNearZero a = abs a <= $$(machineEpsilon 1 4)
 {-# INLINE qtNearZero #-}
 
 qtEpsilon :: Double
-qtEpsilon = $$(machineEpsilon 1)             -- machineEpsilon * 2^1
+qtEpsilon = $$(machineEpsilon 1 1)
 {-# INLINE qtEpsilon #-}
 
 

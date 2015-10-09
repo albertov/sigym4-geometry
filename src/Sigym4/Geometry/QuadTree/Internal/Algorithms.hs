@@ -120,7 +120,11 @@ calculateMinBox e l
 
 qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
 qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
-  = QtVertex ((v/(hi-lo) - (lo/(hi-lo))))
+  = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
+  where ratio   = (v/(hi-lo) - (lo/(hi-lo)))
+        trunc :: Double -> Double
+        trunc = fromIntegral . (truncate :: Double -> Int)
+        absMax  = fromIntegral (maxValue maxBound)
 {-# INLINE qtBackward #-}
 
 qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
@@ -310,7 +314,7 @@ traceRay qt@QuadTree{..} from to
   | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
   | otherwise                      = []
   where
-    maxIterations = 2 ^ (unLevel qtLevel + 2) :: Int
+    maxIterations = 2 ^ (unLevel qtLevel + 1) :: Int
 #if ASSERTS
     go [] !_ = error "no intersections"
     go _  !0 = error "iteration limit reached"
@@ -383,7 +387,9 @@ traceRay qt@QuadTree{..} from to
         isecWithPlane p
 #if DEBUG
           | isFinal <- all qtNearZero (isec - unQtVertex toV)
-          , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng, isec)
+          , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
+                      , ("isec", isec)
+                      , ("isecode", qtVertex2LocCode qt (QtVertex isec))
                       , ("lo", lo, "hi", hi)
                       , ("plane", p)
                       ) False = undefined
