@@ -307,24 +307,26 @@ traceRay qt@QuadTree{..} from to
               , ("mCodeTo",   mCodeTo)
               ) False = undefined
 #endif
-  | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom]
+  | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
   | otherwise                      = []
   where
+    maxIterations = 2 ^ (unLevel qtLevel + 2) :: Int
 #if ASSERTS
-    go [] = error "no intersections"
+    go [] !_ = error "no intersections"
+    go _  !0 = error "iteration limit reached"
 #else
-    go [] = []
+    go [] !_ = []
+    go _  !0 = []
 #endif
 
-    go (!cur:rest)
+    go (!cur:rest) !n
 #if DEBUG
-      | traceShow ("go", tCellCode cur, tLevel cur
+      | traceShow ("go", n, tCellCode cur, tLevel cur
                   , cellExt, null next) False = undefined
 #endif
       | tCellCode cur == cellCodeTo = [value]
-      | null next                   = go rest
-      | otherwise                   = value : go next
-
+      | null next                   = go rest n
+      | otherwise                   = value : go next (n-1)
       where
         next       = catMaybes $ map (>>=mkNext) $
                        getIntersections fuzzyExt ++ getIntersections cellExt
