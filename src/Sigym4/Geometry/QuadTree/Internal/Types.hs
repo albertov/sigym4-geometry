@@ -29,7 +29,7 @@ import Language.Haskell.TH.Syntax
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
-import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilon)
+import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilonAndLevel)
 
 data QuadTree (v :: * -> *) (srid :: Nat) a
   = QuadTree {
@@ -174,13 +174,11 @@ instance Bounded Level where
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
 
-qtNearZero :: Double -> Bool
-qtNearZero a = abs a <= $$(machineEpsilon 1 4)
-{-# INLINE qtNearZero #-}
-
-qtEpsilon :: Double
-qtEpsilon = $$(machineEpsilon 1 1)
+qtEpsilon  :: Double
+qtEpsLevel :: Int
+(qtEpsLevel, qtEpsilon) = $$(machineEpsilonAndLevel 1) :: (Int, Double)
 {-# INLINE qtEpsilon #-}
+{-# INLINE qtEpsLevel #-}
 
 
 newtype LocCode v = LocCode {unLocCode :: v Word}

@@ -4,17 +4,26 @@
 
 module Sigym4.Geometry.QuadTree.Internal.TH (
    machineEpsilon
- , calculatedEpsilon
+ , machineEpsilonAndLevel
+ , calculatedEpsilonAndLevel
 ) where
 
 import Language.Haskell.TH.Syntax
 
 
-calculatedEpsilon :: (Ord a, Fractional a) => a -> a
-calculatedEpsilon s = go s
-  where go !e | e+s>s     = go (e*0.5)
-              | otherwise = e
+calculatedEpsilonAndLevel :: (Ord a, Fractional a) => (Int,a)
+calculatedEpsilonAndLevel = go 0 1
+  where go !n !e | e+1>1     = go (n+1) (e*0.5)
+                 | otherwise = (n,e)
 
-machineEpsilon :: (Lift a, Ord a, Fractional a) => a -> Int -> Q (TExp a)
-machineEpsilon s f = let e = 2^f * calculatedEpsilon s
-                     in [|| e ||]
+machineEpsilon :: (Lift a, Ord a, Fractional a) => Int -> Q (TExp a)
+machineEpsilon f = let e = 2^f * (snd calculatedEpsilonAndLevel)
+                   in [|| e ||]
+
+machineEpsilonAndLevel
+  :: (Lift a, Ord a, Fractional a)
+  => Int -> Q (TExp (Int,a))
+machineEpsilonAndLevel f
+  = let (l,e) = calculatedEpsilonAndLevel
+        r     = (l-f, e * 2^f)
+    in [|| r ||]

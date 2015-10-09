@@ -45,24 +45,23 @@ generate
   :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Level
   -> m (Either QtError (QuadTree v srid a))
-generate build ext = generate2 build ext . calculateMinBox ext
+generate build ext level
+  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
+  | otherwise
+  = Right <$> (QuadTree <$> genNode rootParent ext level build
+                        <*> pure ext
+                        <*> pure level)
 
 generate2
   :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Box v
   -> m (Either QtError (QuadTree v srid a))
-generate2 build ext minBox
-  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
-  | otherwise
-  = Right <$> (QuadTree <$> genNode rootParent effectiveExt level build
-                        <*> pure effectiveExt
-                        <*> pure level)
+generate2 build ext minBox = generate build effectiveExt level
   where effectiveExt = Extent (eMin ext) (eMin ext + delta)
         delta  = fmap (* maxVal) minBox 
         maxVal = fromIntegral (maxValue level)
         level  = Level (ceiling (logBase 2 nCells))
         nCells = maximum (eSize ext / minBox)
-
 
 
 genNode
@@ -124,7 +123,8 @@ qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
   where ratio   = (v/(hi-lo) - (lo/(hi-lo)))
         trunc :: Double -> Double
         trunc = fromIntegral . (truncate :: Double -> Int)
-        absMax  = fromIntegral (maxValue maxBound)
+        boxBits = qtEpsLevel - nearZeroBits - 1
+        absMax  = fromIntegral (maxValue (Level boxBits))
 {-# INLINE qtBackward #-}
 
 qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
@@ -314,7 +314,7 @@ traceRay qt@QuadTree{..} from to
   | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
   | otherwise                      = []
   where
-    maxIterations = 2 ^ (unLevel qtLevel + 1) :: Int
+    maxIterations = 2 ^ (unLevel qtLevel + dim (Proxy :: Proxy v)) :: Int
 #if ASSERTS
     go [] !_ = error "no intersections"
     go _  !0 = error "iteration limit reached"
@@ -498,6 +498,15 @@ neighborsV4 :: Neighbors V4
 neighborsV4 = $$(mkNeighbors)
 {-# INLINE[2] neighborsV4 #-}
 {-# RULES "neighbors/V4"[2] neighbors = neighborsV4 #-}
+
+
+nearZeroBits :: Int
+nearZeroBits = 4
+{-# INLINE nearZeroBits #-}
+ 
+qtNearZero :: Double -> Bool
+qtNearZero a = abs a <= qtEpsilon * 2^nearZeroBits
+{-# INLINE qtNearZero #-}
 
 qtAlmostEq :: Double -> Double -> Bool
 qtAlmostEq a b = qtNearZero (a-b)
