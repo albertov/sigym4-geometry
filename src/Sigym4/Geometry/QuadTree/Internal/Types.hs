@@ -23,7 +23,10 @@ import Data.Bits
 import Data.List (sortBy)
 import Data.Proxy (Proxy(..))
 import Data.Foldable
-import qualified Data.Vector as V
+import Data.Functor.Identity (runIdentity)
+
+import Data.Primitive.Array
+import Control.Monad.ST
 
 import Language.Haskell.TH.Syntax
 
@@ -44,17 +47,47 @@ instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
           && go (qtRoot a) (qtRoot b)
     where
       go (QLeaf _ a') (QLeaf _ b') = a' == b'
-      go (QNode _ a') (QNode _ b') = all id (V.zipWith go a' b')
+      go (QNode _ a') (QNode _ b') = loop 0
+        where loop !i
+                | i < numChildren (Proxy :: Proxy v)
+                , indexArray a' i `go` indexArray b' i = loop (i+1)
+                | otherwise                            = True
       go _            _            = False
 
-instance Functor (QuadTree v srid) where
+instance VectorSpace v => Functor (QuadTree v srid) where
   fmap f qt@QuadTree{qtRoot=root} = qt {qtRoot=go rootParent root}
     where
       go p QLeaf{qData=a} = QLeaf {qData=f a, qParent=p}
       go p QNode{qChildren=children}
-        = let n = QNode {qChildren= V.map (go n) children, qParent=p} in n
+        = let n = QNode { qChildren = runIdentity (generateChildren genChild)
+                        , qParent   = p}
+              genChild = return . go n . indexArray children
+          in n
 
-instance Foldable (QuadTree v srid) where
+generateChildren
+  :: forall v srid m a. (VectorSpace v, Monad m)
+  => (Int -> m (QNode v srid a)) -> m (Array (QNode v srid a))
+generateChildren f = do
+  elems <- mapM f [0..(numChildren (Proxy :: Proxy v))-1]
+  return $! runST $ do
+    cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
+    let loop !_ []     = return ()
+        loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
+    loop 0 elems
+    unsafeFreezeArray cs
+{-# INLINE generateChildren #-}
+
+numChildren :: VectorSpace v => Proxy v -> Int
+numChildren p = 2 ^ dim p
+{-# INLINE numChildren #-}
+
+getChild
+  :: VectorSpace v => Array (QNode v srid a) -> Quadrant v -> QNode v srid a
+getChild c = runIdentity . indexArrayM c . fromEnum
+{-# INLINE getChild #-}
+
+
+instance VectorSpace v => Foldable (QuadTree v srid) where
   foldMap f qt = foldMap f (qtRoot qt)
   {-# INLINE foldMap #-}
 
@@ -75,16 +108,21 @@ data QNode (v :: * -> *) (srid :: Nat) a
           , qData     :: a
           }
   | QNode { qParent   :: QNode v srid a   -- undefined if root
-          , qChildren :: {-# UNPACK #-} !(V.Vector (QNode v srid a))
+          , qChildren :: {-# UNPACK #-} !(Array (QNode v srid a))
           }
 
-instance Show a => Show (QNode v srid a) where
+instance (Show a, VectorSpace v) => Show (QNode v srid a) where
   show QLeaf{..} = concat (["QLeaf {qData = ", show qData, "}"] :: [String])
-  show QNode{..} = concat (["QNode {qChildren = ", show qChildren, "}"] :: [String])
+  show n@QNode{} = concat ([ "QNode {qChildren = "
+                           , show (toList n), " }"] :: [String])
 
-instance Foldable (QNode v srid) where
+instance VectorSpace v => Foldable (QNode v srid) where
   foldMap f QLeaf{qData=a}            = f a
-  foldMap f QNode{qChildren=children} = foldMap (foldMap f) children
+  foldMap f QNode{qChildren=children} = loop 0 mempty
+    where loop !i acc
+            | i < numChildren (Proxy :: Proxy v)
+            = loop (i+1) (acc `mappend` foldMap f (indexArray children i))
+            | otherwise = acc
   {-# INLINE foldMap #-}
 
 

@@ -51,9 +51,9 @@ quadTreeSpec
   => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
-  describe "setChildBits and ixFromLocCode " $ do
+  describe "setChildBits and quadrantAtLevel " $ do
     prop "are reciprocal" $ \(level, q) ->
-      ixFromLocCode level (setChildBits level q (0::LocCode v)) == fromEnum q
+      quadrantAtLevel level (setChildBits level q (0::LocCode v)) == q
 
   describe "neighbors " $ do
     it " has correct length" $ 

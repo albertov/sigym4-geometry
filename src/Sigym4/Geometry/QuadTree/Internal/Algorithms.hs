@@ -23,7 +23,6 @@ import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes, listToMaybe)
 import Data.Proxy (Proxy(..))
 import Data.Bits
-import qualified Data.Vector as V
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -79,8 +78,7 @@ genQNode
   :: forall m v srid a. (MonadFix m, VectorSpace v)
   => QNode v srid a -> (Quadrant v -> m (QNode v srid a))
   -> m (QNode v srid a)
-genQNode parent f = liftM (QNode parent) (V.generateM numNodes (f . toEnum))
-  where numNodes = 2 ^ dim (Proxy :: Proxy v) 
+genQNode parent f = liftM (QNode parent) (generateChildren (f . toEnum))
 
 grow
   :: (MonadFix m, VectorSpace v)
@@ -213,9 +211,8 @@ traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
     go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
     go !n         !l | l<=end = TNode l n (qtCellCode l code)
-    go !QNode{qChildren=v} !l = let !n' = v `V.unsafeIndex` ix
-                                    !ix = ixFromLocCode l' code
-                                    !l' = l - 1
+    go !QNode{qChildren=c} !l = let n' = getChild c (quadrantAtLevel l' code)
+                                    l' = l - 1
                                 in go n' l'
 {-# INLINE traverseToLevel #-}
 
@@ -242,12 +239,6 @@ instance Show (LocCode v) => Show (TraversedNode v srid a) where
   show TNode{..} = concat (["TNode { tLevel = ", show tLevel
                            ,      ", tCellCode = ", show tCellCode, " }"
                            ]) 
-
-ixFromLocCode
-  :: VectorSpace v
-  => Level -> LocCode v -> Int
-ixFromLocCode l = fromEnum . quadrantAtLevel l
-{-# INLINE ixFromLocCode #-}
 
 quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
 quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
@@ -280,10 +271,10 @@ leavesTouching pos = go
     go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
     go !TNode{tNode=QNode{qChildren=cs}, tLevel=l, tCellCode=code}
-      = concatMap go (map getChild (quadrantsTouching pos))
-      where getChild q = TNode { tNode     = cs `V.unsafeIndex` fromEnum q
-                               , tLevel    = l-1
-                               , tCellCode = setChildBits (l-1) q code}
+      = concatMap go (map getChild' (quadrantsTouching pos))
+      where getChild' q = TNode { tNode     = getChild cs q
+                                , tLevel    = l-1
+                                , tCellCode = setChildBits (l-1) q code}
 
 quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
 quadrantsTouching pos
