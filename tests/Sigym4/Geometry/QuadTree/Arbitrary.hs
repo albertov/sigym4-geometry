@@ -11,6 +11,7 @@ import Control.Monad.Fix
 import Control.Monad (replicateM, zipWithM)
 import Data.Foldable (toList)
 
+import Data.Bits (finiteBitSize)
 import Data.Proxy (Proxy(Proxy))
 
 import Test.QuickCheck hiding (generate)
@@ -90,11 +91,11 @@ instance VectorSpace v => Arbitrary (DelicateQT v) where
                    . concat
                    . map (extentCorners . ensureInQt)
                    $ qtExtent qt : toList qt
-        ensureInQt (Extent lo hi) = go maxBound
+        ensureInQt (Extent lo hi) = go (finiteBitSize (undefined :: Word))
           where go !l | qtContainsPoint qt (Point v) = Extent lo v
-                      | l > qtLevel qt       = go (l-1)
+                      | Level l > qtLevel qt = go (l-1)
                       | otherwise            = error "calculating effectiveMax"
-                  where v = hi - calculateMinBox (qtExtent qt) l
+                  where v = hi - calculateMinBox (qtExtent qt) (Level l)
     p1 <- elements candidates
     p2 <- elements (filter (/=p1) candidates)
     return (DelicateQT (qt, p1, p2))
