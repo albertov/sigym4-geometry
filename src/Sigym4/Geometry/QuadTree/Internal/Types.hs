@@ -130,7 +130,7 @@ instance Lift (NeighborDir) where
     lift Same = [| Same |]
 
 data Neighbor v = Ng { ngPosition :: !(NeighborPosition v)
-                     , ngPlanes   :: !(HyperPlaneDirections v)
+                     , ngPlanes   :: [HyperPlaneDirections v]
                      }
 
 deriving instance (Show (HyperPlaneDirections v), Show (NeighborPosition v))
@@ -175,11 +175,11 @@ instance Bounded Level where
   {-# INLINE minBound #-}
 
 qtNearZero :: Double -> Bool
-qtNearZero a = abs a <= $$(machineEpsilon 4) -- machineEpsilon << 4
+qtNearZero a = abs a <= $$(machineEpsilon 4) -- machineEpsilon * 2^4
 {-# INLINE qtNearZero #-}
 
 qtEpsilon :: Double
-qtEpsilon = $$(machineEpsilon 2)             -- machineEpsilon << 2
+qtEpsilon = $$(machineEpsilon 1)             -- machineEpsilon * 2^1
 {-# INLINE qtEpsilon #-}
 
 
@@ -213,15 +213,13 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
       , not (isVertexNeighbor a) = GT
       | otherwise                = EQ
 
-    mkDirections :: NeighborPosition v -> HyperPlaneDirections v
-    mkDirections pos = unsafeFromCoords (take numDirs (must++perhaps))
+    mkDirections :: NeighborPosition v -> [HyperPlaneDirections v]
+    mkDirections pos = map (unsafeFromCoords . (must++)) combPerhaps
        where
+        combPerhaps                 = combinations (numDirs-length must) perhaps
         (_, must, perhaps)          = foldl' makeDirection (0, [], []) pos
         makeDirection (!i,m,p) Same = (i+1, unit i:m, p       )
-        makeDirection (!i,m,p) Up
-          | not (any (==Same) pos)  = (i+1, unit i:m, p       )
-          | otherwise               = (i+1, m       , unit i:p)
-        makeDirection (!i,m,p) Down = (i+1, m       , unit i:p)
+        makeDirection (!i,m,p) _    = (i+1, m       , unit i:p)
         numDirs                     = dim (Proxy :: Proxy v) - 1
         unit                        = (!!) (coords (identity :: SqMatrix v))
 
@@ -233,5 +231,9 @@ mkNeighbors = let ns = mapM (fmap unType . liftNeighbor) (neighborsDefault :: Ne
 
 liftNeighbor
   :: forall v. HasHyperplanes v => Neighbor v -> Q (TExp (Neighbor v))
-liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
-  where planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
+liftNeighbor (Ng v ns)
+  = [|| Ng $$(liftTExp v) (map unsafeFromCoords $$(planes)) ||]
+  where
+    planes = liftM (TExp . ListE) (mapM mkPlane ns)
+    mkPlane :: HyperPlaneDirections v -> Q Exp
+    mkPlane p = liftM ListE (mapM (fmap unType . liftTExp) (coords p))

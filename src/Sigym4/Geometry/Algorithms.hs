@@ -358,7 +358,7 @@ almostEqVertex a b = nearZero (a-b)
 combinations :: Int -> [a] -> [[a]]
 combinations = go
   where
-    go !_ []  = [[]]
+    go !0 _  = [[]]
     go !n lst = do
       (x:xs) <- tails lst
       rest   <- go (n-1) xs
