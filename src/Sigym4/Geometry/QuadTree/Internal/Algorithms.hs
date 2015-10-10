@@ -370,25 +370,22 @@ traceRay qt@QuadTree{..} from to
     tNodeFrom = qtTraverseToLevel qt 0 codeFrom
 
     neighborIntersection (Extent lo hi) ng
-      = fmap (\v -> (QtVertex v, ngPosition ng))
-      . listToMaybe . filter isValid . map isecWithPlane $ ngPlanes ng
-      where
-        isValid v = inRange v && inRayBounds v
-
-        isecWithPlane p
 #if DEBUG
-          | isFinal <- all qtNearZero (isec - unQtVertex toV)
-          , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
-                      , ("isec", isec)
-                      , ("isecode", qtVertex2LocCode qt (QtVertex isec))
-                      , ("lo", lo, "hi", hi)
-                      , ("plane", p)
-                      ) False = undefined
+      | isFinal <- all qtNearZero (isec - unQtVertex toV)
+      , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
+                  , ("isec", isec)
+                  , ("isecode", qtVertex2LocCode qt (QtVertex isec))
+                  , ("lo", lo, "hi", hi)
+                  , ("plane", p)
+                  ) False = undefined
 #endif
-          | otherwise = isec
-          where isec = lineHyperplaneIntersection
-                         (unQtVertex lineDir) (unQtVertex fromV) p origin
+      | isValid   = Just (QtVertex vertex, ngPosition ng)
+      | otherwise = Nothing
+      where
+        isValid = inRange vertex && inRayBounds vertex
 
+        vertex = lineHyperplaneIntersection
+                    (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
 
         origin = liftA3 origin' (ngPosition ng) lo hi
           where
