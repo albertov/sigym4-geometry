@@ -20,7 +20,7 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms where
 import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
 import Control.Monad (liftM)
 import Control.Monad.Fix (MonadFix(mfix))
-import Data.Maybe (isJust, fromMaybe, catMaybes, listToMaybe)
+import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
 
@@ -161,16 +161,11 @@ qtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
 qtLocCode qt p
-  | insideExt
-#if ASSERTS
-  , all (\c -> 0<=c && c<1) (unQtVertex p')
-#endif
-  = Just code
-  | otherwise = Nothing
+  | all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
+  | otherwise                               = Nothing
   where
-    code      = qtVertex2LocCode qt p'
-    p'        = qtBackward qt p
-    insideExt = qtExtent qt `contains` p
+    code = qtVertex2LocCode qt p'
+    p'   = qtBackward qt p
 {-# INLINE qtLocCode #-}
 
 calculateForwardExtent
