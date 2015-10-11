@@ -1,6 +1,7 @@
 sudo: false
 
 matrix:
+  include:
     - env: CABALVER=1.22 GHCVER=7.10.2
       addons:
         apt:
