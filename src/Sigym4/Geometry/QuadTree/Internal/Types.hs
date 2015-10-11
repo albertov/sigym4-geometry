@@ -196,33 +196,6 @@ newtype Level = Level {unLevel :: Int}
   deriving (Eq, Ord, Show, NFData)
 
 
-instance Num Level where
-#if ASSERTS
-  Level a + Level b
-    | Level (a+b) <= maxBound = Level (a+b)
-    | otherwise               = error ("Level " ++ show (a+b) ++ " too large")
-  Level a - Level b
-    | Level (a-b) >= minBound = Level (a-b)
-    | otherwise               = error ("Level " ++ show (a-b) ++ " too small")
-#else
-  Level a + Level b           = Level (a+b)
-  Level a - Level b           = Level (a-b)
-#endif
-
-  Level a * Level b
-    | Level (a*b) <= maxBound = Level (a*b)
-    | otherwise               = error ("Level " ++ show (a*b) ++ " too large")
-  negate                      = error "Level cannot be negative"
-  abs                         = id
-  signum  (Level 0)           = 0
-  signum  _                   = 1
-  fromInteger i
-    | minBound<=l,l<=maxBound = l
-    | otherwise               = error ("Invalid Level " ++ show i)
-    where l = Level (fromInteger i)
-  {-# INLINE (+) #-}
-  {-# INLINE (-) #-}
-
 instance Bounded Level where
   maxBound = Level ((finiteBitSize (undefined::Word64) `unsafeShiftR` 1) - 1)
   minBound = Level 0

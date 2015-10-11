@@ -31,7 +31,7 @@ instance VectorSpace v => Arbitrary (Quadrant v) where
   arbitrary = elements [minBound..maxBound]
 
 instance Arbitrary Level where
-  arbitrary = fromInteger <$> choose (lo, hi)
+  arbitrary = Level <$> choose (lo, hi)
     where lo = fromIntegral (unLevel minBound)
           hi = fromIntegral (unLevel maxBound)
 
@@ -66,7 +66,7 @@ instance VectorSpace v => Arbitrary (LocCode v) where
 randomQtOfLevel :: VectorSpace v => Level -> Gen (Either QtError (RandomQT v))
 randomQtOfLevel level = do
   ext <- arbitrary
-  eQt <- generate build ext level
+  eQt <- generate2 build ext level
   case eQt of
     Right qt -> do
       p  <- genPointInside qt

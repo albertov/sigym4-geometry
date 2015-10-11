@@ -61,26 +61,26 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
   describe "is a functor" $ do
     prop "fmap id = id" $ \arg ->
       let RandomQT (qt,_,_) = arg :: RandomQT v
-      in qtLevel qt <= 3 ==> -- else it takes too long
+      in qtLevel qt <= Level 3 ==> -- else it takes too long
         fmap id qt == id qt
 
     prop "fmap (g . f)  = fmap g . fmap f" $ \arg ->
       let RandomQT (qt,_,_) = arg :: RandomQT v
-      in qtLevel qt <= 3 ==> -- else it takes too long
+      in qtLevel qt <= Level 3 ==> -- else it takes too long
          fmap (maximum . eSize) qt == fmap maximum (fmap eSize qt)
 
 
   describe "qtMinBox" $ do
     
     prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v srid) ->
-      let eq      = runIdentity (generate (Leaf ()) ext 0)
+      let eq      = runIdentity (generate2 (Leaf ()) ext minBound)
           Right q = eq
       in isRight eq ==> qtMinBox q == eSize (qtExtent q)
 
     prop "qtMinBox is constant after grows" $ \( dirs :: [Quadrant v]
                                                , ext  :: Extent v srid
                                                ) ->
-      let eq = runIdentity (generate (Leaf ()) ext 0)
+      let eq = runIdentity (generate2 (Leaf ()) ext minBound)
           eq2 = foldr growIt eq dirs
           growIt dir (Right q) = runIdentity (grow (Leaf ()) dir q)
           growIt _   l@Left{}  = l

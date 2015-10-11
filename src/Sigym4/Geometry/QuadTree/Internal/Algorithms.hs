@@ -35,22 +35,22 @@ data QtError
   deriving (Show, Eq, Enum)
 
 
-generate
+generate2
   :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Level
   -> m (Either QtError (QuadTree v srid a))
-generate build ext level
+generate2 build ext level
   | level > maxBound || level < minBound = return (Left QtInvalidLevel)
   | otherwise
   = Right <$> (QuadTree <$> genNode rootParent ext level build
                         <*> pure ext
                         <*> pure level)
 
-generate2
+generate
   :: (MonadFix m, VectorSpace v)
   => Node m v srid a -> Extent v srid -> Box v
   -> m (Either QtError (QuadTree v srid a))
-generate2 build ext minBox = generate build effectiveExt level
+generate build ext minBox = generate2 build effectiveExt level
   where effectiveExt = Extent (eMin ext) (eMin ext + delta)
         delta  = fmap (* maxVal) minBox 
         maxVal = fromIntegral (maxValue level)
@@ -64,10 +64,11 @@ genNode
   -> m (QNode v srid a)
 genNode parent _   _ (Leaf v) = return (QLeaf parent v)
 genNode parent ext level (Node f)
-  | level > 0 = mfix (\node -> genQNode parent $ \q -> do
-                        next <- liftM snd (f (innerExtent q ext))
-                        genNode node (innerExtent q ext) (level-1) next)
-  | otherwise = liftM (QLeaf parent . fst) (f ext)
+  | level > minBound = mfix (\node -> genQNode parent $ \q -> do
+                               next <- liftM snd (f (innerExtent q ext))
+                               let level' = Level (unLevel level - 1)
+                               genNode node (innerExtent q ext) level' next)
+  | otherwise        = liftM (QLeaf parent . fst) (f ext)
 
 genQNode
   :: forall m v srid a. (MonadFix m, VectorSpace v)
@@ -80,10 +81,11 @@ grow
   => Node m v srid a -> Quadrant v -> QuadTree v srid a
   -> m (Either QtError (QuadTree v srid a))
 grow build dir (QuadTree oldRoot ext oldLevel)
-  | oldLevel + 1 > maxBound = return (Left QtCannotGrow)
+  | newLevel > maxBound = return (Left QtCannotGrow)
   | otherwise
-  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure (oldLevel + 1))
+  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
   where
+    newLevel = Level (unLevel oldLevel + 1)
     newRoot
       = mfix (\node -> genQNode rootParent $ \q ->
               if q == dir
@@ -205,7 +207,7 @@ traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
     go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
     go !n         !l | l<=end = TNode l n (qtCellCode l code)
     go !QNode{qChildren=c} !l = let n' = getChild c (quadrantAtLevel l' code)
-                                    l' = l - 1
+                                    l' = Level (unLevel l - 1)
                                 in go n' l'
 {-# INLINE traverseToLevel #-}
 
@@ -245,7 +247,7 @@ lookupByPoint
 lookupByPoint qt p
   = case qtLocCode qt p of
       Just c ->
-        let TNode{tNode=node} = qtTraverseToLevel qt 0 c
+        let TNode{tNode=node} = qtTraverseToLevel qt minBound c
         in Just (leafData node)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -263,11 +265,11 @@ leavesTouching pos = go
   where
     go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
-    go !TNode{tNode=QNode{qChildren=cs}, tLevel=l, tCellCode=code}
+    go !TNode{tNode=QNode{qChildren=cs}, tLevel=Level l, tCellCode=code}
       = concatMap go (map getChild' (quadrantsTouching pos))
       where getChild' q = TNode { tNode     = getChild cs q
-                                , tLevel    = l-1
-                                , tCellCode = setChildBits (l-1) q code}
+                                , tLevel    = Level (l-1)
+                                , tCellCode = setChildBits (Level (l-1)) q code}
 
 quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
 quadrantsTouching pos
@@ -351,7 +353,7 @@ traceRay qt@QuadTree{..} from to
                                           (unLocCode (qtVertex2LocCode qt isec))
                                           (unLocCode (tCellCode cur))
           ancestor <- traverseToCommonAncestor qt cur nCode
-          return (traverseToLevel ancestor 0 nCode)
+          return (traverseToLevel ancestor minBound nCode)
 
         mkNextCode Down _ c
           | c > 0                           = Just (c - 1)
@@ -370,7 +372,7 @@ traceRay qt@QuadTree{..} from to
     mCodeFrom = qtLocCode qt from
     codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
-    tNodeFrom = qtTraverseToLevel qt 0 codeFrom
+    tNodeFrom = qtTraverseToLevel qt minBound codeFrom
 
     -- Calculates the QtVertex of the possible intersection with a given
     -- neighbor. It is a valid intersection only if it is within the edge's
@@ -420,17 +422,17 @@ traverseToCommonAncestor
   :: VectorSpace v
   => QuadTree v srid a -> TraversedNode v srid a -> LocCode v
   -> Maybe (TraversedNode v srid a)
-traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
-  | al > maxl = Nothing
-  | otherwise = Just $ TNode { tNode     = findAncestor tNode tLevel
-                             , tLevel    = al
-                             , tCellCode = qtCellCode al tCellCode
-                             }
+traverseToCommonAncestor QuadTree{..} TNode{..} code
+  | al > qtLevel = Nothing
+  | otherwise    = Just $ TNode { tNode     = findAncestor tNode tLevel
+                                , tLevel    = al
+                                , tCellCode = qtCellCode al tCellCode
+                                }
   where
     al = commonAncestorLevel tCellCode code
     findAncestor !n !l
       | l==al     = n
-      | otherwise = findAncestor (qParent n) (l+1)
+      | otherwise = findAncestor (qParent n) (Level (unLevel l + 1))
 {-# INLINE traverseToCommonAncestor #-}
 
 

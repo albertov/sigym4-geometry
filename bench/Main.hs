@@ -35,10 +35,10 @@ main = defaultMain [
       env (randomTrees 500 maxBound) $
         bench "traceRay V2" . nf
           (map (\(RandomQT (qt,p,p1) :: RandomQT V2) -> traceRay qt p p1))
-    , env (randomTrees 200 6) $
+    , env (randomTrees 200 (Level 6)) $
         bench "traceRay V3" . nf
           (map (\(RandomQT (qt,p,p1) :: RandomQT V3) -> traceRay qt p p1))
-    , env (randomTrees 200 4) $
+    , env (randomTrees 200 (Level 4)) $
         bench "traceRay V4" . nf
           (map (\(RandomQT (qt,p,p1) :: RandomQT V4) -> traceRay qt p p1))
     ]

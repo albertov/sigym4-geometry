@@ -3,15 +3,10 @@ module Sigym4.Geometry.QuadTree (
   , Box
   , Quadrant (..)
   , QtError (..)
-  , Half (..)
   , Node (..)
-  , Level (unLevel)
-  , Neighbor
-  , Neighbors
-  , NeighborDir (..)
+  , Level (Level)
 
   , generate
-  , generate2
   , grow
 
   , lookupByPoint
