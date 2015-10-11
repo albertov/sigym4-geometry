@@ -22,8 +22,6 @@ import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.Types
 import Sigym4.Geometry.QuadTree.Internal.Algorithms
 
-import Debug.Trace
-
 import Arbitrary ()
 
 instance VectorSpace v => Arbitrary (Quadrant v) where

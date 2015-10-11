@@ -9,7 +9,6 @@ import Control.Applicative (liftA2)
 import Control.Monad (when)
 import Data.Either (isRight)
 import Data.Proxy
-import qualified Data.Foldable as F
 import Data.Functor.Identity (runIdentity)
 import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
