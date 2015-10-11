@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
@@ -271,3 +272,8 @@ liftNeighbor
   :: forall v. HasHyperplanes v => Neighbor v -> Q (TExp (Neighbor v))
 liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
   where planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
+
+#if !MIN_VERSION_template-haskell(2,10,0)
+instance Lift Double where
+  lift x = return (LitE (RationalL (toRational x)))
+#endif
