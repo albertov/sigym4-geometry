@@ -5,10 +5,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Sigym4.Geometry.QuadTree.Arbitrary where
 
 import Control.Monad.Fix
 import Control.Monad (replicateM, zipWithM)
+import Control.DeepSeq (NFData(..))
 import Data.Foldable (toList)
 
 import Data.Bits (finiteBitSize)
@@ -36,10 +39,16 @@ type ExtentAndPoints v = (QuadTree v 0 (Extent v 0), Point v 0, Point v 0)
 
 newtype RandomQT v = RandomQT {unRQt :: ExtentAndPoints v} deriving Show
 
+deriving instance VectorSpace v => NFData (RandomQT v)
+
 newtype DelicateQT v = DelicateQT {unDelQt :: ExtentAndPoints v} deriving Show
+
+deriving instance VectorSpace v => NFData (DelicateQT v)
 
 newtype ProbablyInvalidPointsQT v
   = ProbablyInvalidPointsQT {unPiQt :: ExtentAndPoints v} deriving Show
+
+deriving instance VectorSpace v => NFData (ProbablyInvalidPointsQT v)
 
 randomOrDelicate
   :: Either (RandomQT v) (DelicateQT v) -> ExtentAndPoints v
@@ -54,31 +63,35 @@ instance VectorSpace v => Arbitrary (LocCode v) where
   arbitrary = (LocCode . unsafeFromCoords) <$> replicateM n arbitrary
     where n = dim (Proxy :: Proxy v)
 
+randomQtOfLevel :: VectorSpace v => Level -> Gen (RandomQT v)
+randomQtOfLevel level = do
+  ext <- arbitrary
+  eQt <- generate build ext level
+  case eQt of
+    Right qt -> do
+      p  <- genPointInside qt
+      p1  <- genPointInside qt
+      return (RandomQT (qt, p,p1))
+    Left _ -> arbitrary
+  where
+
+    build = Node $ \ext -> do
+      doLeaf <- fmap (> 30) (choose (0,100) :: Gen Int)
+      if doLeaf
+        then return (ext, Leaf ext)
+        else return (ext, build)
+
+    genPointInside qt@QuadTree{qtExtent=Extent lo hi} = do
+      p <- fmap (Point . unsafeFromCoords)
+             (zipWithM (\a b -> choose (a,b)) (coords lo) (coords hi))
+      if qtContainsPoint qt p
+        then return p
+        else genPointInside qt
+
 instance VectorSpace v => Arbitrary (RandomQT v) where
   arbitrary = do
-    ext <- arbitrary
     level <- Level <$> choose (unLevel minBound, unLevel maxBound)
-    eQt <- generate build ext level
-    case eQt of
-      Right qt -> do
-        p  <- genPointInside qt
-        p1  <- genPointInside qt
-        return (RandomQT (qt, p,p1))
-      Left _ -> arbitrary
-    where
-
-      build = Node $ \ext -> do
-        doLeaf <- fmap (> 30) (choose (0,100) :: Gen Int)
-        if doLeaf
-          then return (ext, Leaf ext)
-          else return (ext, build)
-
-      genPointInside qt@QuadTree{qtExtent=Extent lo hi} = do
-        p <- fmap (Point . unsafeFromCoords)
-               (zipWithM (\a b -> choose (a,b)) (coords lo) (coords hi))
-        if qtContainsPoint qt p
-          then return p
-          else genPointInside qt
+    randomQtOfLevel level
 
 instance VectorSpace v => Arbitrary (DelicateQT v) where
   arbitrary = do

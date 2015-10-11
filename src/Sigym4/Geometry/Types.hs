@@ -686,7 +686,7 @@ data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
 makeLenses ''FeatureT
 
 instance (NFData d, NFData (g v srid)) => NFData (FeatureT g v srid d) where
-  rnf (Feature g v) = rnf g `seq` rnf v
+  rnf (Feature g v) = rnf g `seq` rnf v `seq` ()
 
 type Feature = FeatureT Geometry
 

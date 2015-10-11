@@ -18,6 +18,7 @@ module Sigym4.Geometry.QuadTree.Internal.Types where
 
 import Control.Monad (liftM, replicateM, guard)
 import Control.Applicative (liftA2)
+import Control.DeepSeq (NFData(..))
 import Linear.Matrix (identity)
 import Data.Bits
 import Data.List (sortBy)
@@ -40,6 +41,9 @@ data QuadTree (v :: * -> *) (srid :: Nat) a
     , qtExtent :: {-# UNPACK #-} !(Extent v srid)
     , qtLevel  :: {-# UNPACK #-} !Level
   }
+
+instance (VectorSpace v, NFData a) => NFData (QuadTree v srid a) where
+  rnf (QuadTree r e l) = rnf r `seq` rnf e `seq` rnf l `seq` ()
 
 instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
   (==) a b = qtExtent a    == qtExtent b
@@ -110,6 +114,9 @@ data QNode (v :: * -> *) (srid :: Nat) a
   | QNode { qParent   :: QNode v srid a   -- undefined if root
           , qChildren :: {-# UNPACK #-} !(Array (QNode v srid a))
           }
+
+instance (VectorSpace v, NFData a) => NFData (QNode v srid a) where
+  rnf = rnf . toList
 
 instance (Show a, VectorSpace v) => Show (QNode v srid a) where
   show QLeaf{..} = concat (["QLeaf {qData = ", show qData, "}"] :: [String])
@@ -184,7 +191,7 @@ oppositePosition = fmap (\p -> case p of {Up->Down; Down->Up; _->p})
 
 
 newtype Level = Level {unLevel :: Int}
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, NFData)
 
 
 instance Num Level where
