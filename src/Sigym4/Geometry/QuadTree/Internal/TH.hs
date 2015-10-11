@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,3 +28,8 @@ machineEpsilonAndLevel f
   = let (l,e) = calculatedEpsilonAndLevel
         r     = (l-f, e * 2^f)
     in [|| r ||]
+
+#if !MIN_VERSION_template_haskell(2,10,0)
+instance Lift Double where
+  lift x = return (LitE (RationalL (toRational x)))
+#endif
