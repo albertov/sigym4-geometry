@@ -28,4 +28,4 @@ rasterizeFeatures geoRef nodata projs features = runST $ do
           Just (Offset o) -> mapM_
                              (\(r,p) -> Stm.unsafeWrite r o (views fData p f))
                              (zip rs projs)
-{-# INLINEABLE rasterizeFeatures #-}
+{-# INLINABLE rasterizeFeatures #-}

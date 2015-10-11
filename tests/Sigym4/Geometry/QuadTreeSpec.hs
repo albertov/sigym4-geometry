@@ -9,6 +9,7 @@ import Control.Monad (when)
 import Data.Either (isRight)
 import Data.Proxy
 import Data.Functor.Identity (runIdentity)
+import Data.Word (Word64)
 import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
@@ -37,7 +38,16 @@ spec = do
   quadTreeSpec "V6" (Proxy :: Proxy (V 6))
 
 
-quadTreeSpec :: forall v. HasQuadTree v => String -> Proxy v -> Spec
+quadTreeSpec
+  :: forall v. ( HasHyperplanes v
+               , Show (v Half)
+               , Show (v Word64)
+               , Num (v Word64)
+               , Eq (v Word64)
+               , Show (v NeighborDir)
+               , Show (HyperPlaneDirections v)
+               )
+  => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
   describe "setChildBits and quadrantAtLevel " $ do

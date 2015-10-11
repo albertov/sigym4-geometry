@@ -34,14 +34,14 @@ nativeEndian = LittleEndian
 wkbEncode :: (VectorSpace v, KnownNat srid)
           => ByteOrder -> Geometry v srid -> ByteString
 wkbEncode bo = runPut . flip runReaderT bo . putBO
-{-# INLINEABLE wkbEncode #-}
+{-# INLINABLE wkbEncode #-}
 
 wkbDecode :: (VectorSpace v, KnownNat srid)
           => ByteString -> Either String (Geometry v srid)
 wkbDecode s = case decodeOrFail s of
                 Left  (_,_,e) -> Left e
                 Right (_,_,a) -> Right a
-{-# INLINEABLE wkbDecode #-}
+{-# INLINABLE wkbDecode #-}
 
 type PutBO = ReaderT ByteOrder PutM ()
 type GetBO a = ReaderT ByteOrder Get a
@@ -58,8 +58,8 @@ class BinaryBO a where
 instance (VectorSpace v, KnownNat srid) => Binary (Geometry v srid) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
-    {-# INLINEABLE put #-}
-    {-# INLINEABLE get #-}
+    {-# INLINABLE put #-}
+    {-# INLINABLE get #-}
 
 sridFlag, zFlag, mFlag :: Word32
 sridFlag = 0x20000000

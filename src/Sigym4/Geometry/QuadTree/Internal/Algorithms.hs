@@ -280,7 +280,7 @@ quadrantsTouching pos
 
 
 
-traceRay :: forall v srid a. HasQuadTree v
+traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word64), Num (v Word64))
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
   | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
@@ -401,7 +401,7 @@ traceRay qt@QuadTree{..} from to
         lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
         hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
 
-{-# INLINEABLE traceRay #-}
+{-# INLINABLE traceRay #-}
 
 -- Calculates whether we need to check an intersection with a given neighbor
 -- given the origin and destination of a ray. For example, we don't need to
@@ -467,7 +467,7 @@ outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
     mkHi Second _ h = h
 {-# INLINE outerExtent #-}
 
-neighbors :: forall v. HasQuadTree v => Neighbors v
+neighbors :: HasHyperplanes v => Neighbors v
 neighbors = neighborsDefault
 {-# NOINLINE neighbors #-}
 

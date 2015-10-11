@@ -20,10 +20,12 @@ import qualified Data.Vector.Unboxed as U
 jsonEncode :: (VectorSpace v)
            => Geometry v srid -> ByteString
 jsonEncode = encode
+{-# INLINE jsonEncode #-}
 
 jsonDecode :: (VectorSpace v)
            => ByteString -> Either String (Geometry v srid)
 jsonDecode = eitherDecode
+{-# INLINE jsonDecode #-}
 
 instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoPoint g)
@@ -58,7 +60,7 @@ instance VectorSpace v => ToJSON (Geometry v srid) where
     toJSON (GeoCollection (GeometryCollection g))
       = typedObject "GeometryCollection"
         ["geometries" .= g]
-    {-# INLINEABLE toJSON  #-}
+    {-# INLINABLE toJSON  #-}
 
 parsePoint :: VectorSpace v => [Double] -> Parser (Point v srid)
 parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromCoords
@@ -133,7 +135,7 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
                 fmap (GeoCollection . GeometryCollection) $ o .: "geometries"
             _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
-    {-# INLINEABLE parseJSON  #-}
+    {-# INLINABLE parseJSON  #-}
 
         
 

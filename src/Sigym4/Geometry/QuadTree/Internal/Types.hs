@@ -14,7 +14,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Sigym4.Geometry.QuadTree.Internal.Types where
 
@@ -37,17 +36,6 @@ import Language.Haskell.TH.Syntax
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilonAndLevel)
-
--- Constraint synonym to simnplify signatures
-type HasQuadTree v = ( HasHyperplanes v
-                     , Eq (v Word64)
-                     , Num (v Word64)
-                     -- These are for testing/debugging
-                     , Show (v Word64)
-                     , Show (v Half)
-                     , Show (v NeighborDir)
-                     , Show (HyperPlaneDirections v)
-                     )
 
 data QuadTree (v :: * -> *) (srid :: Nat) a
   = QuadTree {
@@ -265,7 +253,7 @@ isVertexNeighbor = not . any (==Same) . ngPosition
 {-# INLINE isVertexNeighbor #-}
 
 neighborsDefault
-  :: forall v. HasQuadTree v => Neighbors v
+  :: forall v. HasHyperplanes v => Neighbors v
 neighborsDefault = sortBy vertexNeighborsFirst $ do
   n <- replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (all (==Same) n))
@@ -290,12 +278,12 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
 
 
 mkNeighbors
-  :: forall v. HasQuadTree v => Q (TExp (Neighbors v))
+  :: forall v. HasHyperplanes v => Q (TExp (Neighbors v))
 mkNeighbors = [|| $$(liftM (TExp . ListE) ns) ||]
   where ns = mapM (fmap unType . liftNeighbor) (neighborsDefault :: Neighbors v)
 
 liftNeighbor
-  :: forall v. HasQuadTree v => Neighbor v -> Q (TExp (Neighbor v))
+  :: forall v. HasHyperplanes v => Neighbor v -> Q (TExp (Neighbor v))
 liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
   where
     planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
