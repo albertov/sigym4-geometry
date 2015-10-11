@@ -22,6 +22,7 @@ import Control.Monad (liftM)
 import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
+import Data.Foldable as F
 import Data.Bits
 
 import Sigym4.Geometry
@@ -30,8 +31,7 @@ import Sigym4.Geometry.QuadTree.Internal.Types
 
 
 #if DEBUG
-import Debug.Trace (traceShow, trace)
-traceShowMsg msg a = traceShow (msg, a) a
+import Debug.Trace (traceShow)
 #endif
 
 data QtError
@@ -161,7 +161,7 @@ qtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
 qtLocCode qt p
-  | all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
+  | F.all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
   | otherwise                               = Nothing
   where
     code = qtVertex2LocCode qt p'
@@ -273,7 +273,7 @@ leavesTouching pos = go
 
 quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
 quadrantsTouching pos
-  = filter (all id . liftA2 match pos . unQuadrant) [minBound..maxBound]
+  = filter (F.all id . liftA2 match pos . unQuadrant) [minBound..maxBound]
   where
     match Same _      = True
     match Up   Second = True
@@ -336,7 +336,7 @@ traceRay qt@QuadTree{..} from to
           $ neighbors
 
         mkNext !(!isec, pos) = do
-          nCode <- if all qtNearZero (unQtVertex isec - unQtVertex toV)
+          nCode <- if F.all qtNearZero (unQtVertex isec - unQtVertex toV)
                      then Just codeTo
                      else liftM LocCode $ sequence $ liftA3
                                mkNextCode pos
@@ -366,7 +366,7 @@ traceRay qt@QuadTree{..} from to
 
     neighborIntersection (Extent lo hi) ng
 #if DEBUG
-      | isFinal <- all qtNearZero (isec - unQtVertex toV)
+      | isFinal <- F.all qtNearZero (isec - unQtVertex toV)
       , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
                   , ("isec", isec)
                   , ("isecode", qtVertex2LocCode qt (QtVertex isec))
@@ -388,13 +388,13 @@ traceRay qt@QuadTree{..} from to
             origin' Same lo' _  = lo'
             origin' Down lo' _  = lo'
 
-        inRange v = all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> v)
+        inRange v = F.all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> v)
           where
             inRange' Same lo' hi' = qtBetween  lo' hi'
             inRange' Down lo' _   = qtAlmostEq lo'
             inRange' Up   _   hi' = qtAlmostEq hi'
 
-    inRayBounds v = all id (liftA3 qtBetweenC lo hi v)
+    inRayBounds v = F.all id (liftA3 qtBetweenC lo hi v)
       where
         lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
         hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
@@ -404,7 +404,7 @@ traceRay qt@QuadTree{..} from to
 
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
-  = all id (liftA3 checkComp (ngPosition ng) from to) 
+  = F.all id (liftA3 checkComp (ngPosition ng) from to) 
   where
     checkComp Same _ _       = True
     checkComp Down from' to' = from' > to'

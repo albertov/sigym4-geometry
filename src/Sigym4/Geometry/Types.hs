@@ -156,7 +156,7 @@ type Vertex v = v Double
 type SqMatrix v = v (Vertex v)
 
 -- | A vector space
-class ( Num (Vertex v), Fractional (Vertex v), KnownNat (VsDim v)
+class ( KnownNat (VsDim v), Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), Ord (Vertex v), Epsilon (Vertex v)
       , U.Unbox (Vertex v), NFData (Vertex v)
       , Show (v Int), Eq (v Int)
@@ -525,21 +525,32 @@ newtype MultiPoint v srid = MultiPoint {
 } deriving (Eq, Show)
 makeLenses ''MultiPoint
 
+deriving instance VectorSpace v => NFData (MultiPoint v srid)
+
 newtype LinearRing v srid = LinearRing {_lrPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 makeLenses ''LinearRing
 
+deriving instance VectorSpace v => NFData (LinearRing v srid)
+
 newtype LineString v srid = LineString {_lsPoints :: U.Vector (Point v srid)}
     deriving (Eq, Show)
 makeLenses ''LineString
+
+deriving instance VectorSpace v => NFData (LineString v srid)
 
 newtype MultiLineString v srid = MultiLineString {
     _mlLineStrings :: V.Vector (LineString v srid)
 } deriving (Eq, Show)
 makeLenses ''MultiLineString
 
+deriving instance VectorSpace v => NFData (MultiLineString v srid)
+
 data Triangle v srid = Triangle !(Point v srid) !(Point v srid) !(Point v srid)
     deriving (Eq, Show)
+
+instance VectorSpace v => NFData (Triangle v srid) where
+  rnf (Triangle a b c) = rnf a `seq` rnf b `seq` rnf c `seq` ()
 
 derivingUnbox "Triangle"
     [t| forall v srid. VectorSpace v => Triangle v srid -> (Point v srid, Point v srid, Point v srid) |]
@@ -552,20 +563,29 @@ data Polygon v srid = Polygon {
 } deriving (Eq, Show)
 makeLenses ''Polygon
 
+instance VectorSpace v => NFData (Polygon v srid) where
+  rnf (Polygon o r) = rnf o `seq` rnf r `seq` ()
+
 newtype MultiPolygon v srid = MultiPolygon {
     _mpPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
 makeLenses ''MultiPolygon
+
+deriving instance VectorSpace v => NFData (MultiPolygon v srid)
 
 newtype PolyhedralSurface v srid = PolyhedralSurface {
     _psPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
 makeLenses ''PolyhedralSurface
 
+deriving instance VectorSpace v => NFData (PolyhedralSurface v srid)
+
 newtype TIN v srid = TIN {
     _tinTriangles :: U.Vector (Triangle v srid)
 } deriving (Eq, Show)
 makeLenses ''TIN
+
+deriving instance VectorSpace v => NFData (TIN v srid)
 
 data Geometry v (srid::Nat)
     = GeoPoint !(Point v srid)
@@ -580,12 +600,25 @@ data Geometry v (srid::Nat)
     | GeoCollection !(GeometryCollection v srid)
     deriving (Eq, Show)
 
+instance VectorSpace v => NFData (Geometry v srid) where
+  rnf (GeoPoint g)             = rnf g
+  rnf (GeoMultiPoint g)        = rnf g
+  rnf (GeoLineString g)        = rnf g
+  rnf (GeoMultiLineString g)   = rnf g
+  rnf (GeoPolygon g)           = rnf g
+  rnf (GeoMultiPolygon g)      = rnf g
+  rnf (GeoTriangle g)          = rnf g
+  rnf (GeoPolyhedralSurface g) = rnf g
+  rnf (GeoTIN g)               = rnf g
+  rnf (GeoCollection g)        = rnf g
+
 newtype GeometryCollection v srid = GeometryCollection {
     _gcGeometries :: V.Vector (Geometry v srid)
 } deriving (Eq, Show)
 makeLenses ''GeometryCollection
 makePrisms ''Geometry
 
+deriving instance VectorSpace v => NFData (GeometryCollection v srid)
 
 gSrid :: KnownNat srid => proxy srid -> Integer
 gSrid = natVal
