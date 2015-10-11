@@ -200,9 +200,9 @@ qtCellCode (Level l) code
 
 traverseToLevel
   :: VectorSpace v
-  => TraversedNode v srid a
-  -> Level -> LocCode v -> TraversedNode v srid a
-traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
+  => QNode v srid a
+  -> Level -> Level -> LocCode v -> TraversedNode v srid a
+traverseToLevel node start end code = go node start
   where
     go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
     go !n         !l | l<=end = TNode l n (qtCellCode l code)
@@ -211,20 +211,11 @@ traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
                                 in go n' l'
 {-# INLINE traverseToLevel #-}
 
-qtTraverseToLevel
-  :: VectorSpace v
-  => QuadTree v srid a
-  -> Level -> LocCode v -> TraversedNode v srid a
-qtTraverseToLevel QuadTree{..}
-  = traverseToLevel (TNode qtLevel qtRoot (LocCode (pure 0)))
-{-# INLINE qtTraverseToLevel #-}
-
-
 data TraversedNode v srid a
   = TNode
-    { tLevel    :: Level
-    , tNode     :: QNode v srid a
-    , tCellCode :: LocCode v
+    { tLevel    :: {-# UNPACK #-} !Level
+    , tNode     :: !(QNode v srid a)
+    , tCellCode :: !(LocCode v)
     }
 
 instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
@@ -244,10 +235,10 @@ quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
 lookupByPoint
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe a
-lookupByPoint qt p
+lookupByPoint qt@QuadTree{..} p
   = case qtLocCode qt p of
       Just c ->
-        let TNode{tNode=node} = qtTraverseToLevel qt minBound c
+        let TNode{tNode=node} = traverseToLevel qtRoot qtLevel minBound c
         in Just (leafData node)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -352,8 +343,7 @@ traceRay qt@QuadTree{..} from to
                                mkNextCode pos
                                           (unLocCode (qtVertex2LocCode qt isec))
                                           (unLocCode (tCellCode cur))
-          ancestor <- traverseToCommonAncestor qt cur nCode
-          return (traverseToLevel ancestor minBound nCode)
+          return $! traverseViaCommonAncestor qt cur nCode
 
         mkNextCode Down _ c
           | c > 0                           = Just (c - 1)
@@ -361,9 +351,8 @@ traceRay qt@QuadTree{..} from to
         mkNextCode Up   _ c
           | c + cellSize < maxValue qtLevel = Just (c + cellSize)
           | otherwise                       = Nothing
+          where cellSize = maxValue (tLevel cur)
         mkNextCode Same i _                 = Just i
-
-        cellSize = maxValue (tLevel cur)
 
     fromV     = qtBackward qt from
     toV       = qtBackward qt to
@@ -372,7 +361,7 @@ traceRay qt@QuadTree{..} from to
     mCodeFrom = qtLocCode qt from
     codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
-    tNodeFrom = qtTraverseToLevel qt minBound codeFrom
+    tNodeFrom = traverseToLevel qtRoot qtLevel minBound codeFrom
 
     -- Calculates the QtVertex of the possible intersection with a given
     -- neighbor. It is a valid intersection only if it is within the edge's
@@ -418,22 +407,22 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
 {-# INLINE checkNeighbor #-}
     
 
-traverseToCommonAncestor
+traverseViaCommonAncestor
   :: VectorSpace v
   => QuadTree v srid a -> TraversedNode v srid a -> LocCode v
-  -> Maybe (TraversedNode v srid a)
-traverseToCommonAncestor QuadTree{..} TNode{..} code
-  | al > qtLevel = Nothing
-  | otherwise    = Just $ TNode { tNode     = findAncestor tNode tLevel
-                                , tLevel    = al
-                                , tCellCode = qtCellCode al tCellCode
-                                }
+  -> TraversedNode v srid a
+traverseViaCommonAncestor QuadTree{..} TNode{..} code
+#if ASSERTS
+  | al > qtLevel = error "traverseViaCommonAncestor: invalid ancestor level"
+#endif
+  | otherwise    = traverseToLevel ancestor al minBound code
   where
-    al = commonAncestorLevel tCellCode code
+    !ancestor = findAncestor tNode tLevel
+    !al       = commonAncestorLevel tCellCode code
     findAncestor !n !l
       | l==al     = n
       | otherwise = findAncestor (qParent n) (Level (unLevel l + 1))
-{-# INLINE traverseToCommonAncestor #-}
+{-# INLINE traverseViaCommonAncestor #-}
 
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
