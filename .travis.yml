@@ -1,3 +1,5 @@
+sudo: false
+
 matrix:
   allow_failures:
     - env: CABALVER=head GHCVER=head
@@ -7,11 +9,16 @@ env:
  - CABALVER=1.22 GHCVER=7.10.2
  - CABALVER=head GHCVER=head   # see section about GHC HEAD snapshots
 
+addons:
+  apt:
+    sources:
+      - hvr/ghc
+    packages:
+      - cabal-install-$CABALVER
+      - ghc-$GHCVER
+
 # Note: the distinction between `before_install` and `install` is not important.
 before_install:
- - travis_retry sudo add-apt-repository -y ppa:hvr/ghc
- - travis_retry sudo apt-get update
- - travis_retry sudo apt-get install cabal-install-$CABALVER ghc-$GHCVER # see note about happy/alex
  - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
 
 install:
