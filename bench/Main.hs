@@ -17,34 +17,32 @@ import Criterion.Main
 import qualified Test.QuickCheck as QC
 
 main :: IO ()
-main = do
-  setRandomSeed
-  defaultMain [
-    bgroup "binary" [
-        env loadBigGeomData $
-          bench "wkbDecode" .
-            nf (wkbDecode :: ByteString -> Either String (Geometry V2 0))
-      , env loadBigGeom $
-          bench "wkbEncode LittleEndian" . nf (wkbEncode LittleEndian)
-      , env loadBigGeom $
-          bench "wkbEncode BigEndian" . nf (wkbEncode BigEndian)
-      ]
-    , bgroup "algorithms" [
-        env loadBigGeom $
-          bench "extent" . nf extent
-      ]
-    , bgroup "quadtree" [
-        env (randomTrees 100 maxBound) $
-          bench "traceRay V2" . nf
-            (map (\(RandomQT (qt,p,p1) :: RandomQT V2) -> traceRay qt p p1))
-      , env (randomTrees 100 5) $
-          bench "traceRay V3" . nf
-            (map (\(RandomQT (qt,p,p1) :: RandomQT V3) -> traceRay qt p p1))
-      , env (randomTrees 100 3) $
-          bench "traceRay V4" . nf
-            (map (\(RandomQT (qt,p,p1) :: RandomQT V4) -> traceRay qt p p1))
-      ]
+main = defaultMain [
+  bgroup "binary" [
+      env loadBigGeomData $
+        bench "wkbDecode" .
+          nf (wkbDecode :: ByteString -> Either String (Geometry V2 0))
+    , env loadBigGeom $
+        bench "wkbEncode LittleEndian" . nf (wkbEncode LittleEndian)
+    , env loadBigGeom $
+        bench "wkbEncode BigEndian" . nf (wkbEncode BigEndian)
     ]
+  , bgroup "algorithms" [
+      env loadBigGeom $
+        bench "extent" . nf extent
+    ]
+  , bgroup "quadtree" [
+      env (randomTrees 500 maxBound) $
+        bench "traceRay V2" . nf
+          (map (\(RandomQT (qt,p,p1) :: RandomQT V2) -> traceRay qt p p1))
+    , env (randomTrees 200 6) $
+        bench "traceRay V3" . nf
+          (map (\(RandomQT (qt,p,p1) :: RandomQT V3) -> traceRay qt p p1))
+    , env (randomTrees 200 4) $
+        bench "traceRay V4" . nf
+          (map (\(RandomQT (qt,p,p1) :: RandomQT V4) -> traceRay qt p p1))
+    ]
+  ]
 
 setRandomSeed :: IO ()
 setRandomSeed = setStdGen (mkStdGen 12345)
@@ -59,4 +57,8 @@ loadBigGeom = do
   return (either (error "could not decode big_geom.wkb") id (wkbDecode bs))
 
 randomTrees :: VectorSpace v => Int -> Level -> IO [RandomQT v]
-randomTrees nTrees = replicateM nTrees . QC.generate . randomQtOfLevel
+randomTrees nTrees level = do
+  setRandomSeed
+  replicateM nTrees $
+    fmap (either (error "could not generate random tree") id)
+         (QC.generate (randomQtOfLevel level))

@@ -63,7 +63,7 @@ instance VectorSpace v => Arbitrary (LocCode v) where
   arbitrary = (LocCode . unsafeFromCoords) <$> replicateM n arbitrary
     where n = dim (Proxy :: Proxy v)
 
-randomQtOfLevel :: VectorSpace v => Level -> Gen (RandomQT v)
+randomQtOfLevel :: VectorSpace v => Level -> Gen (Either QtError (RandomQT v))
 randomQtOfLevel level = do
   ext <- arbitrary
   eQt <- generate build ext level
@@ -71,8 +71,8 @@ randomQtOfLevel level = do
     Right qt -> do
       p  <- genPointInside qt
       p1  <- genPointInside qt
-      return (RandomQT (qt, p,p1))
-    Left _ -> arbitrary
+      return (Right (RandomQT (qt, p,p1)))
+    Left e -> return (Left e)
   where
 
     build = Node $ \ext -> do
@@ -91,7 +91,7 @@ randomQtOfLevel level = do
 instance VectorSpace v => Arbitrary (RandomQT v) where
   arbitrary = do
     level <- Level <$> choose (unLevel minBound, unLevel maxBound)
-    randomQtOfLevel level
+    either (const arbitrary) return =<< randomQtOfLevel level
 
 instance VectorSpace v => Arbitrary (DelicateQT v) where
   arbitrary = do
