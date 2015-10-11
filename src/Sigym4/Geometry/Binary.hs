@@ -8,7 +8,6 @@ module Sigym4.Geometry.Binary (
 
 #include "MachDeps.h"
 
-import Control.Applicative
 import Control.Monad.Reader
 import Control.Lens ((^?))
 import Data.Proxy (Proxy(Proxy))

@@ -9,7 +9,6 @@ module Sigym4.Geometry.Json (
   , jsonDecode
   ) where
 
-import Control.Applicative
 import Data.Aeson
 import Data.Text (Text, unpack)
 import Data.Aeson.Types (Parser, Pair)

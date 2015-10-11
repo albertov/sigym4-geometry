@@ -50,7 +50,7 @@ library
                     , Sigym4.Geometry.QuadTree.Internal.TH
                     , Sigym4.Geometry.QuadTree.Internal.Types
                     , Sigym4.Geometry.QuadTree.Internal.Algorithms
-  build-depends:       base     >= 4.6 && <5
+  build-depends:       base     >= 4.8 && <5
                      , linear   >= 1.20.2
                      , distributive
                      , lens

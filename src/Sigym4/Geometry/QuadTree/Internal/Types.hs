@@ -17,14 +17,12 @@
 module Sigym4.Geometry.QuadTree.Internal.Types where
 
 import Control.Monad (liftM, replicateM, guard)
-import Control.Applicative ((<$>), (<*>), pure, liftA2)
+import Control.Applicative (liftA2)
 import Linear.Matrix (identity)
-import Data.Monoid (mempty, mappend)
 import Data.Bits
-import Data.Word (Word)
 import Data.List (sortBy)
 import Data.Proxy (Proxy(..))
-import Data.Foldable as F
+import Data.Foldable
 import Data.Functor.Identity (runIdentity)
 
 import Data.Primitive.Array
@@ -99,7 +97,7 @@ rootParent = error "QuadTree: should not happen, tried to get root's parent"
 
 
 instance VectorSpace v => Show (QuadTree v srid a) where
-  show QuadTree{..} = F.concat ([
+  show QuadTree{..} = concat ([
      "QuadTree { qtExtent = ", show qtExtent, ","
     ,          " qtLevel = ", show qtLevel, " }"] :: [String])
 
@@ -114,8 +112,8 @@ data QNode (v :: * -> *) (srid :: Nat) a
           }
 
 instance (Show a, VectorSpace v) => Show (QNode v srid a) where
-  show QLeaf{..} = F.concat (["QLeaf {qData = ", show qData, "}"] :: [String])
-  show n@QNode{} = F.concat ([ "QNode {qChildren = "
+  show QLeaf{..} = concat (["QLeaf {qData = ", show qData, "}"] :: [String])
+  show n@QNode{} = concat ([ "QNode {qChildren = "
                              , show (toList n), " }"] :: [String])
 
 instance VectorSpace v => Foldable (QNode v srid) where
@@ -138,7 +136,7 @@ data Half = First | Second
 newtype Quadrant v = Quadrant {unQuadrant :: v Half}
 
 instance VectorSpace v => Eq (Quadrant v) where
-  Quadrant a == Quadrant b = F.all id (liftA2 (==) a b)
+  Quadrant a == Quadrant b = all id (liftA2 (==) a b)
 
 deriving instance Show (v Half) => Show (Quadrant v)
 
@@ -234,14 +232,14 @@ deriving instance VectorSpace v => Show (QtVertex v)
 deriving instance VectorSpace v => Eq (QtVertex v)
 
 isVertexNeighbor :: VectorSpace v => Neighbor v -> Bool
-isVertexNeighbor = not . F.any (==Same) . ngPosition
+isVertexNeighbor = not . any (==Same) . ngPosition
 {-# INLINE isVertexNeighbor #-}
 
 neighborsDefault
   :: forall v. HasHyperplanes v => Neighbors v
 neighborsDefault = sortBy vertexNeighborsFirst $ do
   n <- replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
-  guard (not (F.all (==Same) n))
+  guard (not (all (==Same) n))
   let dir = unsafeFromCoords n
   return $! Ng dir (mkDirections dir)
   where

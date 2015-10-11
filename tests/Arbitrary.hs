@@ -3,16 +3,10 @@
            , FlexibleContexts
            , ScopedTypeVariables
            , UndecidableInstances
-           , CPP
            #-}
 module Arbitrary where
 
 import Test.QuickCheck
-#if MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#else
-import Control.Applicative ((<$>), (<*>))
-#endif
 import Control.Monad (replicateM)
 import Data.Maybe (fromJust)
 import Data.Vector (fromList)

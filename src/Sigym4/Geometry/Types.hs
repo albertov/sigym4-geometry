@@ -118,13 +118,6 @@ module Sigym4.Geometry.Types (
 ) where
 
 import Prelude hiding (product)
-#if MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#else
-import Control.Applicative (Applicative, pure, (<$>), (<*>))
-import Data.Foldable (Foldable)
-import Data.Monoid (Monoid(..))
-#endif
 import Control.Lens
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))

@@ -17,14 +17,12 @@
 module Sigym4.Geometry.QuadTree.Internal.Algorithms where
 
 
-import Control.Applicative ((<$>), (<*>), pure, liftA2, liftA3)
+import Control.Applicative (liftA2, liftA3)
 import Control.Monad (liftM)
 import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
-import Data.Foldable as F
 import Data.Bits
-import Data.Word (Word)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -61,7 +59,7 @@ generate2 build ext minBox = generate build effectiveExt level
         delta  = fmap (* maxVal) minBox 
         maxVal = fromIntegral (maxValue level)
         level  = Level (ceiling (logBase 2 nCells))
-        nCells = F.maximum (eSize ext / minBox)
+        nCells = maximum (eSize ext / minBox)
 
 
 genNode
@@ -162,7 +160,7 @@ qtLocCode
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
 qtLocCode qt p
-  | F.all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
+  | all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
   | otherwise                               = Nothing
   where
     code = qtVertex2LocCode qt p'
@@ -232,7 +230,7 @@ instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
   a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
 
 instance Show (LocCode v) => Show (TraversedNode v srid a) where
-  show TNode{..} = F.concat (["TNode { tLevel = ", show tLevel
+  show TNode{..} = concat (["TNode { tLevel = ", show tLevel
                              ,      ", tCellCode = ", show tCellCode, " }"
                              ])
 
@@ -267,14 +265,14 @@ leavesTouching pos = go
     go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
     go !TNode{tNode=QNode{qChildren=cs}, tLevel=l, tCellCode=code}
-      = F.concatMap go (map getChild' (quadrantsTouching pos))
+      = concatMap go (map getChild' (quadrantsTouching pos))
       where getChild' q = TNode { tNode     = getChild cs q
                                 , tLevel    = l-1
                                 , tCellCode = setChildBits (l-1) q code}
 
 quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
 quadrantsTouching pos
-  = filter (F.all id . liftA2 match pos . unQuadrant) [minBound..maxBound]
+  = filter (all id . liftA2 match pos . unQuadrant) [minBound..maxBound]
   where
     match Same _      = True
     match Up   Second = True
@@ -337,7 +335,7 @@ traceRay qt@QuadTree{..} from to
           $ neighbors
 
         mkNext !(!isec, pos) = do
-          nCode <- if F.all qtNearZero (unQtVertex isec - unQtVertex toV)
+          nCode <- if all qtNearZero (unQtVertex isec - unQtVertex toV)
                      then Just codeTo
                      else liftM LocCode $ sequence $ liftA3
                                mkNextCode pos
@@ -367,7 +365,7 @@ traceRay qt@QuadTree{..} from to
 
     neighborIntersection (Extent lo hi) ng
 #if DEBUG
-      | isFinal <- F.all qtNearZero (isec - unQtVertex toV)
+      | isFinal <- all qtNearZero (isec - unQtVertex toV)
       , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
                   , ("isec", isec)
                   , ("isecode", qtVertex2LocCode qt (QtVertex isec))
@@ -389,13 +387,13 @@ traceRay qt@QuadTree{..} from to
             origin' Same lo' _  = lo'
             origin' Down lo' _  = lo'
 
-        inRange v = F.all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> v)
+        inRange v = all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> v)
           where
             inRange' Same lo' hi' = qtBetween  lo' hi'
             inRange' Down lo' _   = qtAlmostEq lo'
             inRange' Up   _   hi' = qtAlmostEq hi'
 
-    inRayBounds v = F.all id (liftA3 qtBetweenC lo hi v)
+    inRayBounds v = all id (liftA3 qtBetweenC lo hi v)
       where
         lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
         hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
@@ -405,7 +403,7 @@ traceRay qt@QuadTree{..} from to
 
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
-  = F.all id (liftA3 checkComp (ngPosition ng) from to) 
+  = all id (liftA3 checkComp (ngPosition ng) from to) 
   where
     checkComp Same _ _       = True
     checkComp Down from' to' = from' > to'
@@ -433,7 +431,7 @@ traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
-  = Level (F.maximum (fmap componentLevel diff))
+  = Level (maximum (fmap componentLevel diff))
   where
     componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
     diff             = liftA2 xor a b
@@ -504,15 +502,3 @@ qtBetweenC :: Double -> Double -> Double -> Bool
 qtBetweenC lo hi v = (lo < v  || qtAlmostEq v lo) &&
                      (v  < hi || qtAlmostEq v hi)
 {-# INLINE qtBetweenC #-}
-
-
-#if !MIN_VERSION_base(4,8,0)
-countLeadingZeros :: Word -> Int
-countLeadingZeros x = (w-1) - go (w-1)
-  where
-    go !i | i < 0       = i -- no bit set
-          | testBit x i = i
-          | otherwise   = go (i-1)
-
-    w = finiteBitSize x
-#endif

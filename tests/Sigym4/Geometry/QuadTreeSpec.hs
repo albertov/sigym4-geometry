@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Sigym4.Geometry.QuadTreeSpec (main, spec) where
 
-import Control.Applicative (liftA2)
 import Control.Monad (when)
 import Data.Either (isRight)
 import Data.Proxy

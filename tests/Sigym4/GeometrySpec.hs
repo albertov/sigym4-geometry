@@ -4,7 +4,7 @@ module Sigym4.GeometrySpec (main, spec) where
 
 import Test.Hspec (Spec, hspec, parallel, describe, shouldBe, it)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (Positive(..), NonNegative(..), arbitrary, forAll)
+import Test.QuickCheck (arbitrary, forAll)
 
 import Control.Applicative (liftA2)
 import Arbitrary (positiveV)

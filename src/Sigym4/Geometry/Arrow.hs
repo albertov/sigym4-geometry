@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, StandaloneDeriving, CPP #-}
 module Sigym4.Geometry.Arrow (
     FeatureArrow
-  , arr -- ^ Constructs a 'FeatureArrow' from a pure function (a -> b)
+  , arr
   , mkFA
   , runFA
   , mapFA
@@ -10,11 +10,6 @@ module Sigym4.Geometry.Arrow (
 import Control.Arrow (Arrow, Kleisli(..), arr)
 import Control.Category (Category)
 import Control.Monad.Reader (Reader, MonadReader(ask), runReader)
-#if MIN_VERSION_base(4,8,0)
-import Control.Applicative ((<$>))
-#else
-import Control.Applicative (pure, (<$>), (<*>))
-#endif
 
 import Sigym4.Geometry.Types (Geometry, Feature, _fGeom)
 
