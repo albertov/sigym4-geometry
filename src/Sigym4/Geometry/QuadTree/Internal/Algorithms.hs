@@ -23,15 +23,11 @@ import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
+import Data.Word (Word64)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.Types
-
-
-#if DEBUG
-import Debug.Trace (traceShow)
-#endif
 
 data QtError
   = QtInvalidLevel
@@ -102,7 +98,7 @@ setChildBits (Level l) (Quadrant q) (LocCode code)
     val = fmap (\c -> case c of {Second->bit l; First->0}) q
 {-# INLINE setChildBits #-}
 
-maxValue :: Level -> Word
+maxValue :: Level -> Word64
 maxValue (Level l) = bit l
 {-# INLINE maxValue #-}
 
@@ -115,6 +111,9 @@ calculateMinBox e l
 {-# INLINE calculateMinBox #-}
 
 
+-- Translates a Point's coordinates to a Vertex in the [0,1) Extent. Makes sure
+-- to round the coordinates to the highest resolution we can safely calculate
+-- intersections with traceRay
 qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
 qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
   = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
@@ -281,25 +280,21 @@ quadrantsTouching pos
 
 
 
-traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word), Num (v Word)
-#if DEBUG
-  , Show a, Show (v Word), Show (v NeighborDir), Show (VPlanes v (Direction v))
-#endif
-  )
+traceRay :: forall v srid a. HasQuadTree v
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
-#if DEBUG
-  | traceShow ( "traceRay"
-              , ("from",      fromV)
-              , ("to",        toV)
-              , ("mCodeFrom", mCodeFrom)
-              , ("mCodeTo",   mCodeTo)
-              ) False = undefined
-#endif
   | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
   | otherwise                      = []
   where
+    -- maxIterations makes sure we don't end up in an infinite loop if there
+    -- is a problem with the implementation. We absolutely shouldn't cross
+    -- more cells than the number of smallest possible cells along the borders
+    -- of the qtree (less in fact but this serves our purposes)
     maxIterations = 2 ^ (unLevel qtLevel + dim (Proxy :: Proxy v)) :: Int
+
+    -- If there are no more candidates to continue tracing or we reached the
+    -- maximum number of intersections then there's a bug. If in production
+    -- stop the tracing and hope for the best.
 #if ASSERTS
     go [] !_ = error "no intersections"
     go _  !0 = error "iteration limit reached"
@@ -309,14 +304,20 @@ traceRay qt@QuadTree{..} from to
 #endif
 
     go (!cur:rest) !n
-#if DEBUG
-      | traceShow ("go", n, tCellCode cur, tLevel cur
-                  , cellExt, null next) False = undefined
-#endif
+      -- We reached our destination, stop the tracing
       | tCellCode cur == cellCodeTo = [value]
+
+      -- There are no valid intersections in the current cell, try with the
+      -- alternatives
       | null next                   = go rest n
+
+      -- There's at least one intersection out of this cell, go to the next
+      -- cell
       | otherwise                   = value : go next (n-1)
       where
+        -- The next cell candidates. the "fuzzy" ones first or we risk
+        -- sticking into a loop. We also try non-fuzzy intersections in case
+        -- the intersection is very near the extent corners and we've missed it
         next       = catMaybes $ map (>>=mkNext) $
                        getIntersections fuzzyExt ++ getIntersections cellExt
 
@@ -326,6 +327,10 @@ traceRay qt@QuadTree{..} from to
 
         cellExt    = calculateExtent qt (tLevel cur) (tCellCode cur)
 
+        -- We try intersection with a fuzzy extent which is slightly larger
+        -- than the current cell's one so we end up in the correct neighbor in
+        -- case the intersection is just in the middle of two smaller sized
+        -- neighbors
         fuzzyExt   = Extent (fmap (subtract qtEpsilon) (eMin cellExt))
                             (fmap (+ qtEpsilon)        (eMax cellExt))
 
@@ -334,6 +339,10 @@ traceRay qt@QuadTree{..} from to
           . filter (checkNeighbor fromV toV)
           $ neighbors
 
+        -- Calculates the LocCode of the intersection with a neighbor.
+        -- If the intersection is very close to our destination the we calculate
+        -- it normally. Else we add our cell's width to our cell code or
+        -- subtract 1 to it
         mkNext !(!isec, pos) = do
           nCode <- if all qtNearZero (unQtVertex isec - unQtVertex toV)
                      then Just codeTo
@@ -363,16 +372,10 @@ traceRay qt@QuadTree{..} from to
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
     tNodeFrom = qtTraverseToLevel qt 0 codeFrom
 
+    -- Calculates the QtVertex of the possible intersection with a given
+    -- neighbor. It is a valid intersection only if it is within the edge's
+    -- bounds and hasn't overshooted our destination.
     neighborIntersection (Extent lo hi) ng
-#if DEBUG
-      | isFinal <- all qtNearZero (isec - unQtVertex toV)
-      , traceShow ( ("isecWith", isValid isec, isFinal, ngPosition ng)
-                  , ("isec", isec)
-                  , ("isecode", qtVertex2LocCode qt (QtVertex isec))
-                  , ("lo", lo, "hi", hi)
-                  , ("plane", p)
-                  ) False = undefined
-#endif
       | isValid   = Just (QtVertex vertex, ngPosition ng)
       | otherwise = Nothing
       where
@@ -398,9 +401,11 @@ traceRay qt@QuadTree{..} from to
         lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
         hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
 
+{-# INLINEABLE traceRay #-}
 
-{-# INLINABLE traceRay #-}
-
+-- Calculates whether we need to check an intersection with a given neighbor
+-- given the origin and destination of a ray. For example, we don't need to
+-- check our top and bottom neighbors if the ray goes exactly from left to right
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
   = all id (liftA3 checkComp (ngPosition ng) from to) 
@@ -433,7 +438,7 @@ commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
   = Level (maximum (fmap componentLevel diff))
   where
-    componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
+    componentLevel d = finiteBitSize (undefined :: Word64) - countLeadingZeros d
     diff             = liftA2 xor a b
 {-# INLINE commonAncestorLevel #-}
 
@@ -462,7 +467,7 @@ outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
     mkHi Second _ h = h
 {-# INLINE outerExtent #-}
 
-neighbors :: forall v. HasHyperplanes v => Neighbors v
+neighbors :: forall v. HasQuadTree v => Neighbors v
 neighbors = neighborsDefault
 {-# NOINLINE neighbors #-}
 
@@ -483,7 +488,7 @@ neighborsV4 = $$(mkNeighbors)
 
 
 nearZeroBits :: Int
-nearZeroBits = 4
+nearZeroBits = 4 -- 64 / 16
 {-# INLINE nearZeroBits #-}
  
 qtNearZero :: Double -> Bool

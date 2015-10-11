@@ -37,16 +37,7 @@ spec = do
   quadTreeSpec "V6" (Proxy :: Proxy (V 6))
 
 
-quadTreeSpec
-  :: forall v. ( HasHyperplanes v
-               , Show (v Half)
-               , Show (v Word)
-               , Num (v Word)
-               , Eq (v Word)
-               , Show (v NeighborDir)
-               , Show (VPlanes v (Direction v))
-               )
-  => String -> Proxy v -> Spec
+quadTreeSpec :: forall v. HasQuadTree v => String -> Proxy v -> Spec
 quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
   describe "setChildBits and quadrantAtLevel " $ do

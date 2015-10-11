@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -13,6 +14,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Sigym4.Geometry.QuadTree.Internal.Types where
 
@@ -21,6 +23,7 @@ import Control.Applicative (liftA2)
 import Control.DeepSeq (NFData(..))
 import Linear.Matrix (identity)
 import Data.Bits
+import Data.Word (Word64)
 import Data.List (sortBy)
 import Data.Proxy (Proxy(..))
 import Data.Foldable
@@ -34,6 +37,17 @@ import Language.Haskell.TH.Syntax
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilonAndLevel)
+
+-- Constraint synonym to simnplify signatures
+type HasQuadTree v = ( HasHyperplanes v
+                     , Eq (v Word64)
+                     , Num (v Word64)
+                     -- These are for testing/debugging
+                     , Show (v Word64)
+                     , Show (v Half)
+                     , Show (v NeighborDir)
+                     , Show (HyperPlaneDirections v)
+                     )
 
 data QuadTree (v :: * -> *) (srid :: Nat) a
   = QuadTree {
@@ -195,12 +209,18 @@ newtype Level = Level {unLevel :: Int}
 
 
 instance Num Level where
+#if ASSERTS
   Level a + Level b
     | Level (a+b) <= maxBound = Level (a+b)
     | otherwise               = error ("Level " ++ show (a+b) ++ " too large")
   Level a - Level b
     | Level (a-b) >= minBound = Level (a-b)
     | otherwise               = error ("Level " ++ show (a-b) ++ " too small")
+#else
+  Level a + Level b           = Level (a+b)
+  Level a - Level b           = Level (a-b)
+#endif
+
   Level a * Level b
     | Level (a*b) <= maxBound = Level (a*b)
     | otherwise               = error ("Level " ++ show (a*b) ++ " too large")
@@ -212,9 +232,11 @@ instance Num Level where
     | minBound<=l,l<=maxBound = l
     | otherwise               = error ("Invalid Level " ++ show i)
     where l = Level (fromInteger i)
+  {-# INLINE (+) #-}
+  {-# INLINE (-) #-}
 
 instance Bounded Level where
-  maxBound = Level ((finiteBitSize (undefined::Word) `unsafeShiftR` 1) - 1)
+  maxBound = Level ((finiteBitSize (undefined::Word64) `unsafeShiftR` 1) - 1)
   minBound = Level 0
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
@@ -227,11 +249,11 @@ qtEpsilon  :: Double
 qtEpsilon = snd $$(machineEpsilonAndLevel 1)
 {-# INLINE qtEpsilon #-}
 
-newtype LocCode v = LocCode {unLocCode :: v Word}
+newtype LocCode v = LocCode {unLocCode :: v Word64}
 
-deriving instance Num (v Word) => Num (LocCode v)
-deriving instance Eq (v Word) => Eq (LocCode v)
-deriving instance Show (v Word) => Show (LocCode v)
+deriving instance Num (v Word64) => Num (LocCode v)
+deriving instance Eq (v Word64) => Eq (LocCode v)
+deriving instance Show (v Word64) => Show (LocCode v)
 
 newtype QtVertex v = QtVertex {unQtVertex :: Vertex v}
 deriving instance VectorSpace v => Num (QtVertex v)
@@ -243,7 +265,7 @@ isVertexNeighbor = not . any (==Same) . ngPosition
 {-# INLINE isVertexNeighbor #-}
 
 neighborsDefault
-  :: forall v. HasHyperplanes v => Neighbors v
+  :: forall v. HasQuadTree v => Neighbors v
 neighborsDefault = sortBy vertexNeighborsFirst $ do
   n <- replicateM (dim (Proxy :: Proxy v)) [minBound..maxBound]
   guard (not (all (==Same) n))
@@ -268,11 +290,12 @@ neighborsDefault = sortBy vertexNeighborsFirst $ do
 
 
 mkNeighbors
-  :: forall v. HasHyperplanes v => Q (TExp (Neighbors v))
-mkNeighbors = let ns = mapM (fmap unType . liftNeighbor) (neighborsDefault :: Neighbors v)
-              in [|| $$(liftM (TExp . ListE) ns) ||]
+  :: forall v. HasQuadTree v => Q (TExp (Neighbors v))
+mkNeighbors = [|| $$(liftM (TExp . ListE) ns) ||]
+  where ns = mapM (fmap unType . liftNeighbor) (neighborsDefault :: Neighbors v)
 
 liftNeighbor
-  :: forall v. HasHyperplanes v => Neighbor v -> Q (TExp (Neighbor v))
+  :: forall v. HasQuadTree v => Neighbor v -> Q (TExp (Neighbor v))
 liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
-  where planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
+  where
+    planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
