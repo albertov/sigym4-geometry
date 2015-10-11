@@ -24,6 +24,7 @@ import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Foldable as F
 import Data.Bits
+import Data.Word (Word)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -60,7 +61,7 @@ generate2 build ext minBox = generate build effectiveExt level
         delta  = fmap (* maxVal) minBox 
         maxVal = fromIntegral (maxValue level)
         level  = Level (ceiling (logBase 2 nCells))
-        nCells = maximum (eSize ext / minBox)
+        nCells = F.maximum (eSize ext / minBox)
 
 
 genNode
@@ -231,9 +232,9 @@ instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
   a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
 
 instance Show (LocCode v) => Show (TraversedNode v srid a) where
-  show TNode{..} = concat (["TNode { tLevel = ", show tLevel
-                           ,      ", tCellCode = ", show tCellCode, " }"
-                           ]) 
+  show TNode{..} = F.concat (["TNode { tLevel = ", show tLevel
+                             ,      ", tCellCode = ", show tCellCode, " }"
+                             ])
 
 quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
 quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
@@ -266,7 +267,7 @@ leavesTouching pos = go
     go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
     go !TNode{tNode=QNode{qChildren=cs}, tLevel=l, tCellCode=code}
-      = concatMap go (map getChild' (quadrantsTouching pos))
+      = F.concatMap go (map getChild' (quadrantsTouching pos))
       where getChild' q = TNode { tNode     = getChild cs q
                                 , tLevel    = l-1
                                 , tCellCode = setChildBits (l-1) q code}
@@ -432,7 +433,7 @@ traverseToCommonAncestor QuadTree{qtLevel=maxl} TNode{..} code
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
-  = Level (maximum (fmap componentLevel diff))
+  = Level (F.maximum (fmap componentLevel diff))
   where
     componentLevel d = finiteBitSize (undefined :: Word) - countLeadingZeros d
     diff             = liftA2 xor a b
@@ -503,3 +504,15 @@ qtBetweenC :: Double -> Double -> Double -> Bool
 qtBetweenC lo hi v = (lo < v  || qtAlmostEq v lo) &&
                      (v  < hi || qtAlmostEq v hi)
 {-# INLINE qtBetweenC #-}
+
+
+#if !MIN_VERSION_base(4,8,0)
+countLeadingZeros :: Word -> Int
+countLeadingZeros x = (w-1) - go (w-1)
+  where
+    go !i | i < 0       = i -- no bit set
+          | testBit x i = i
+          | otherwise   = go (i-1)
+
+    w = finiteBitSize x
+#endif
