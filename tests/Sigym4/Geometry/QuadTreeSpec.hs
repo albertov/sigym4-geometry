@@ -9,7 +9,6 @@ import Control.Monad (when)
 import Data.Either (isRight)
 import Data.Proxy
 import Data.Functor.Identity (runIdentity)
-import Data.Word (Word64)
 import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck hiding (generate)
@@ -41,9 +40,9 @@ spec = do
 quadTreeSpec
   :: forall v. ( HasHyperplanes v
                , Show (v Half)
-               , Show (v Word64)
-               , Num (v Word64)
-               , Eq (v Word64)
+               , Show (v Int)
+               , Num (v Int)
+               , Eq (v Int)
                , Show (v NeighborDir)
                , Show (HyperPlaneDirections v)
                )

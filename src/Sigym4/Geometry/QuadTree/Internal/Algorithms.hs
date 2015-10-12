@@ -23,7 +23,6 @@ import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
-import Data.Word (Word64)
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
@@ -100,7 +99,7 @@ setChildBits (Level l) (Quadrant q) (LocCode code)
     val = fmap (\c -> case c of {Second->bit l; First->0}) q
 {-# INLINE setChildBits #-}
 
-maxValue :: Level -> Word64
+maxValue :: Level -> Int
 maxValue (Level l) = bit l
 {-# INLINE maxValue #-}
 
@@ -200,22 +199,31 @@ qtCellCode (Level l) code
 
 traverseToLevel
   :: VectorSpace v
-  => QNode v srid a
-  -> Level -> Level -> LocCode v -> TraversedNode v srid a
-traverseToLevel node start end code = go node start
+  => TraversedNode v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
+traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
     go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
     go !n         !l | l<=end = TNode l n (qtCellCode l code)
-    go !QNode{qChildren=c} !l = let n' = getChild c (quadrantAtLevel l' code)
+    go !QNode{qChildren=c} !l = let n' = getChildAtLevel c l' code
                                     l' = Level (unLevel l - 1)
                                 in go n' l'
 {-# INLINE traverseToLevel #-}
+
+qtTraverseToLevel
+  :: VectorSpace v
+  => QuadTree v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
+qtTraverseToLevel QuadTree{..}
+  = traverseToLevel (TNode qtLevel qtRoot (LocCode (pure 0)))
+{-# INLINE qtTraverseToLevel #-}
+
 
 data TraversedNode v srid a
   = TNode
     { tLevel    :: {-# UNPACK #-} !Level
     , tNode     :: !(QNode v srid a)
-    , tCellCode :: !(LocCode v)
+    , tCellCode :: LocCode v
     }
 
 instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
@@ -226,19 +234,15 @@ instance Show (LocCode v) => Show (TraversedNode v srid a) where
                              ,      ", tCellCode = ", show tCellCode, " }"
                              ])
 
-quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
-quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
-  where toHalf v = if v `testBit` l then Second else First
-{-# INLINE quadrantAtLevel #-}
 
 
 lookupByPoint
   :: VectorSpace v
   => QuadTree v srid a -> Point v srid -> Maybe a
-lookupByPoint qt@QuadTree{..} p
+lookupByPoint qt p
   = case qtLocCode qt p of
       Just c ->
-        let TNode{tNode=node} = traverseToLevel qtRoot qtLevel minBound c
+        let TNode{tNode=node} = qtTraverseToLevel qt minBound c
         in Just (leafData node)
       Nothing -> Nothing
 {-# INLINE lookupByPoint #-}
@@ -273,7 +277,7 @@ quadrantsTouching pos
 
 
 
-traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Word64), Num (v Word64))
+traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Int), Num (v Int))
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
   | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
@@ -343,7 +347,8 @@ traceRay qt@QuadTree{..} from to
                                mkNextCode pos
                                           (unLocCode (qtVertex2LocCode qt isec))
                                           (unLocCode (tCellCode cur))
-          return $! traverseViaCommonAncestor qt cur nCode
+          let !ancestor = traverseToCommonAncestor qt cur nCode
+          return (traverseToLevel ancestor minBound nCode)
 
         mkNextCode Down _ c
           | c > 0                           = Just (c - 1)
@@ -361,7 +366,7 @@ traceRay qt@QuadTree{..} from to
     mCodeFrom = qtLocCode qt from
     codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
     codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
-    tNodeFrom = traverseToLevel qtRoot qtLevel minBound codeFrom
+    tNodeFrom = qtTraverseToLevel qt minBound codeFrom
 
     -- Calculates the QtVertex of the possible intersection with a given
     -- neighbor. It is a valid intersection only if it is within the edge's
@@ -407,29 +412,28 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
 {-# INLINE checkNeighbor #-}
     
 
-traverseViaCommonAncestor
+traverseToCommonAncestor
   :: VectorSpace v
   => QuadTree v srid a -> TraversedNode v srid a -> LocCode v
   -> TraversedNode v srid a
-traverseViaCommonAncestor QuadTree{..} TNode{..} code
-#if ASSERTS
-  | al > qtLevel = error "traverseViaCommonAncestor: invalid ancestor level"
-#endif
-  | otherwise    = traverseToLevel ancestor al minBound code
+traverseToCommonAncestor QuadTree{..} TNode{..} code
+  = TNode { tNode     = findAncestor tNode tLevel
+          , tLevel    = al
+          , tCellCode = qtCellCode al tCellCode
+          }
   where
-    !ancestor = findAncestor tNode tLevel
-    !al       = commonAncestorLevel tCellCode code
+    al = commonAncestorLevel tCellCode code
     findAncestor !n !l
       | l==al     = n
       | otherwise = findAncestor (qParent n) (Level (unLevel l + 1))
-{-# INLINE traverseViaCommonAncestor #-}
+{-# INLINE traverseToCommonAncestor #-}
 
 
 commonAncestorLevel :: VectorSpace v => LocCode v -> LocCode v -> Level
 commonAncestorLevel (LocCode a) (LocCode b)
   = Level (maximum (fmap componentLevel diff))
   where
-    componentLevel d = finiteBitSize (undefined :: Word64) - countLeadingZeros d
+    componentLevel d = finiteBitSize (undefined :: Int) - countLeadingZeros d
     diff             = liftA2 xor a b
 {-# INLINE commonAncestorLevel #-}
 

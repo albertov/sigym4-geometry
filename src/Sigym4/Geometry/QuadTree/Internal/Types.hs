@@ -22,7 +22,6 @@ import Control.Applicative (liftA2)
 import Control.DeepSeq (NFData(..))
 import Linear.Matrix (identity)
 import Data.Bits
-import Data.Word (Word64)
 import Data.List (sortBy)
 import Data.Proxy (Proxy(..))
 import Data.Foldable
@@ -92,6 +91,20 @@ getChild
 getChild c = runIdentity . indexArrayM c . fromEnum
 {-# INLINE getChild #-}
 
+quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
+quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
+  where toHalf v = if v `testBit` l then Second else First
+{-# INLINE quadrantAtLevel #-}
+
+getChildAtLevel
+  :: VectorSpace v
+  => Array (QNode v srid a) -> Level -> LocCode v -> QNode v srid a
+getChildAtLevel cs (Level l) (LocCode c) = indexArray cs ix
+  where
+    !ix          = snd (foldl' go (negate l,0) c)
+    !m           = 1 `unsafeShiftL` l
+    go (!i,!s) v = (i+1, s + ((v .&. m) `rotate` i))
+{-# INLINE getChildAtLevel #-}
 
 instance VectorSpace v => Foldable (QuadTree v srid) where
   foldMap f qt = foldMap f (qtRoot qt)
@@ -162,6 +175,8 @@ instance VectorSpace v => Enum (Quadrant v) where
     where d = dim (Proxy :: Proxy v)
   {-# INLINE toEnum #-}
 
+
+
 instance VectorSpace v => Bounded (Quadrant v) where
   minBound = Quadrant (pure First)
   {-# INLINE minBound #-}
@@ -197,7 +212,7 @@ newtype Level = Level {unLevel :: Int}
 
 
 instance Bounded Level where
-  maxBound = Level ((finiteBitSize (undefined::Word64) `unsafeShiftR` 1) - 1)
+  maxBound = Level ((finiteBitSize (undefined::Int) `unsafeShiftR` 1) - 1)
   minBound = Level 0
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
@@ -210,11 +225,11 @@ qtEpsilon  :: Double
 qtEpsilon = snd $$(machineEpsilonAndLevel 1)
 {-# INLINE qtEpsilon #-}
 
-newtype LocCode v = LocCode {unLocCode :: v Word64}
+newtype LocCode v = LocCode {unLocCode :: v Int}
 
-deriving instance Num (v Word64) => Num (LocCode v)
-deriving instance Eq (v Word64) => Eq (LocCode v)
-deriving instance Show (v Word64) => Show (LocCode v)
+deriving instance Num (v Int) => Num (LocCode v)
+deriving instance Eq (v Int) => Eq (LocCode v)
+deriving instance Show (v Int) => Show (LocCode v)
 
 newtype QtVertex v = QtVertex {unQtVertex :: Vertex v}
 deriving instance VectorSpace v => Num (QtVertex v)
