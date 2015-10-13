@@ -128,17 +128,16 @@ childIndices p = enumFromTo 0 (numChildren p-1)
 {-# INLINE childIndices#-}
 
 generateChildren
-  :: forall v srid f a. (VectorSpace v, Applicative f)
-  => (Int -> f (QNode v srid a)) -> f (Array (QNode v srid a))
-generateChildren f
-  = fmap mkArray (traverse f (childIndices (Proxy :: Proxy v)))
-  where
-    mkArray elems = runST $ do
-      cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
-      let loop !_ []     = return ()
-          loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
-      loop 0 elems
-      unsafeFreezeArray cs
+  :: forall v srid m a. (VectorSpace v, Monad m)
+  => (Int -> m (QNode v srid a)) -> m (Array (QNode v srid a))
+generateChildren f = do
+  elems <- mapM f (childIndices (Proxy :: Proxy v))
+  return $! runST $ do
+    cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
+    let loop !_ []     = return ()
+        loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
+    loop 0 elems
+    unsafeFreezeArray cs
 {-# INLINE generateChildren #-}
 
 numChildren :: VectorSpace v => Proxy v -> Int
