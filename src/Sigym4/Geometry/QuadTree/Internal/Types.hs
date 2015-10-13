@@ -1,24 +1,55 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Sigym4.Geometry.QuadTree.Internal.Types where
+module Sigym4.Geometry.QuadTree.Internal.Types (
+    QuadTree      (..)
+  , QtError       (..)
+  , Node          (..)
+  , QNode         (..)
+  , Level         (..)
+  , LocCode       (..)
+  , Quadrant      (..)
+  , Half          (..)
+  , Neighbor      (..)
+  , NeighborDir   (..)
+  , QtVertex      (..)
+  , TraversedNode (..)
+
+  , Neighbors
+  , NeighborPosition
+  , Box
+
+  , generate
+  , generate2
+  , grow
+  , qtMinBox
+
+  , calculateMinBox
+  , getChild
+  , getChildAtLevel
+  , quadrantAtLevel
+  , setChildBits
+  , oppositePosition
+  , maxValue
+  , neighborsDefault
+
+  , mkNeighbors
+  , machineEpsilonAndLevel
+) where
 
 import Control.Monad (liftM, replicateM, guard)
-import Control.Applicative (liftA2)
+import Control.Monad.Fix (MonadFix(mfix))
+import Control.Applicative (liftA2, liftA3)
 import Control.DeepSeq (NFData(..))
 import Linear.Matrix (identity)
 import Data.Bits
@@ -34,7 +65,11 @@ import Language.Haskell.TH.Syntax
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
-import Sigym4.Geometry.QuadTree.Internal.TH (machineEpsilonAndLevel)
+
+data QtError
+  = QtInvalidLevel
+  | QtCannotGrow
+  deriving (Show, Eq, Enum)
 
 data QuadTree (v :: * -> *) (srid :: Nat) a
   = QuadTree {
@@ -91,10 +126,6 @@ getChild
 getChild c = runIdentity . indexArrayM c . fromEnum
 {-# INLINE getChild #-}
 
-quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
-quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
-  where toHalf v = if v `testBit` l then Second else First
-{-# INLINE quadrantAtLevel #-}
 
 getChildAtLevel
   :: VectorSpace v
@@ -183,6 +214,20 @@ instance VectorSpace v => Bounded (Quadrant v) where
   maxBound = Quadrant (pure Second)
   {-# INLINE maxBound #-}
 
+
+quadrantAtLevel :: VectorSpace v => Level -> LocCode v -> Quadrant v
+quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
+  where toHalf v = if v `testBit` l then Second else First
+{-# INLINE quadrantAtLevel #-}
+
+setChildBits:: VectorSpace v => Level -> Quadrant v -> LocCode v -> LocCode v
+setChildBits (Level l) (Quadrant q) (LocCode code) 
+  = LocCode (liftA2 (.|.) code val)
+  where
+    val = fmap (\c -> case c of {Second->bit l; First->0}) q
+{-# INLINE setChildBits #-}
+
+
 data NeighborDir = Down | Same | Up
   deriving (Show, Eq, Enum, Bounded)
 
@@ -217,13 +262,6 @@ instance Bounded Level where
   {-# INLINE maxBound #-}
   {-# INLINE minBound #-}
 
-qtEpsLevel :: Int
-qtEpsLevel = fst ($$(machineEpsilonAndLevel 1) :: (Int, Double))
-{-# INLINE qtEpsLevel #-}
-
-qtEpsilon  :: Double
-qtEpsilon = snd $$(machineEpsilonAndLevel 1)
-{-# INLINE qtEpsilon #-}
 
 newtype LocCode v = LocCode {unLocCode :: v Int}
 
@@ -275,3 +313,128 @@ liftNeighbor
 liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
   where
     planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
+
+data TraversedNode v srid a
+  = TNode
+    { tLevel    :: {-# UNPACK #-} !Level
+    , tNode     :: !(QNode v srid a)
+    , tCellCode :: LocCode v
+    }
+
+instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
+  a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
+
+instance Show (LocCode v) => Show (TraversedNode v srid a) where
+  show TNode{..} = concat (["TNode { tLevel = ", show tLevel
+                           ,      ", tCellCode = ", show tCellCode, " }"])
+
+
+innerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
+innerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
+  where
+    lo'             = liftA3 mkLo qv lo hi
+    hi'             = liftA3 mkHi qv lo hi
+    mkLo First  l _ = l
+    mkLo Second l h = (l+h) / 2
+    mkHi First  l h = (l+h) / 2
+    mkHi Second _ h = h
+{-# INLINE innerExtent #-}
+
+
+outerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
+outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
+  where
+    lo'             = liftA3 mkLo qv lo hi
+    hi'             = liftA3 mkHi qv lo hi
+    mkLo First  l _ = l
+    mkLo Second l h = 2*l - h
+    mkHi First  l h = 2*h - l
+    mkHi Second _ h = h
+{-# INLINE outerExtent #-}
+
+
+generate2
+  :: (MonadFix m, VectorSpace v)
+  => Node m v srid a -> Extent v srid -> Level
+  -> m (Either QtError (QuadTree v srid a))
+generate2 build ext level
+  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
+  | otherwise
+  = Right <$> (QuadTree <$> genNode rootParent ext level build
+                        <*> pure ext
+                        <*> pure level)
+
+generate
+  :: (MonadFix m, VectorSpace v)
+  => Node m v srid a -> Extent v srid -> Box v
+  -> m (Either QtError (QuadTree v srid a))
+generate build ext minBox = generate2 build effectiveExt level
+  where effectiveExt = Extent (eMin ext) (eMin ext + delta)
+        delta  = fmap (* maxVal) minBox 
+        maxVal = fromIntegral (maxValue level)
+        level  = Level (ceiling (logBase 2 nCells))
+        nCells = maximum (eSize ext / minBox)
+
+
+genNode
+  :: (MonadFix m, VectorSpace v)
+  => QNode v srid a -> Extent v srid -> Level -> Node m v srid a
+  -> m (QNode v srid a)
+genNode parent _   _ (Leaf v) = return (QLeaf parent v)
+genNode parent ext level (Node f)
+  | level > minBound = mfix (\node -> genQNode parent $ \q -> do
+                               next <- liftM snd (f (innerExtent q ext))
+                               let level' = Level (unLevel level - 1)
+                               genNode node (innerExtent q ext) level' next)
+  | otherwise        = liftM (QLeaf parent . fst) (f ext)
+
+genQNode
+  :: forall m v srid a. (MonadFix m, VectorSpace v)
+  => QNode v srid a -> (Quadrant v -> m (QNode v srid a))
+  -> m (QNode v srid a)
+genQNode parent f = liftM (QNode parent) (generateChildren (f . toEnum))
+
+grow
+  :: (MonadFix m, VectorSpace v)
+  => Node m v srid a -> Quadrant v -> QuadTree v srid a
+  -> m (Either QtError (QuadTree v srid a))
+grow build dir (QuadTree oldRoot ext oldLevel)
+  | newLevel > maxBound = return (Left QtCannotGrow)
+  | otherwise
+  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
+  where
+    newLevel = Level (unLevel oldLevel + 1)
+    newRoot
+      = mfix (\node -> genQNode rootParent $ \q ->
+              if q == dir
+                then (return oldRoot {qParent=node})
+                else genNode node (innerExtent q newExt) oldLevel build)
+    newExt = outerExtent dir ext
+
+
+maxValue :: Level -> Int
+maxValue (Level l) = bit l
+{-# INLINE maxValue #-}
+
+qtMinBox :: VectorSpace v => QuadTree v srid a -> Box v
+qtMinBox QuadTree{qtLevel=l, qtExtent=e} = calculateMinBox e l
+
+calculateMinBox :: VectorSpace v => Extent v srid -> Level -> Box v
+calculateMinBox e l
+  = fmap (/ (fromIntegral (maxValue l))) (eSize e)
+{-# INLINE calculateMinBox #-}
+
+
+calculatedEpsilonAndLevel :: (Ord a, Fractional a) => (Int,a)
+calculatedEpsilonAndLevel = go 0 1
+  where go !n !e | e+1>1     = go (n+1) (e*0.5)
+                 | otherwise = (n,e)
+
+
+machineEpsilonAndLevel
+  :: (Lift a, Ord a, Fractional a)
+  => Int -> Q (TExp (Int,a))
+machineEpsilonAndLevel f
+  = let (l,e) = calculatedEpsilonAndLevel
+        r     = (l-f, e * 2^f)
+    in [|| r ||]

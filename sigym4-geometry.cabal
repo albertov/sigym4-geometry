@@ -47,33 +47,32 @@ library
                     , Sigym4.Geometry.Arrow
                     , Sigym4.Geometry.Rasterize
                     , Sigym4.Geometry.QuadTree
-                    , Sigym4.Geometry.QuadTree.Internal.TH
                     , Sigym4.Geometry.QuadTree.Internal.Types
                     , Sigym4.Geometry.QuadTree.Internal.Algorithms
-  build-depends:       base     >= 4.8 && <5
-                     , linear   >= 1.20.2
-                     , distributive
-                     , lens
-                     , hashable
-                     , mtl
-                     , vector
-                     , vector-th-unbox
-                     , data-binary-ieee754
-                     , bytestring
-                     , text
-                     , binary
-                     , aeson
-                     , semigroups
-                     , transformers
-                     , deepseq
-                     , template-haskell
-                     , primitive
-  default-language:    Haskell2010
-  hs-source-dirs:    src
-  ghc-options:         -Wall
-                       -fwarn-incomplete-patterns
-                       -fwarn-incomplete-uni-patterns
-                       -funbox-strict-fields
+  build-depends:      base     >= 4.8 && <5
+                    , linear   >= 1.20.2
+                    , distributive
+                    , lens
+                    , hashable
+                    , mtl
+                    , vector
+                    , vector-th-unbox
+                    , data-binary-ieee754
+                    , bytestring
+                    , text
+                    , binary
+                    , aeson
+                    , semigroups
+                    , transformers
+                    , deepseq
+                    , template-haskell
+                    , primitive
+  default-language: Haskell2010
+  hs-source-dirs:   src
+  ghc-options:      -Wall
+                    -fwarn-incomplete-patterns
+                    -fwarn-incomplete-uni-patterns
+                    -funbox-strict-fields
 
   if flag(herbie)
     build-depends: HerbiePlugin >= 0.1 && < 0.2
@@ -89,30 +88,30 @@ library
     cpp-options: -DASSERTS
 
 test-suite main
-  type:              exitcode-stdio-1.0
-  build-depends:     base
-                   , hspec >= 1.10.0
-                   , sigym4-geometry
-                   , QuickCheck
-                   , vector
-                   , bytestring
-                   , deepseq
-  hs-source-dirs:    tests
-  main-is:           Spec.hs
-  default-language:  Haskell2010
-  ghc-options:       -Wall -rtsopts -with-rtsopts=-K1K
+  type:             exitcode-stdio-1.0
+  build-depends:    base
+                  , hspec >= 1.10.0
+                  , sigym4-geometry
+                  , QuickCheck
+                  , vector
+                  , bytestring
+                  , deepseq
+  hs-source-dirs:   tests
+  main-is:          Spec.hs
+  default-language: Haskell2010
+  ghc-options:      -Wall -rtsopts -with-rtsopts=-K1K
 
 benchmark bench
-  type:              exitcode-stdio-1.0
-  hs-source-dirs:    tests bench
-  main-is:           Main.hs
-  build-depends:     base
-                   , criterion
-                   , QuickCheck
-                   , random
-                   , sigym4-geometry
-                   , bytestring
-                   , vector
-                   , deepseq
-  default-language:  Haskell2010
-  ghc-options:       -Wall -O2 -rtsopts -with-rtsopts=-T
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   tests bench
+  main-is:          Main.hs
+  build-depends:    base
+                  , criterion
+                  , QuickCheck
+                  , random
+                  , sigym4-geometry
+                  , bytestring
+                  , vector
+                  , deepseq
+  default-language: Haskell2010
+  ghc-options:      -Wall -O2 -rtsopts -with-rtsopts=-T

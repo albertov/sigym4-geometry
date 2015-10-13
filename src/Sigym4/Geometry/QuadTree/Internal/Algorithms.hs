@@ -14,12 +14,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Sigym4.Geometry.QuadTree.Internal.Algorithms where
-
+module Sigym4.Geometry.QuadTree.Internal.Algorithms (
+    traceRay
+  , lookupByPoint
+  , qtContainsPoint
+) where
 
 import Control.Applicative (liftA2, liftA3)
 import Control.Monad (liftM)
-import Control.Monad.Fix (MonadFix(mfix))
 import Data.Maybe (isJust, fromMaybe, catMaybes)
 import Data.Proxy (Proxy(..))
 import Data.Bits
@@ -27,89 +29,6 @@ import Data.Bits
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.Types
-
-data QtError
-  = QtInvalidLevel
-  | QtCannotGrow
-  deriving (Show, Eq, Enum)
-
-
-generate2
-  :: (MonadFix m, VectorSpace v)
-  => Node m v srid a -> Extent v srid -> Level
-  -> m (Either QtError (QuadTree v srid a))
-generate2 build ext level
-  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
-  | otherwise
-  = Right <$> (QuadTree <$> genNode rootParent ext level build
-                        <*> pure ext
-                        <*> pure level)
-
-generate
-  :: (MonadFix m, VectorSpace v)
-  => Node m v srid a -> Extent v srid -> Box v
-  -> m (Either QtError (QuadTree v srid a))
-generate build ext minBox = generate2 build effectiveExt level
-  where effectiveExt = Extent (eMin ext) (eMin ext + delta)
-        delta  = fmap (* maxVal) minBox 
-        maxVal = fromIntegral (maxValue level)
-        level  = Level (ceiling (logBase 2 nCells))
-        nCells = maximum (eSize ext / minBox)
-
-
-genNode
-  :: (MonadFix m, VectorSpace v)
-  => QNode v srid a -> Extent v srid -> Level -> Node m v srid a
-  -> m (QNode v srid a)
-genNode parent _   _ (Leaf v) = return (QLeaf parent v)
-genNode parent ext level (Node f)
-  | level > minBound = mfix (\node -> genQNode parent $ \q -> do
-                               next <- liftM snd (f (innerExtent q ext))
-                               let level' = Level (unLevel level - 1)
-                               genNode node (innerExtent q ext) level' next)
-  | otherwise        = liftM (QLeaf parent . fst) (f ext)
-
-genQNode
-  :: forall m v srid a. (MonadFix m, VectorSpace v)
-  => QNode v srid a -> (Quadrant v -> m (QNode v srid a))
-  -> m (QNode v srid a)
-genQNode parent f = liftM (QNode parent) (generateChildren (f . toEnum))
-
-grow
-  :: (MonadFix m, VectorSpace v)
-  => Node m v srid a -> Quadrant v -> QuadTree v srid a
-  -> m (Either QtError (QuadTree v srid a))
-grow build dir (QuadTree oldRoot ext oldLevel)
-  | newLevel > maxBound = return (Left QtCannotGrow)
-  | otherwise
-  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
-  where
-    newLevel = Level (unLevel oldLevel + 1)
-    newRoot
-      = mfix (\node -> genQNode rootParent $ \q ->
-              if q == dir
-                then (return oldRoot {qParent=node})
-                else genNode node (innerExtent q newExt) oldLevel build)
-    newExt = outerExtent dir ext
-
-setChildBits:: VectorSpace v => Level -> Quadrant v -> LocCode v -> LocCode v
-setChildBits (Level l) (Quadrant q) (LocCode code) 
-  = LocCode (liftA2 (.|.) code val)
-  where
-    val = fmap (\c -> case c of {Second->bit l; First->0}) q
-{-# INLINE setChildBits #-}
-
-maxValue :: Level -> Int
-maxValue (Level l) = bit l
-{-# INLINE maxValue #-}
-
-qtMinBox :: VectorSpace v => QuadTree v srid a -> Box v
-qtMinBox QuadTree{qtLevel=l, qtExtent=e} = calculateMinBox e l
-
-calculateMinBox :: VectorSpace v => Extent v srid -> Level -> Box v
-calculateMinBox e l
-  = fmap (/ (fromIntegral (maxValue l))) (eSize e)
-{-# INLINE calculateMinBox #-}
 
 
 -- Translates a Point's coordinates to a Vertex in the [0,1) Extent. Makes sure
@@ -219,21 +138,6 @@ qtTraverseToLevel QuadTree{..}
 {-# INLINE qtTraverseToLevel #-}
 
 
-data TraversedNode v srid a
-  = TNode
-    { tLevel    :: {-# UNPACK #-} !Level
-    , tNode     :: !(QNode v srid a)
-    , tCellCode :: LocCode v
-    }
-
-instance Eq (LocCode v) => Eq (TraversedNode v srid a) where
-  a == b = tCellCode a == tCellCode b && tLevel a == tLevel b
-
-instance Show (LocCode v) => Show (TraversedNode v srid a) where
-  show TNode{..} = concat (["TNode { tLevel = ", show tLevel
-                             ,      ", tCellCode = ", show tCellCode, " }"
-                             ])
-
 
 
 lookupByPoint
@@ -265,6 +169,7 @@ leavesTouching pos = go
       where getChild' q = TNode { tNode     = getChild cs q
                                 , tLevel    = Level (l-1)
                                 , tCellCode = setChildBits (Level (l-1)) q code}
+
 
 quadrantsTouching :: VectorSpace v => NeighborPosition v -> [Quadrant v]
 quadrantsTouching pos
@@ -397,7 +302,12 @@ traceRay qt@QuadTree{..} from to
         lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
         hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
 
-{-# INLINABLE traceRay #-}
+{-# SPECIALISE traceRay ::
+      QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
+{-# SPECIALISE traceRay ::
+      QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
+{-# SPECIALISE traceRay ::
+      QuadTree V4 srid a -> Point V4 srid -> Point V4 srid -> [a] #-}
 
 -- Calculates whether we need to check an intersection with a given neighbor
 -- given the origin and destination of a ray. For example, we don't need to
@@ -439,29 +349,6 @@ commonAncestorLevel (LocCode a) (LocCode b)
 
 
 
-innerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
-innerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
-  where
-    lo'             = liftA3 mkLo qv lo hi
-    hi'             = liftA3 mkHi qv lo hi
-    mkLo First  l _ = l
-    mkLo Second l h = (l+h) / 2
-    mkHi First  l h = (l+h) / 2
-    mkHi Second _ h = h
-{-# INLINE innerExtent #-}
-
-
-outerExtent :: VectorSpace v => Quadrant v -> Extent v srid -> Extent v srid
-outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
-  where
-    lo'             = liftA3 mkLo qv lo hi
-    hi'             = liftA3 mkHi qv lo hi
-    mkLo First  l _ = l
-    mkLo Second l h = 2*l - h
-    mkHi First  l h = 2*h - l
-    mkHi Second _ h = h
-{-# INLINE outerExtent #-}
-
 neighbors :: HasHyperplanes v => Neighbors v
 neighbors = neighborsDefault
 {-# NOINLINE neighbors #-}
@@ -482,8 +369,16 @@ neighborsV4 = $$(mkNeighbors)
 {-# RULES "neighbors/V4"[2] neighbors = neighborsV4 #-}
 
 
+qtEpsLevel :: Int
+qtEpsLevel = fst ($$(machineEpsilonAndLevel 1) :: (Int, Double))
+{-# INLINE qtEpsLevel #-}
+
+qtEpsilon  :: Double
+qtEpsilon = snd $$(machineEpsilonAndLevel 1)
+{-# INLINE qtEpsilon #-}
+
 nearZeroBits :: Int
-nearZeroBits = 4 -- 64 / 16
+nearZeroBits = finiteBitSize (undefined :: Int) `div` 16
 {-# INLINE nearZeroBits #-}
  
 qtNearZero :: Double -> Bool

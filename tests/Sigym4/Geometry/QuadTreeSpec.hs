@@ -53,9 +53,9 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
     prop "are reciprocal" $ \(level, q) ->
       quadrantAtLevel level (setChildBits level q (0::LocCode v)) == q
 
-  describe "neighbors " $ do
+  describe "neighborsDefault " $ do
     it " has correct length" $ 
-      length (neighbors :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
+      length (neighborsDefault :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
 
   describe "is a functor" $ do
     prop "fmap id = id" $ \arg ->
