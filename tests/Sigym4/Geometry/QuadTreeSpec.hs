@@ -8,6 +8,7 @@ module Sigym4.Geometry.QuadTreeSpec (main, spec) where
 import Control.Monad (when)
 import Data.Either (isRight)
 import Data.Proxy
+import Data.Foldable (toList)
 import Data.Functor.Identity (runIdentity)
 import Test.Hspec (Spec, hspec, describe, it)
 import Test.Hspec.QuickCheck (prop)
@@ -34,7 +35,6 @@ spec = do
   quadTreeSpec "V3" (Proxy :: Proxy V3)
   quadTreeSpec "V4" (Proxy :: Proxy V4)
   quadTreeSpec "V5" (Proxy :: Proxy (V 5))
-  quadTreeSpec "V6" (Proxy :: Proxy (V 6))
 
 
 quadTreeSpec
@@ -73,6 +73,19 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
       let RandomQT (qt,_,_) = arg :: RandomQT v
       in qtLevel qt <= Level 3 ==> -- else it takes too long
          qt == runIdentity (mapM return qt)
+
+  describe "is Foldable" $ do
+    prop "length is correct" $ \(Level l, ext::Extent v srid) ->
+      l <= 3 ==>
+        let gen = Node (\e -> return (e, gen))
+            Right qt = runIdentity (generate2 gen ext (Level l))
+        in length qt == (2 ^ dim (Proxy :: Proxy v)) ^ l
+
+    prop "length of toList is correct" $ \(Level l, ext::Extent v srid) ->
+      l <= 3 ==>
+        let gen = Node (\e -> return (e, gen))
+            Right qt = runIdentity (generate2 gen ext (Level l))
+        in length (toList qt) == (2 ^ dim (Proxy :: Proxy v)) ^ l
 
 
   describe "qtMinBox" $ do

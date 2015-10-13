@@ -79,41 +79,42 @@ data QuadTree (v :: * -> *) (srid :: Nat) a
   }
 
 instance VectorSpace v => Traversable (QuadTree v srid) where
+  {-# INLINE traverse #-}
   traverse f qt = QuadTree <$> go rootParent (qtRoot qt)
                            <*> pure (qtExtent qt)
                            <*> pure (qtLevel qt)
     where
-      go p QLeaf{qData=a}      = QLeaf <$> pure p <*> f a
-      go p QNode{qChildren=cs}
-        = let n = QNode p (runST (newArray sz undefChild >>= unsafeFreezeArray))
+      go p !QLeaf{qData=a}      = QLeaf <$> pure p <*> f a
+      go p !QNode{qChildren=cs}
+        = let n = QNode {qParent=p, qChildren=mkEmptyArr p}
               setChildren elems = runST $ do
+                -- we unsafely thaw children array and update it so we can
+                -- traverse in one pass. Else we would need to make another
+                -- traversal to to update qParents after children are created
                 cs' <- unsafeThawArray (qChildren n)
-                let loop !_ []     = return ()
+                let loop !_ []     = return n
                     loop !i (x:xs) = writeArray cs' i x >> loop (i+1) xs
                 loop 0 elems
-                return n
-          in fmap setChildren (traverse (\(!i) -> go n (indexArray cs i)) ixes)
-      sz         = numChildren (Proxy :: Proxy v)
-      ixes       = childIndices (Proxy :: Proxy v)
-      undefChild = error "traverse (QuadTree): Uninitialized child"
+          in fmap setChildren (traverse (go n . indexArray cs) (childIxes px))
+      -- initialize array with 't' to make sure it's not floated out and shared
+      mkEmptyArr t = runST (newArray (numChildren px) t >>= unsafeFreezeArray)
+      px = Proxy :: Proxy v
+
+instance VectorSpace v => Foldable (QuadTree v srid) where
+  foldr  f z = foldr  f z . qtRoot
+  foldl  f z = foldl  f z . qtRoot
+  foldl' f z = foldl' f z . qtRoot
 
 instance (VectorSpace v, NFData a) => NFData (QuadTree v srid a) where
   rnf (QuadTree r e l) = rnf r `seq` rnf e `seq` rnf l `seq` ()
 
 instance (VectorSpace v, Eq a) => Eq (QuadTree v srid a) where
-  (==) a b = qtExtent a    == qtExtent b
-          && qtLevel  a    == qtLevel b
-          && go (qtRoot a) (qtRoot b)
-    where
-      go (QLeaf _ a') (QLeaf _ b') = a' == b'
-      go (QNode _ a') (QNode _ b') = loop 0
-        where loop !i
-                | i < numChildren (Proxy :: Proxy v)
-                , indexArray a' i `go` indexArray b' i = loop (i+1)
-                | otherwise                            = True
-      go _            _            = False
+  (==) a b = qtExtent a == qtExtent b
+          && qtLevel  a == qtLevel b
+          && toList   a == toList b
 
 instance VectorSpace v => Functor (QuadTree v srid) where
+  {-# INLINE fmap#-}
   fmap f qt@QuadTree{qtRoot=root} = qt {qtRoot=go rootParent root}
     where
       go p QLeaf{qData=a} = QLeaf {qData=f a, qParent=p}
@@ -123,21 +124,22 @@ instance VectorSpace v => Functor (QuadTree v srid) where
               genChild = return . go n . indexArray children
           in n
 
-childIndices :: VectorSpace v => Proxy v -> [Int]
-childIndices p = enumFromTo 0 (numChildren p-1)
-{-# INLINE childIndices#-}
+childIxes :: VectorSpace v => Proxy v -> [Int]
+childIxes p = enumFromTo 0 (numChildren p-1)
+{-# INLINE childIxes#-}
 
 generateChildren
   :: forall v srid m a. (VectorSpace v, Monad m)
   => (Int -> m (QNode v srid a)) -> m (Array (QNode v srid a))
 generateChildren f = do
-  elems <- mapM f (childIndices (Proxy :: Proxy v))
+  elems <- mapM f (childIxes px)
   return $! runST $ do
-    cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
+    cs <- newArray (numChildren px) undefined
     let loop !_ []     = return ()
         loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
     loop 0 elems
     unsafeFreezeArray cs
+  where px = Proxy :: Proxy v
 {-# INLINE generateChildren #-}
 
 numChildren :: VectorSpace v => Proxy v -> Int
@@ -159,11 +161,6 @@ getChildAtLevel cs lv@(Level l) (LocCode c) = indexArray cs ix
     !m           =  maxValue lv
     go (!i,!s) v = (i+1, s + ((v .&. m) `rotate` i))
 {-# INLINE getChildAtLevel #-}
-
-instance VectorSpace v => Foldable (QuadTree v srid) where
-  foldMap f qt = foldMap f (qtRoot qt)
-  {-# INLINE foldMap #-}
-
 
 rootParent :: QNode v srid a
 rootParent = error "QuadTree: should not happen, tried to get root's parent"
@@ -193,14 +190,28 @@ instance (Show a, VectorSpace v) => Show (QNode v srid a) where
                              , show (toList n), " }"] :: [String])
 
 instance VectorSpace v => Foldable (QNode v srid) where
-  foldMap f QLeaf{qData=a}            = f a
-  foldMap f QNode{qChildren=children} = loop 0 mempty
+  {-# INLINE foldr #-}
+  foldr f z QLeaf{qData=a}      = f a z
+  foldr f z QNode{qChildren=cs} = loop (numChildren (Proxy :: Proxy v)-1) z
     where loop !i acc
-            | i < numChildren (Proxy :: Proxy v)
-            = loop (i+1) (acc `mappend` foldMap f (indexArray children i))
+            | i >= 0    = loop (i-1) (foldr f acc (indexArray cs i))
             | otherwise = acc
-  {-# INLINE foldMap #-}
 
+  {-# INLINE foldl #-}
+  foldl f z QLeaf{qData=a}      = f z a
+  foldl f z QNode{qChildren=cs} = loop 0 z
+    where loop !i acc
+            | i < n     = loop (i+1) (foldl f acc (indexArray cs i))
+            | otherwise = acc
+          !n = numChildren (Proxy :: Proxy v)
+
+  {-# INLINE foldl' #-}
+  foldl' f !z QLeaf{qData=a}      = f z a
+  foldl' f !z QNode{qChildren=cs} = loop 0 z
+    where loop !i !acc
+            | i < n     = loop (i+1) (foldl' f acc (indexArray cs i))
+            | otherwise = acc
+          !n = numChildren (Proxy :: Proxy v)
 
 data Node m v (srid::Nat) a
   = Leaf a
