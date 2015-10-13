@@ -86,15 +86,15 @@ instance VectorSpace v => Traversable (QuadTree v srid) where
       go p QLeaf{qData=a}      = QLeaf <$> pure p <*> f a
       go p QNode{qChildren=cs}
         = let n = QNode p (runST (newArray sz undefChild >>= unsafeFreezeArray))
-              update elems = runST $ do
+              setChildren elems = runST $ do
                 cs' <- unsafeThawArray (qChildren n)
                 let loop !_ []     = return ()
                     loop !i (x:xs) = writeArray cs' i x >> loop (i+1) xs
                 loop 0 elems
                 return n
-          in fmap update (traverse (go n . indexArray cs) indices)
+          in fmap setChildren (traverse (\(!i) -> go n (indexArray cs i)) ixes)
       sz         = numChildren (Proxy :: Proxy v)
-      indices    = childIndices (Proxy :: Proxy v)
+      ixes       = childIndices (Proxy :: Proxy v)
       undefChild = error "traverse (QuadTree): Uninitialized child"
 
 instance (VectorSpace v, NFData a) => NFData (QuadTree v srid a) where
@@ -124,7 +124,7 @@ instance VectorSpace v => Functor (QuadTree v srid) where
           in n
 
 childIndices :: VectorSpace v => Proxy v -> [Int]
-childIndices p = [0..(numChildren p-1)]
+childIndices p = enumFromTo 0 (numChildren p-1)
 {-# INLINE childIndices#-}
 
 generateChildren
