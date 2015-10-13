@@ -92,19 +92,18 @@ qtLocCode qt p
 calculateExtent
   :: VectorSpace v
   => QuadTree v srid a -> Level -> LocCode v -> Extent v 0
-calculateExtent qt (Level l) code = Extent lo hi
+calculateExtent qt l code = Extent lo hi
   where
     !(QtVertex lo) = qtLocCode2Vertex qt code
     !(QtVertex hi) = qtLocCode2Vertex qt code'
-    !code'         = LocCode (fmap (+cellSize) (unLocCode code))
-    !cellSize      = 1 `unsafeShiftL` l
+    !code'         = LocCode (fmap (+(maxValue l)) (unLocCode code))
 {-# INLINE calculateExtent #-}
 
 
 qtCellCode
   :: VectorSpace v => Level -> LocCode v -> LocCode v
-qtCellCode (Level l) (LocCode code) = LocCode (fmap (.&. mask) code)
-  where !mask = complement $! (1 `unsafeShiftL` l) - 1
+qtCellCode l (LocCode code) = LocCode (fmap (.&. mask) code)
+  where !mask = complement $! maxValue l - 1
 {-# INLINE qtCellCode #-}
 
 traverseToLevel
@@ -285,7 +284,7 @@ traceRay qt@QuadTree{..} from to
             origin' Same lo' _  = lo'
             origin' Down lo' _  = lo'
 
-        inRange v = all id (inRange' <$> ngPosition ng  <*> lo <*> hi <*> v)
+        inRange v = all id (fmap inRange' (ngPosition ng) <*> lo <*> hi <*> v)
           where
             inRange' Same lo' hi' = qtBetween  lo' hi'
             inRange' Down lo' _   = qtAlmostEq lo'
@@ -297,6 +296,7 @@ traceRay qt@QuadTree{..} from to
         !hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
 
 
+{-# INLINABLE traceRay #-}
 {-# SPECIALISE traceRay ::
       QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
 {-# SPECIALISE traceRay ::

@@ -130,10 +130,10 @@ getChild c = runIdentity . indexArrayM c . fromEnum
 getChildAtLevel
   :: VectorSpace v
   => Array (QNode v srid a) -> Level -> LocCode v -> QNode v srid a
-getChildAtLevel cs (Level l) (LocCode c) = indexArray cs ix
+getChildAtLevel cs lv@(Level l) (LocCode c) = indexArray cs ix
   where
     !ix          = snd (foldl' go (negate l,0) c)
-    !m           = 1 `unsafeShiftL` l
+    !m           =  maxValue lv
     go (!i,!s) v = (i+1, s + ((v .&. m) `rotate` i))
 {-# INLINE getChildAtLevel #-}
 
@@ -221,10 +221,10 @@ quadrantAtLevel (Level l) = Quadrant . fmap toHalf . unLocCode
 {-# INLINE quadrantAtLevel #-}
 
 setChildBits:: VectorSpace v => Level -> Quadrant v -> LocCode v -> LocCode v
-setChildBits (Level l) (Quadrant q) (LocCode code) 
+setChildBits l (Quadrant q) (LocCode code)
   = LocCode (liftA2 (.|.) code val)
   where
-    val = fmap (\c -> case c of {Second->bit l; First->0}) q
+    val = fmap (\c -> case c of {Second->maxValue l; First->0}) q
 {-# INLINE setChildBits #-}
 
 
@@ -413,7 +413,7 @@ grow build dir (QuadTree oldRoot ext oldLevel)
 
 
 maxValue :: Level -> Int
-maxValue (Level l) = bit l
+maxValue (Level l) = 1 `unsafeShiftL` l
 {-# INLINE maxValue #-}
 
 qtMinBox :: VectorSpace v => QuadTree v srid a -> Box v
