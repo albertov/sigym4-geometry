@@ -21,14 +21,17 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms (
 ) where
 
 import Control.Applicative (liftA2, liftA3)
-import Control.Monad (liftM)
-import Data.Maybe (isJust, fromMaybe, catMaybes)
+import Data.Strict.Maybe (Maybe(..), isJust, isNothing, fromMaybe, fromJust)
+import Data.Strict.Tuple (Pair ((:!:)))
 import Data.Proxy (Proxy(..))
 import Data.Bits
 
 import Sigym4.Geometry
 import Sigym4.Geometry.Algorithms
 import Sigym4.Geometry.QuadTree.Internal.Types
+
+import Prelude hiding (Maybe(..), maybe)
+import qualified Prelude as P
 
 
 -- Translates a Point's coordinates to a Vertex in the [0,1) Extent. Makes sure
@@ -37,10 +40,10 @@ import Sigym4.Geometry.QuadTree.Internal.Types
 qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
 qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
   = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
-  where ratio   = (v/(hi-lo) - (lo/(hi-lo)))
-        trunc = (fromIntegral :: Int -> Double) . truncate
-        boxBits = qtEpsLevel - nearZeroBits - 1
-        absMax  = fromIntegral (maxValue (Level boxBits))
+  where !ratio   = (v/(hi-lo) - (lo/(hi-lo)))
+        !trunc   = (fromIntegral :: Int -> Double) . truncate
+        !boxBits = qtEpsLevel - nearZeroBits - 1
+        !absMax  = fromIntegral (maxValue (Level boxBits))
 {-# INLINE qtBackward #-}
 
 qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
@@ -50,8 +53,8 @@ qtForward QuadTree{qtExtent=Extent lo hi} (QtVertex v)
 
 vertex2LocCode
   :: VectorSpace v => Level -> QtVertex v -> LocCode v
-vertex2LocCode l = LocCode . fmap (truncate . (*m)) . unQtVertex
-  where m = fromIntegral (maxValue l)
+vertex2LocCode l (QtVertex v)  = LocCode (fmap (truncate . (*m)) v)
+  where !m = fromIntegral (maxValue l)
 {-# INLINE vertex2LocCode #-}
 
 qtVertex2LocCode
@@ -61,8 +64,8 @@ qtVertex2LocCode qt = vertex2LocCode (qtLevel qt)
 
 locCode2Vertex
   :: VectorSpace v => Level -> LocCode v -> QtVertex v
-locCode2Vertex l = QtVertex  . fmap ((/m) . fromIntegral) . unLocCode
-  where m = fromIntegral (maxValue l)
+locCode2Vertex l (LocCode c) = QtVertex (fmap ((/m) . fromIntegral) c)
+  where !m = fromIntegral (maxValue l)
 {-# INLINE locCode2Vertex #-}
 
 qtLocCode2Vertex
@@ -82,38 +85,26 @@ qtLocCode qt p
   | all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
   | otherwise                               = Nothing
   where
-    code = qtVertex2LocCode qt p'
-    p'   = qtBackward qt p
+    !p'   = qtBackward qt p
+    !code = qtVertex2LocCode qt p'
 {-# INLINE qtLocCode #-}
-
-calculateForwardExtent
-  :: VectorSpace v
-  => QuadTree v srid a -> Level -> LocCode v -> Extent v srid
-calculateForwardExtent qt level code = Extent lo hi
-  where
-    Extent lo' hi' = calculateExtent qt level code
-    Point lo       = qtForward qt (QtVertex lo')
-    Point hi       = qtForward qt (QtVertex hi')
-{-# INLINE calculateForwardExtent #-}
 
 calculateExtent
   :: VectorSpace v
   => QuadTree v srid a -> Level -> LocCode v -> Extent v 0
-calculateExtent qt level code = Extent lo hi
+calculateExtent qt (Level l) code = Extent lo hi
   where
-    QtVertex lo = qtLocCode2Vertex qt code
-    QtVertex hi = qtLocCode2Vertex qt code'
-    code'       = LocCode (fmap (+cellSize) (unLocCode code))
-    cellSize    = bit (unLevel level)
+    !(QtVertex lo) = qtLocCode2Vertex qt code
+    !(QtVertex hi) = qtLocCode2Vertex qt code'
+    !code'         = LocCode (fmap (+cellSize) (unLocCode code))
+    !cellSize      = 1 `unsafeShiftL` l
 {-# INLINE calculateExtent #-}
 
 
 qtCellCode
   :: VectorSpace v => Level -> LocCode v -> LocCode v
-qtCellCode (Level l) code
-  | l == 0     = code
-  | otherwise  = LocCode (fmap (.&. mask) (unLocCode code))
-  where mask = complement (bit l - 1)
+qtCellCode (Level l) (LocCode code) = LocCode (fmap (.&. mask) code)
+  where !mask = complement $! (1 `unsafeShiftL` l) - 1
 {-# INLINE qtCellCode #-}
 
 traverseToLevel
@@ -142,13 +133,13 @@ qtTraverseToLevel QuadTree{..}
 
 lookupByPoint
   :: VectorSpace v
-  => QuadTree v srid a -> Point v srid -> Maybe a
+  => QuadTree v srid a -> Point v srid -> P.Maybe a
 lookupByPoint qt p
   = case qtLocCode qt p of
       Just c ->
         let TNode{tNode=node} = qtTraverseToLevel qt minBound c
-        in Just (leafData node)
-      Nothing -> Nothing
+        in P.Just (leafData node)
+      Nothing -> P.Nothing
 {-# INLINE lookupByPoint #-}
 
 
@@ -185,8 +176,8 @@ quadrantsTouching pos
 traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Int), Num (v Int))
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
-  | isJust (mCodeFrom >> mCodeTo)  = go [tNodeFrom] maxIterations
-  | otherwise                      = []
+  | isJust mCodeFrom && isJust mCodeTo = go [tNodeFrom] maxIterations
+  | otherwise                          = []
   where
     -- maxIterations makes sure we don't end up in an infinite loop if there
     -- is a problem with the implementation. We absolutely shouldn't cross
@@ -220,8 +211,10 @@ traceRay qt@QuadTree{..} from to
         -- The next cell candidates. the "fuzzy" ones first or we risk
         -- sticking into a loop. We also try non-fuzzy intersections in case
         -- the intersection is very near the extent corners and we've missed it
-        next       = catMaybes $ map (>>=mkNext) $
-                       getIntersections fuzzyExt ++ getIntersections cellExt
+        next       = catMaybes
+                   . map mkNext
+                   . catMaybes
+                   $ getIntersections fuzzyExt ++ getIntersections cellExt
 
         cellCodeTo = qtCellCode (tLevel cur) codeTo 
 
@@ -245,39 +238,40 @@ traceRay qt@QuadTree{..} from to
         -- If the intersection is very close to our destination the we calculate
         -- it normally. Else we add our cell's width to our cell code or
         -- subtract 1 to it
-        mkNext !(!isec, pos) = do
-          nCode <- if all qtNearZero (unQtVertex isec - unQtVertex toV)
-                     then Just codeTo
-                     else liftM LocCode $ sequence $ liftA3
-                               mkNextCode pos
-                                          (unLocCode (qtVertex2LocCode qt isec))
+        mkNext !(isec :!: pos)
+          | all qtNearZero (unQtVertex isec - unQtVertex toV)
+          = Just (traverseViaAncestor qt cur minBound codeTo)
+          | any isNothing mNext = Nothing
+          | otherwise = Just (traverseViaAncestor qt cur minBound next')
+          where
+            mNext = liftA3 mkNextCode pos (unLocCode (qtVertex2LocCode qt isec))
                                           (unLocCode (tCellCode cur))
-          let !ancestor = traverseToCommonAncestor qt cur nCode
-          return (traverseToLevel ancestor minBound nCode)
+            next' = LocCode (fmap fromJust mNext)
 
-        mkNextCode Down _ c
-          | c > 0                           = Just (c - 1)
-          | otherwise                       = Nothing
-        mkNextCode Up   _ c
-          | c + cellSize < maxValue qtLevel = Just (c + cellSize)
-          | otherwise                       = Nothing
-          where cellSize = maxValue (tLevel cur)
-        mkNextCode Same i _                 = Just i
+            cellSize = maxValue (tLevel cur)
+
+            mkNextCode Same i _                 = Just i
+            mkNextCode Down _ c
+              | c > 0                           = Just (c - 1)
+              | otherwise                       = Nothing
+            mkNextCode Up   _ c
+              | c + cellSize < maxValue qtLevel = Just (c + cellSize)
+              | otherwise                       = Nothing
 
     fromV     = qtBackward qt from
     toV       = qtBackward qt to
     lineDir   = toV - fromV
     mCodeTo   = qtLocCode qt to
     mCodeFrom = qtLocCode qt from
-    codeTo    = fromMaybe (error "traceRay: invalid use of codeTo")   mCodeTo
-    codeFrom  = fromMaybe (error "traceRay: invalid use of codeFrom") mCodeFrom
+    codeTo    = fromJust mCodeTo
+    codeFrom  = fromJust mCodeFrom
     tNodeFrom = qtTraverseToLevel qt minBound codeFrom
 
     -- Calculates the QtVertex of the possible intersection with a given
     -- neighbor. It is a valid intersection only if it is within the edge's
     -- bounds and hasn't overshooted our destination.
     neighborIntersection (Extent lo hi) ng
-      | isValid   = Just (QtVertex vertex, ngPosition ng)
+      | isValid   = Just (QtVertex vertex :!: ngPosition ng)
       | otherwise = Nothing
       where
         isValid = inRange vertex && inRayBounds vertex
@@ -299,8 +293,9 @@ traceRay qt@QuadTree{..} from to
 
     inRayBounds v = all id (liftA3 qtBetweenC lo hi v)
       where
-        lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
-        hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
+        !lo = liftA2 min (unQtVertex fromV) (unQtVertex toV)
+        !hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
+
 
 {-# SPECIALISE traceRay ::
       QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
@@ -321,6 +316,13 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
     checkComp Up   from' to' = to'   > from'
 {-# INLINE checkNeighbor #-}
     
+traverseViaAncestor
+  :: VectorSpace v
+  => QuadTree v srid a -> TraversedNode v srid a -> Level -> LocCode v
+  -> TraversedNode v srid a
+traverseViaAncestor qt node level code
+  = traverseToLevel (traverseToCommonAncestor qt node code) level code
+{-# INLINE traverseViaAncestor #-}
 
 traverseToCommonAncestor
   :: VectorSpace v
@@ -347,6 +349,9 @@ commonAncestorLevel (LocCode a) (LocCode b)
     diff             = liftA2 xor a b
 {-# INLINE commonAncestorLevel #-}
 
+catMaybes :: [Maybe a] -> [a]
+catMaybes = map fromJust . filter isJust
+{-# INLINE catMaybes #-}
 
 
 neighbors :: HasHyperplanes v => Neighbors v
@@ -355,18 +360,18 @@ neighbors = neighborsDefault
 
 neighborsV2 :: Neighbors V2
 neighborsV2 = $$(mkNeighbors)
-{-# INLINE[2] neighborsV2 #-}
-{-# RULES "neighbors/V2"[2] neighbors = neighborsV2 #-}
+{-# INLINE neighborsV2 #-}
+{-# RULES "neighbors/V2" neighbors = neighborsV2 #-}
 
 neighborsV3 :: Neighbors V3
 neighborsV3 = $$(mkNeighbors)
-{-# INLINE[2] neighborsV3 #-}
-{-# RULES "neighbors/V3"[2] neighbors = neighborsV3 #-}
+{-# INLINE neighborsV3 #-}
+{-# RULES "neighbors/V3" neighbors = neighborsV3 #-}
 
 neighborsV4 :: Neighbors V4
 neighborsV4 = $$(mkNeighbors)
-{-# INLINE[2] neighborsV4 #-}
-{-# RULES "neighbors/V4"[2] neighbors = neighborsV4 #-}
+{-# INLINE neighborsV4 #-}
+{-# RULES "neighbors/V4" neighbors = neighborsV4 #-}
 
 
 qtEpsLevel :: Int

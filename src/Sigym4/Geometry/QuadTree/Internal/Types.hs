@@ -314,7 +314,7 @@ liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
   where
     planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
 
-data TraversedNode v srid a
+data TraversedNode (v :: * -> *) (srid :: Nat) a
   = TNode
     { tLevel    :: {-# UNPACK #-} !Level
     , tNode     :: !(QNode v srid a)
