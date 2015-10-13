@@ -68,6 +68,12 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
       in qtLevel qt <= Level 3 ==> -- else it takes too long
          fmap (maximum . eSize) qt == fmap maximum (fmap eSize qt)
 
+  describe "is Traversable" $ do
+    prop "mapM return = id" $ \arg ->
+      let RandomQT (qt,_,_) = arg :: RandomQT v
+      in qtLevel qt <= Level 3 ==> -- else it takes too long
+         qt == runIdentity (mapM return qt)
+
 
   describe "qtMinBox" $ do
     

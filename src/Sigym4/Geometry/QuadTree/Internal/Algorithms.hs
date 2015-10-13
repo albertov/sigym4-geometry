@@ -21,7 +21,7 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms (
 ) where
 
 import Control.Applicative (liftA2, liftA3)
-import Data.Strict.Maybe (Maybe(..), isJust, isNothing, fromMaybe, fromJust)
+import Data.Strict.Maybe (Maybe(..), isJust, isNothing, fromJust)
 import Data.Strict.Tuple (Pair ((:!:)))
 import Data.Proxy (Proxy(..))
 import Data.Bits

@@ -108,7 +108,7 @@ instance VectorSpace v => Arbitrary (DelicateQT v) where
                       | otherwise            = error "calculating effectiveMax"
                   where v = hi - calculateMinBox (qtExtent qt) (Level l)
     p1 <- elements candidates
-    p2 <- elements (filter (/=p1) candidates)
+    p2 <- elements candidates
     return (DelicateQT (qt, p1, p2))
 
 instance VectorSpace v => Arbitrary (ProbablyInvalidPointsQT v) where

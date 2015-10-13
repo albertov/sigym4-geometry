@@ -78,6 +78,25 @@ data QuadTree (v :: * -> *) (srid :: Nat) a
     , qtLevel  :: {-# UNPACK #-} !Level
   }
 
+instance VectorSpace v => Traversable (QuadTree v srid) where
+  traverse f qt = QuadTree <$> go rootParent (qtRoot qt)
+                           <*> pure (qtExtent qt)
+                           <*> pure (qtLevel qt)
+    where
+      go p QLeaf{qData=a}      = QLeaf <$> pure p <*> f a
+      go p QNode{qChildren=cs}
+        = let n = QNode p (runST (newArray sz undefChild >>= unsafeFreezeArray))
+              update elems = runST $ do
+                cs' <- unsafeThawArray (qChildren n)
+                let loop !_ []     = return ()
+                    loop !i (x:xs) = writeArray cs' i x >> loop (i+1) xs
+                loop 0 elems
+                return n
+          in fmap update (traverse (go n . indexArray cs) indices)
+      sz         = numChildren (Proxy :: Proxy v)
+      indices    = childIndices (Proxy :: Proxy v)
+      undefChild = error "traverse (QuadTree): Uninitialized child"
+
 instance (VectorSpace v, NFData a) => NFData (QuadTree v srid a) where
   rnf (QuadTree r e l) = rnf r `seq` rnf e `seq` rnf l `seq` ()
 
@@ -104,17 +123,22 @@ instance VectorSpace v => Functor (QuadTree v srid) where
               genChild = return . go n . indexArray children
           in n
 
+childIndices :: VectorSpace v => Proxy v -> [Int]
+childIndices p = [0..(numChildren p-1)]
+{-# INLINE childIndices#-}
+
 generateChildren
-  :: forall v srid m a. (VectorSpace v, Monad m)
-  => (Int -> m (QNode v srid a)) -> m (Array (QNode v srid a))
-generateChildren f = do
-  elems <- mapM f [0..(numChildren (Proxy :: Proxy v))-1]
-  return $! runST $ do
-    cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
-    let loop !_ []     = return ()
-        loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
-    loop 0 elems
-    unsafeFreezeArray cs
+  :: forall v srid f a. (VectorSpace v, Applicative f)
+  => (Int -> f (QNode v srid a)) -> f (Array (QNode v srid a))
+generateChildren f
+  = fmap mkArray (traverse f (childIndices (Proxy :: Proxy v)))
+  where
+    mkArray elems = runST $ do
+      cs <- newArray (numChildren (Proxy :: Proxy v)) undefined
+      let loop !_ []     = return ()
+          loop !i (x:xs) = writeArray cs i x >> loop (i+1) xs
+      loop 0 elems
+      unsafeFreezeArray cs
 {-# INLINE generateChildren #-}
 
 numChildren :: VectorSpace v => Proxy v -> Int
