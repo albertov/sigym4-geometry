@@ -84,7 +84,7 @@ instance VectorSpace v => Traversable (QuadTree v srid) where
                            <*> pure (qtExtent qt)
                            <*> pure (qtLevel qt)
     where
-      go p !QLeaf{qData=a}      = QLeaf <$> pure p <*> f a
+      go p !QLeaf{qData=a} = QLeaf <$> pure p <*> f a
       go p !QNode{qChildren=cs}
         = let n = QNode {qParent=p, qChildren=mkEmptyArr p}
               setChildren elems = runST $ do
@@ -125,7 +125,7 @@ instance VectorSpace v => Functor (QuadTree v srid) where
           in n
 
 childIxes :: VectorSpace v => Proxy v -> [Int]
-childIxes p = enumFromTo 0 (numChildren p-1)
+childIxes p = enumFromTo 0 (numChildren p - 1)
 {-# INLINE childIxes#-}
 
 generateChildren
