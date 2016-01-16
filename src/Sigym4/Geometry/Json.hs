@@ -224,14 +224,14 @@ class ToFeatureProperties o where
 class FromFeatureProperties o where
   fromFeatureProperties :: Object -> Parser o
 
-instance (ToJSON (Geometry v srid), ToFeatureProperties d)
-  => ToJSON (Feature v srid d) where
+instance (ToJSON (g v srid), ToFeatureProperties d)
+  => ToJSON (FeatureT g v srid d) where
     toJSON (Feature g ps) =
       typedObject "Feature" [ "geometry"   .= g
                             , "properties" .= toFeatureProperties ps ]
 
-instance (FromJSON (Geometry v srid), FromFeatureProperties d)
-  => FromJSON (Feature v srid d)
+instance (FromJSON (g v srid), FromFeatureProperties d)
+  => FromJSON (FeatureT g v srid d)
   where
     parseJSON (Object o) = do
       props <- case HM.lookup "properties" o of
@@ -242,14 +242,14 @@ instance (FromJSON (Geometry v srid), FromFeatureProperties d)
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToFeatureProperties d, ToJSON (Geometry v srid))
-  => ToJSON (FeatureCollection v srid d)
+instance (ToFeatureProperties d, ToJSON (g v srid))
+  => ToJSON (FeatureCollectionT g v srid d)
   where
     toJSON (FeatureCollection fs)
       = typedObject "FeatureCollection" ["features" .= fs]
 
-instance (FromFeatureProperties d, FromJSON (Geometry v srid))
-  => FromJSON (FeatureCollection v srid d)
+instance (FromFeatureProperties d, FromJSON (g v srid))
+  => FromJSON (FeatureCollectionT g v srid d)
   where
     parseJSON (Object o) = do
       FeatureCollection <$> o.: "features"
