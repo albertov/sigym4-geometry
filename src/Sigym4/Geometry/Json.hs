@@ -27,39 +27,61 @@ jsonDecode :: (VectorSpace v)
 jsonDecode = eitherDecode
 {-# INLINE jsonDecode #-}
 
-instance VectorSpace v => ToJSON (Geometry v srid) where
-    toJSON (GeoPoint g)
-      = typedObject "Point"
-        ["coordinates" .= pointCoordinates g]
-    toJSON (GeoMultiPoint (MultiPoint g))
-      = typedObject "MultiPoint"
-        ["coordinates" .= V.map pointCoordinates g]
-    toJSON (GeoLineString g)
-      = typedObject "LineString"
-        ["coordinates" .= lineStringCoordinates g]
-    toJSON (GeoMultiLineString (MultiLineString g))
-      = typedObject "MultiLineString"
+instance VectorSpace v => ToJSON (Point v srid) where
+    toJSON g = typedObject "Point" ["coordinates" .= pointCoordinates g]
+
+instance VectorSpace v => ToJSON (MultiPoint v srid) where
+    toJSON (MultiPoint g) =
+      typedObject "MultiPoint" ["coordinates" .= V.map pointCoordinates g]
+
+instance VectorSpace v => ToJSON (LineString v srid) where
+    toJSON g =
+      typedObject "LineString" ["coordinates" .= lineStringCoordinates g]
+
+instance VectorSpace v => ToJSON (MultiLineString v srid) where
+    toJSON (MultiLineString g) =
+      typedObject "MultiLineString"
         ["coordinates" .= V.map lineStringCoordinates g]
-    toJSON (GeoPolygon g)
-      = typedObject "Polygon"
-        ["coordinates" .= polygonCoordinates g]
-    toJSON (GeoMultiPolygon (MultiPolygon g))
+
+instance VectorSpace v => ToJSON (Polygon v srid) where
+    toJSON g =
+      typedObject "Polygon" ["coordinates" .= polygonCoordinates g]
+
+instance VectorSpace v => ToJSON (MultiPolygon v srid) where
+    toJSON (MultiPolygon g)
       = typedObject "MultiPolygon"
         ["coordinates" .= V.map polygonCoordinates g]
-    -- GeoJson spec does not define Triangle, TIN or PolyhedralSurface but we
-    -- define them similarily to linering and multipolygons
-    toJSON (GeoTriangle g)
-      = typedObject "Triangle"
-        ["coordinates" .= triangleCoordinates g]
-    toJSON (GeoPolyhedralSurface (PolyhedralSurface g))
+
+instance VectorSpace v => ToJSON (Triangle v srid) where
+    toJSON g = typedObject "Triangle" ["coordinates" .= triangleCoordinates g]
+
+instance VectorSpace v => ToJSON (PolyhedralSurface v srid) where
+    toJSON (PolyhedralSurface g)
       = typedObject "PolyhedralSurface"
         ["coordinates" .= V.map polygonCoordinates g]
-    toJSON (GeoTIN (TIN g))
+
+instance VectorSpace v => ToJSON (TIN v srid) where
+    toJSON (TIN g)
       = typedObject "TIN"
         ["coordinates" .= V.map triangleCoordinates (V.convert g)]
-    toJSON (GeoCollection (GeometryCollection g))
-      = typedObject "GeometryCollection"
-        ["geometries" .= g]
+
+instance VectorSpace v => ToJSON (GeometryCollection v srid) where
+    toJSON (GeometryCollection g) =
+      typedObject "GeometryCollection" ["geometries" .= g]
+
+instance VectorSpace v => ToJSON (Geometry v srid) where
+    toJSON (GeoPoint g)             = toJSON g
+    toJSON (GeoMultiPoint g)        = toJSON g
+    toJSON (GeoLineString g)        = toJSON g
+    toJSON (GeoMultiLineString g)   = toJSON g
+    toJSON (GeoPolygon g)           = toJSON g
+    toJSON (GeoMultiPolygon g)      = toJSON g
+    -- GeoJson spec does not define Triangle, TIN or PolyhedralSurface but we
+    -- define them similarily to linering and multipolygons
+    toJSON (GeoTriangle g)          = toJSON g
+    toJSON (GeoPolyhedralSurface g) = toJSON g
+    toJSON (GeoTIN g)               = toJSON g
+    toJSON (GeoCollection g)        = toJSON g
     {-# INLINABLE toJSON  #-}
 
 parsePoint :: VectorSpace v => [Double] -> Parser (Point v srid)
@@ -137,7 +159,7 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
     {-# INLINABLE parseJSON  #-}
 
-        
+
 
 instance (ToJSON (Geometry v srid), ToJSON d) => ToJSON (Feature v srid d) where
     toJSON (Feature g ps) = typedObject "Feature" ["geometry"    .= g
