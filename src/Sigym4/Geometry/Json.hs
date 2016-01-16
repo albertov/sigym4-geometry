@@ -2,25 +2,51 @@
 {-# LANGUAGE FlexibleContexts
            , FlexibleInstances
            , ScopedTypeVariables
+           , KindSignatures
+           , DataKinds
            , OverloadedStrings
            #-}
 module Sigym4.Geometry.Json (
     jsonEncode
   , jsonDecode
+  , RootObject (..)
+  , FromFeatureProperties (..)
+  , ToFeatureProperties (..)
   ) where
 
 import Data.Aeson
+import Data.Proxy (Proxy(Proxy))
 import Data.Text (Text, unpack)
 import Data.Aeson.Types (Parser, Pair)
 import Sigym4.Geometry.Types
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
+import qualified Data.HashMap.Strict as HM
 
-jsonEncode :: (VectorSpace v)
-           => Geometry v srid -> ByteString
-jsonEncode = encode
+jsonEncode
+  :: forall o v srid. (VectorSpace v, KnownNat srid, ToJSON (o v srid))
+  => o v srid -> ByteString
+jsonEncode o = encode (RootObject o)
 {-# INLINE jsonEncode #-}
+
+newtype RootObject o = RootObject o
+
+instance (KnownNat s, VectorSpace v, ToJSON (o v s))
+  => ToJSON (RootObject (o v s)) where
+  toJSON (RootObject o) =
+    case toJSON o of
+      Object hm -> Object (HM.insert "crs" crsObject hm)
+      z         -> z
+    where
+      crsObject =
+        object [
+            "type"       .= ("name" :: Text)
+          , "properties" .=  object [
+              "name" .=
+                ("urn:ogc:def:crs:EPSG:" ++ show (gSrid (Proxy::Proxy s)))
+            ]
+          ]
 
 jsonDecode :: (VectorSpace v)
            => ByteString -> Either String (Geometry v srid)
@@ -65,11 +91,13 @@ instance VectorSpace v => ToJSON (TIN v srid) where
       = typedObject "TIN"
         ["coordinates" .= V.map triangleCoordinates (V.convert g)]
 
-instance VectorSpace v => ToJSON (GeometryCollection v srid) where
+instance (KnownNat srid, VectorSpace v)
+  => ToJSON (GeometryCollection v srid) where
     toJSON (GeometryCollection g) =
       typedObject "GeometryCollection" ["geometries" .= g]
 
-instance VectorSpace v => ToJSON (Geometry v srid) where
+
+instance (KnownNat srid, VectorSpace v) => ToJSON (Geometry v srid) where
     toJSON (GeoPoint g)             = toJSON g
     toJSON (GeoMultiPoint g)        = toJSON g
     toJSON (GeoLineString g)        = toJSON g
@@ -123,66 +151,106 @@ coordinates o = o .: "coordinates"
 typedObject :: Text -> [Pair] -> Value
 typedObject k = object . ((:) ("type" .= k))
 
+instance VectorSpace v => FromJSON (Point v srid) where
+    parseJSON (Object o) = coordinates o >>= parsePoint
+    parseJSON _ = fail "parseJSON(Point): Expected an object"
 
+instance VectorSpace v => FromJSON (MultiPoint v srid) where
+    parseJSON (Object o) = coordinates o >>= fmap MultiPoint . parsePoints
+    parseJSON _ = fail "parseJSON(MultiPoint): Expected an object"
 
+instance VectorSpace v => FromJSON (LineString v srid) where
+    parseJSON (Object o) = coordinates o >>= parseLineString
+    parseJSON _ = fail "parseJSON(LineString): Expected an object"
+
+instance VectorSpace v => FromJSON (MultiLineString v srid) where
+    parseJSON (Object o) =
+      coordinates o >>= fmap MultiLineString . V.mapM parseLineString
+    parseJSON _ = fail "parseJSON(MultiLineString): Expected an object"
+
+instance VectorSpace v => FromJSON (Polygon v srid) where
+    parseJSON (Object o) = coordinates o >>= parsePolygon
+    parseJSON _ = fail "parseJSON(Polygon): Expected an object"
+
+instance VectorSpace v => FromJSON (MultiPolygon v srid) where
+    parseJSON (Object o) =
+      coordinates o >>= fmap MultiPolygon . V.mapM parsePolygon
+    parseJSON _ = fail "parseJSON(MultiPolygon): Expected an object"
+
+instance VectorSpace v => FromJSON (Triangle v srid) where
+    parseJSON (Object o) = coordinates o >>= parseTriangle
+    parseJSON _ = fail "parseJSON(Triangle): Expected an object"
+
+instance VectorSpace v => FromJSON (PolyhedralSurface v srid) where
+    parseJSON (Object o) =
+      coordinates o >>= fmap PolyhedralSurface . V.mapM parsePolygon
+    parseJSON _ = fail "parseJSON(PolyhedralSurface): Expected an object"
+
+instance VectorSpace v => FromJSON (TIN v srid) where
+    parseJSON (Object o) =
+      coordinates o >>= fmap (TIN . U.convert) . V.mapM parseTriangle
+    parseJSON _ = fail "parseJSON(TIN): Expected an object"
+
+instance VectorSpace v => FromJSON (GeometryCollection v srid) where
+    parseJSON (Object o) = fmap GeometryCollection (o .: "geometries")
+    parseJSON _ = fail "parseJSON(GeometryCollection): Expected an object"
 
 instance VectorSpace v => FromJSON (Geometry v srid) where
-    parseJSON (Object o) = do
+    parseJSON v@(Object o) = do
         typ <- o .: "type"
         case typ of
-            "Point" ->
-                coordinates o >>= fmap GeoPoint . parsePoint :: Parser (Geometry v srid)
-            "MultiPoint" ->
-                coordinates o >>= fmap (GeoMultiPoint . MultiPoint)
-                                . parsePoints
-            "LineString" ->
-                coordinates o >>= fmap GeoLineString . parseLineString
-            "MultiLineString" ->
-                coordinates o >>= fmap (GeoMultiLineString . MultiLineString)
-                                . V.mapM parseLineString
-            "Polygon" ->
-                coordinates o >>= fmap GeoPolygon . parsePolygon
-            "MultiPolygon" ->
-                coordinates o >>= fmap (GeoMultiPolygon . MultiPolygon)
-                                . V.mapM parsePolygon
-            "Triangle" ->
-                coordinates o >>= fmap GeoTriangle . parseTriangle
-            "PolyhedralSurface" ->
-                coordinates o >>= fmap (GeoPolyhedralSurface. PolyhedralSurface)
-                                . V.mapM parsePolygon
-            "TIN" ->
-                coordinates o >>= fmap (GeoTIN . TIN . U.convert)
-                           . V.mapM parseTriangle
-            "GeometryCollection" ->
-                fmap (GeoCollection . GeometryCollection) $ o .: "geometries"
-            _ -> fail $ "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
+            "Point"              -> parse GeoPoint
+            "MultiPoint"         -> parse GeoMultiPoint
+            "LineString"         -> parse GeoLineString
+            "MultiLineString"    -> parse GeoMultiLineString
+            "Polygon"            -> parse GeoPolygon
+            "MultiPolygon"       -> parse GeoMultiPolygon
+            "Triangle"           -> parse GeoTriangle
+            "PolyhedralSurface"  -> parse GeoPolyhedralSurface
+            "TIN"                -> parse GeoTIN
+            "GeometryCollection" -> parse GeoCollection
+            _ -> fail $
+              "parseJSON(Geometry): Invalid geometry type: " ++ unpack typ
+      where
+        parse :: FromJSON a => (a -> b) -> Parser b
+        parse c = fmap c (parseJSON v)
     parseJSON _ = fail "parseJSON(Geometry): Expected an object"
     {-# INLINABLE parseJSON  #-}
 
 
+class ToFeatureProperties o where
+  toFeatureProperties :: o -> Object
 
-instance (ToJSON (Geometry v srid), ToJSON d) => ToJSON (Feature v srid d) where
-    toJSON (Feature g ps) = typedObject "Feature" ["geometry"    .= g
-                                                  , "properties" .= ps
-                                                  ]
-instance (FromJSON (Geometry v srid), FromJSON d) => FromJSON (Feature v srid d)
+class FromFeatureProperties o where
+  fromFeatureProperties :: Object -> Parser o
+
+instance (ToJSON (Geometry v srid), ToFeatureProperties d)
+  => ToJSON (Feature v srid d) where
+    toJSON (Feature g ps) =
+      typedObject "Feature" [ "geometry"   .= g
+                            , "properties" .= toFeatureProperties ps ]
+
+instance (FromJSON (Geometry v srid), FromFeatureProperties d)
+  => FromJSON (Feature v srid d)
   where
-    parseJSON (Object o) = Feature <$> o.: "geometry" <*> o.:"properties"
+    parseJSON (Object o) = do
+      props <- case HM.lookup "properties" o of
+        Just (Object p) -> fromFeatureProperties p
+        Just _            -> fail "properties field is not an object"
+        Nothing           -> fail "properties key not present"
+      Feature <$> o .: "geometry" <*> pure props
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToJSON d, ToJSON (Geometry v srid))
+instance (ToFeatureProperties d, ToJSON (Geometry v srid))
   => ToJSON (FeatureCollection v srid d)
   where
     toJSON (FeatureCollection fs)
       = typedObject "FeatureCollection" ["features" .= fs]
 
-instance (FromJSON d, FromJSON (Geometry v srid))
+instance (FromFeatureProperties d, FromJSON (Geometry v srid))
   => FromJSON (FeatureCollection v srid d)
   where
     parseJSON (Object o) = do
-        typ <- o .:"type"
-        if typ == "FeatureCollection"
-            then FeatureCollection <$> o.: "features"
-            else fail $ "parseJSON(FeatureCollection): type mismatch: " ++ typ
+      FeatureCollection <$> o.: "features"
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"
