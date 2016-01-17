@@ -113,7 +113,8 @@ module Sigym4.Geometry.Types (
 ) where
 
 import Prelude hiding (product)
-import Control.Lens
+import Control.Lens hiding (coerce)
+import Data.Coerce (coerce)
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
@@ -487,14 +488,14 @@ class HasVertex o a | o->a where
   vertex :: Lens' o a
 
 instance HasVertex (Point v srid) (Vertex v) where
-  vertex = lens _pointVertex (\p v -> p { _pointVertex = v })
+  vertex = lens coerce (const coerce)
   {-# INLINE vertex #-}
 
 
 derivingUnbox "Point"
     [t| forall v srid. VectorSpace v => Point v srid -> Vertex v |]
-    [| \(Point v) -> v |]
-    [| \v -> Point v|]
+    [| coerce |]
+    [| coerce |]
 
 derivingUnbox "Extent"
     [t| forall v srid. VectorSpace v => Extent v srid -> (Vertex v,Vertex v) |]
@@ -503,16 +504,16 @@ derivingUnbox "Extent"
 
 derivingUnbox "Pixel"
     [t| forall v. VectorSpace v => Pixel v -> Vertex v |]
-    [| \(Pixel v) -> v |]
-    [| \v -> Pixel v|]
+    [| coerce |]
+    [| coerce |]
 
 derivingUnbox "Offset"
     [t| forall t. Offset (t :: OffsetType) -> Int |]
-    [| \(Offset o) -> o |]
-    [| \o -> Offset o|]
+    [| coerce |]
+    [| coerce |]
 
 newtype MultiPoint v srid = MultiPoint {
-    _multiPointPoints :: U.Vector (Point v srid) --FIXME to Unboxed
+    _multiPointPoints :: U.Vector (Point v srid)
 } deriving (Eq, Show)
 makeFields ''MultiPoint
 
@@ -551,8 +552,8 @@ derivingUnbox "Triangle"
     [| \(a, b, c) -> Triangle a b c|]
 
 data Polygon v srid = Polygon {
-    _polygonOuterRing  :: LinearRing v srid
-  , _polygonInnerRings :: V.Vector (LinearRing v srid)
+    _polygonOuterRing  :: !(LinearRing v srid)
+  , _polygonInnerRings :: !(V.Vector (LinearRing v srid))
 } deriving (Eq, Show)
 makeFields ''Polygon
 
@@ -723,9 +724,9 @@ instance (NFData d, NFData (g v srid)) => NFData (FeatureT g v srid d) where
 
 type Feature = FeatureT Geometry
 
-derivingUnbox "PointFeature"
-    [t| forall v srid a. (VectorSpace v, U.Unbox a)
-        => FeatureT Point v srid a -> (Point v srid, a) |]
+derivingUnbox "UnboxFeature"
+    [t| forall g v srid a. (VectorSpace v, U.Unbox a, U.Unbox (g v srid))
+        => FeatureT g v srid a -> (g v srid, a) |]
     [| \(Feature p v) -> (p,v) |]
     [| \(p,v) -> Feature p v|]
 

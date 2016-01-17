@@ -215,7 +215,7 @@ traceRay qt@QuadTree{..} from to
                    . catMaybes
                    $ getIntersections fuzzyExt ++ getIntersections cellExt
 
-        cellCodeTo = qtCellCode (tLevel cur) codeTo 
+        cellCodeTo = qtCellCode (tLevel cur) codeTo
 
         value      = leafData (tNode cur)
 
@@ -270,12 +270,12 @@ traceRay qt@QuadTree{..} from to
     -- neighbor. It is a valid intersection only if it is within the edge's
     -- bounds and hasn't overshooted our destination.
     neighborIntersection (Extent lo hi) ng
-      | isValid   = Just (QtVertex vertex :!: ngPosition ng)
+      | isValid   = Just (QtVertex vx :!: ngPosition ng)
       | otherwise = Nothing
       where
-        isValid = inRange vertex && inRayBounds vertex
+        isValid = inRange vx && inRayBounds vx
 
-        vertex = lineHyperplaneIntersection
+        vx = lineHyperplaneIntersection
                     (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
 
         origin = liftA3 origin' (ngPosition ng) lo hi
@@ -309,13 +309,13 @@ traceRay qt@QuadTree{..} from to
 -- check our top and bottom neighbors if the ray goes exactly from left to right
 checkNeighbor :: VectorSpace v => QtVertex v -> QtVertex v -> Neighbor v -> Bool
 checkNeighbor (QtVertex from) (QtVertex to) ng
-  = all id (liftA3 checkComp (ngPosition ng) from to) 
+  = all id (liftA3 checkComp (ngPosition ng) from to)
   where
     checkComp Same _ _       = True
     checkComp Down from' to' = from' > to'
     checkComp Up   from' to' = to'   > from'
 {-# INLINE checkNeighbor #-}
-    
+
 traverseViaAncestor
   :: VectorSpace v
   => QuadTree v srid a -> TraversedNode v srid a -> Level -> LocCode v
@@ -385,7 +385,7 @@ qtEpsilon = snd $$(machineEpsilonAndLevel 1)
 nearZeroBits :: Int
 nearZeroBits = finiteBitSize (undefined :: Int) `div` 16
 {-# INLINE nearZeroBits #-}
- 
+
 qtNearZero :: Double -> Bool
 qtNearZero a = abs a <= qtEpsilon * 2^nearZeroBits
 {-# INLINE qtNearZero #-}
