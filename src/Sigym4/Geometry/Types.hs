@@ -714,8 +714,8 @@ instance VectorSpace v
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
 data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
-    _featureTGeometry :: !(g v srid)
-  , _featureTProperties :: !d
+    _featureTGeometry   :: g v srid
+  , _featureTProperties :: d
   } deriving (Eq, Show, Functor)
 makeFields ''FeatureT
 

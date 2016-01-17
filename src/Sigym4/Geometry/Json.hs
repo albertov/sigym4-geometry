@@ -5,6 +5,7 @@
            , KindSignatures
            , DataKinds
            , OverloadedStrings
+           , DefaultSignatures
            #-}
 module Sigym4.Geometry.Json (
     jsonEncode
@@ -17,7 +18,7 @@ module Sigym4.Geometry.Json (
 import Data.Aeson
 import Data.Proxy (Proxy(Proxy))
 import Data.Text (Text, unpack)
-import Data.Aeson.Types (Parser, Pair)
+import Data.Aeson.Types (Parser, Pair, parseMaybe)
 import Sigym4.Geometry.Types
 import Data.ByteString.Lazy (ByteString)
 import Control.Lens ((^.))
@@ -50,7 +51,7 @@ toJSON_crs p o =
       object [
           "type"       .= ("name" :: Text)
         , "properties" .=  object [
-            "name"     .= ("urn:ogc:def:crs:EPSG:" ++ show srid)
+            "name"     .= ("urn:ogc:def:crs:EPSG::" ++ show srid)
           ]
         ]
 
@@ -213,8 +214,26 @@ instance VectorSpace v => FromJSON (Geometry v srid) where
 class ToFeatureProperties o where
   toFeatureProperties :: o -> Object
 
+  default toFeatureProperties :: ToJSON o => o -> Object
+  toFeatureProperties o =
+    case toJSON o of
+      Object o' -> o'
+      o'        -> HM.singleton "value" o'
+
+
 class FromFeatureProperties o where
   fromFeatureProperties :: Object -> Parser o
+  default fromFeatureProperties :: FromJSON o => Object -> Parser o
+  fromFeatureProperties o =
+    case parseMaybe parseJSON (Object o) of
+      Just o  -> return o
+      Nothing -> o .: "value"
+
+instance {-# OVERLAPABLE #-} FromFeatureProperties o
+  => FromFeatureProperties (Maybe o) where
+    fromFeatureProperties o
+      | HM.null o = return Nothing
+      | otherwise = fmap Just (fromFeatureProperties o)
 
 instance (ToJSON (g v srid), ToFeatureProperties d)
   => ToJSON (FeatureT g v srid d) where
@@ -222,14 +241,19 @@ instance (ToJSON (g v srid), ToFeatureProperties d)
       typedObject "Feature" [ "geometry"   .= g
                             , "properties" .= toFeatureProperties ps ]
 
+instance {-# OVERLAPABLE #-} ToFeatureProperties o
+  => ToFeatureProperties (Maybe o) where
+    toFeatureProperties = maybe HM.empty toFeatureProperties
+
 instance (FromJSON (g v srid), FromFeatureProperties d)
   => FromJSON (FeatureT g v srid d)
   where
     parseJSON (Object o) = do
       props <- case HM.lookup "properties" o of
         Just (Object p) -> fromFeatureProperties p
-        Just _            -> fail "properties field is not an object"
-        Nothing           -> fail "properties key not present"
+        Just Null       -> fromFeatureProperties HM.empty
+        Nothing         -> fromFeatureProperties HM.empty
+        Just _          -> fail "properties field is not an object"
       Feature <$> o .: "geometry" <*> pure props
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
