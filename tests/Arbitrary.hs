@@ -44,7 +44,7 @@ instance Arbitrary (Vertex v) => Arbitrary (Point v srid) where
 
 instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (MultiPoint v srid) where
-    arbitrary = MultiPoint <$> fmap fromList (resized arbitrary)
+    arbitrary = MultiPoint <$> fmap U.fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
   => Arbitrary (LinearRing v srid) where

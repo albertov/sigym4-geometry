@@ -10,8 +10,9 @@ module Sigym4.Geometry.Arrow (
 import Control.Arrow (Arrow, Kleisli(..), arr)
 import Control.Category (Category)
 import Control.Monad.Reader (Reader, MonadReader(ask), runReader)
+import Control.Lens ((^.))
 
-import Sigym4.Geometry.Types (Geometry, Feature, _fGeom)
+import Sigym4.Geometry.Types (Geometry, Feature, geometry)
 
 -- | A 'FeatureArrow' is an 'Arrow' that maps 'a's to 'b's which have an
 --   associated read-only 'Geometry' of type 't' and vertex 'v'
@@ -31,8 +32,8 @@ mkFA f = FeatureArrow $ Kleisli (\a -> f <$> ask <*> pure a)
 --   return value as 'fData'
 runFA :: FeatureArrow t v a b -> Feature t v a -> Feature t v b
 runFA (FeatureArrow (Kleisli f)) feat
-  = fmap (\v -> runReader (f v) (_fGeom feat)) feat
+  = fmap (\v -> runReader (f v) (feat^.geometry)) feat
 
 -- | Maps a 'FeatureArrow' over a 'Functor'
 mapFA :: Functor f => FeatureArrow t v a b -> f (Feature t v a) ->  f (Feature t v b)
-mapFA = fmap . runFA 
+mapFA = fmap . runFA

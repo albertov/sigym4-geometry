@@ -31,11 +31,12 @@ import Control.Applicative (pure)
 #endif
 import Control.Applicative (liftA2, liftA3)
 import Control.Monad (replicateM)
--- import Control.Lens ((^.), (%~), (&))
+import Control.Lens hiding (contains)
 import qualified Data.Foldable as F
 import Sigym4.Geometry.Types
 import Data.Proxy (Proxy(..))
 import qualified Data.Vector as V
+import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Semigroup as SG
 import qualified Linear.Metric as M
@@ -57,20 +58,20 @@ instance HasContains Extent Extent where
     {-# INLINE contains #-}
 
 instance HasContains Extent MultiPoint where
-    ext `contains` (MultiPoint ps) = V.all (contains ext) ps
+    ext `contains` (MultiPoint ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 
 instance HasContains Extent LinearRing where
-    ext `contains` (LinearRing ps) = U.all (contains ext) ps
+    ext `contains` (LinearRing ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 instance HasContains Extent LineString where
-    ext `contains` (LineString ps) = U.all (contains ext) ps
+    ext `contains` (LineString ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 instance HasContains Extent MultiLineString where
-    ext `contains` (MultiLineString ps) = V.all (contains ext) ps
+    ext `contains` (MultiLineString ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 instance HasContains Extent Polygon where
@@ -84,15 +85,15 @@ instance HasContains Extent Triangle where
     {-# INLINE contains #-}
 
 instance HasContains Extent MultiPolygon where
-    ext `contains` (MultiPolygon ps) = V.all (contains ext) ps
+    ext `contains` (MultiPolygon ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 instance HasContains Extent PolyhedralSurface where
-    ext `contains` (PolyhedralSurface ps) = V.all (contains ext) ps
+    ext `contains` (PolyhedralSurface ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 instance HasContains Extent TIN where
-    ext `contains` (TIN ts) = U.all (contains ext) ts
+    ext `contains` (TIN ts) = G.all (contains ext) ts
     {-# INLINE contains #-}
 
 instance HasContains Extent Geometry where
@@ -109,7 +110,7 @@ instance HasContains Extent Geometry where
     {-# INLINE contains #-}
 
 instance HasContains Extent GeometryCollection where
-    ext `contains` (GeometryCollection ps) = V.all (contains ext) ps
+    ext `contains` (GeometryCollection ps) = G.all (contains ext) ps
     {-# INLINE contains #-}
 
 
@@ -138,8 +139,8 @@ instance HasIntersects Extent LineString where
     :: forall v srid. HasHyperplanes v
     => Extent v (srid::Nat) -> LineString v (srid::Nat) -> Bool
   ext@Extent{eMin=lo, eMax=hi} `intersects` LineString ps
-    = U.any id
-    $ U.zipWith segmentIntersects ps (U.tail ps)
+    = G.any id
+    $ G.zipWith segmentIntersects ps (G.tail ps)
     where
       planes :: [HyperPlaneDirections v]
       planes = map unsafeFromCoords $
@@ -149,15 +150,15 @@ instance HasIntersects Extent LineString where
       segmentIntersects pa@(Point a) pb@(Point b)
         | ext `contains` pa = True
         | ext `contains` pb = True
-        | otherwise         = U.any inRange (U.fromList planeIntersections)
+        | otherwise         = G.any inRange (U.fromList planeIntersections)
         where
           inRange v = vBetweenC lo hi v && not (any (almostEqVertex v) corners)
-          planeIntersections = catMaybes 
+          planeIntersections = catMaybes
                                 [ lineHyperplaneMaybeIntersection (b-a) a p o
                                 | p<-planes, o<-[lo,hi]]
   {-# INLINE intersects #-}
 
-extentCorners 
+extentCorners
   :: forall v srid. VectorSpace v
   => Extent v srid -> [Vertex v]
 extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
@@ -194,24 +195,24 @@ instance HasExtent Point where
     {-# INLINE extent #-}
 
 instance HasExtent MultiPoint where
-    extent = extentFromVector . V.convert . _mpPoints
+    extent = views points (extentFromVector . G.convert)
     {-# INLINE extent #-}
 
 
 instance HasExtent LinearRing where
-    extent = extentFromVector . V.convert . _lrPoints
+    extent = views points (extentFromVector . G.convert)
     {-# INLINE extent #-}
 
 instance HasExtent LineString where
-    extent = extentFromVector . V.convert . _lsPoints
+    extent = views points (extentFromVector . G.convert)
     {-# INLINE extent #-}
 
 instance HasExtent MultiLineString where
-    extent = extentFromVector . _mlLineStrings
+    extent = views lineStrings extentFromVector
     {-# INLINE extent #-}
 
 instance HasExtent Polygon where
-    extent = extent . _pOuterRing
+    extent = views outerRing extent
     {-# INLINE extent #-}
 
 instance HasExtent Triangle where
@@ -222,15 +223,15 @@ instance HasExtent Triangle where
     {-# INLINE extent #-}
 
 instance HasExtent MultiPolygon where
-    extent = extentFromVector . _mpPolygons
+    extent = views polygons extentFromVector
     {-# INLINE extent #-}
 
 instance HasExtent PolyhedralSurface where
-    extent = extentFromVector . _psPolygons
+    extent = views polygons extentFromVector
     {-# INLINE extent #-}
 
 instance HasExtent TIN where
-    extent = extentFromVector . V.convert . _tinTriangles
+    extent = views triangles (extentFromVector . G.convert)
     {-# INLINE extent #-}
 
 instance HasExtent Geometry where
@@ -247,14 +248,14 @@ instance HasExtent Geometry where
     {-# INLINE extent #-}
 
 instance HasExtent GeometryCollection where
-    extent = extentFromVector . _gcGeometries
+    extent = views geometries extentFromVector
     {-# INLINE extent #-}
 
 extentFromVector
   :: (HasExtent a, VectorSpace v)
   => V.Vector (a v (srid::Nat)) -> Extent v (srid::Nat)
-extentFromVector v = V.foldl' (SG.<>) (V.head es) (V.tail es)
-  where es = V.map extent v
+extentFromVector v = G.foldl' (SG.<>) (G.head es) (G.tail es)
+  where es = G.map extent v
 {-# INLINE extentFromVector #-}
 
 liftBinBool

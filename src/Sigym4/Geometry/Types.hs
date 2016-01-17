@@ -14,6 +14,7 @@
            , KindSignatures
            , DeriveFunctor
            , ScopedTypeVariables
+           , FunctionalDependencies
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -63,11 +64,8 @@ module Sigym4.Geometry.Types (
   , mkPolygon
   , mkTriangle
 
-  , pointCoordinates
-  , lineStringCoordinates
-  , polygonCoordinates
+  , HasCoordinates (..)
   , polygonRings
-  , triangleCoordinates
   , convertRasterOffsetType
 
   , gSrid
@@ -78,20 +76,17 @@ module Sigym4.Geometry.Types (
   , invertible
 
   -- lenses & prisms
-  , pVertex
-  , fGeom
-  , fData
-  , fcFeatures
-  , mpPoints
-  , lrPoints
-  , lsPoints
-  , mlLineStrings
-  , pOuterRing
-  , pRings
-  , mpPolygons
-  , psPolygons
-  , tinTriangles
-  , gcGeometries
+  , HasGeometry (..)
+  , HasProperties (..)
+  , HasFeatures (..)
+  , HasPoints (..)
+  , HasLineStrings (..)
+  , HasOuterRing (..)
+  , HasInnerRings (..)
+  , HasPolygons (..)
+  , HasTriangles (..)
+  , HasGeometries (..)
+  , HasVertex (..)
 
   , _GeoPoint
   , _GeoMultiPoint
@@ -406,7 +401,7 @@ scalarSize = product . unSize
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
 -- 'Pixel' coordinates and back. gtMatrix *must* be invertible so smart
 -- constructors are provided
-data GeoTransform v (srid :: Nat) = GeoTransform 
+data GeoTransform v (srid :: Nat) = GeoTransform
       { gtMatrix :: !(SqMatrix v)
       , gtOrigin :: !(Vertex v)
       }
@@ -444,7 +439,7 @@ gtBackward gt p = Point $ v0 + (unPx p) *! m
   where m  = gtMatrix gt
         v0 = gtOrigin gt
 
-data GeoReference v srid = GeoReference 
+data GeoReference v srid = GeoReference
       { grTransform :: !(GeoTransform v srid)
       , grSize      :: !(Size v)
       }
@@ -480,7 +475,7 @@ grBackward gr = gtBackward (grTransform gr)
 mkGeoReference :: Extent V2 srid -> Size V2 -> Either String (GeoReference V2 srid)
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
-newtype Point v (srid :: Nat) = Point {_pVertex:: Vertex v}
+newtype Point v (srid :: Nat) = Point {_pointVertex:: Vertex v}
 deriving instance VectorSpace v          => Show (Point v srid)
 deriving instance VectorSpace v          => Eq (Point v srid)
 deriving instance VectorSpace v          => Ord (Point v srid)
@@ -488,9 +483,12 @@ deriving instance NFData      (Vertex v) => NFData (Point v srid)
 deriving instance Hashable    (Vertex v) => Hashable (Point v srid)
 deriving instance Storable    (Vertex v) => Storable (Point v srid)
 
-pVertex :: VectorSpace v => Lens' (Point v srid) (Vertex v)
-pVertex = lens _pVertex (\p v -> p { _pVertex = v })
-{-# INLINE pVertex #-}
+class HasVertex o a | o->a where
+  vertex :: Lens' o a
+
+instance HasVertex (Point v srid) (Vertex v) where
+  vertex = lens _pointVertex (\p v -> p { _pointVertex = v })
+  {-# INLINE vertex #-}
 
 
 derivingUnbox "Point"
@@ -514,28 +512,30 @@ derivingUnbox "Offset"
     [| \o -> Offset o|]
 
 newtype MultiPoint v srid = MultiPoint {
-    _mpPoints :: V.Vector (Point v srid)
+    _multiPointPoints :: U.Vector (Point v srid) --FIXME to Unboxed
 } deriving (Eq, Show)
-makeLenses ''MultiPoint
+makeFields ''MultiPoint
 
 deriving instance VectorSpace v => NFData (MultiPoint v srid)
 
-newtype LinearRing v srid = LinearRing {_lrPoints :: U.Vector (Point v srid)}
-    deriving (Eq, Show)
-makeLenses ''LinearRing
+newtype LinearRing v srid
+  = LinearRing {_linearRingPoints :: U.Vector (Point v srid)}
+  deriving (Eq, Show)
+makeFields ''LinearRing
 
 deriving instance VectorSpace v => NFData (LinearRing v srid)
 
-newtype LineString v srid = LineString {_lsPoints :: U.Vector (Point v srid)}
-    deriving (Eq, Show)
-makeLenses ''LineString
+newtype LineString v srid
+  = LineString {_lineStringPoints :: U.Vector (Point v srid)}
+  deriving (Eq, Show)
+makeFields ''LineString
 
 deriving instance VectorSpace v => NFData (LineString v srid)
 
 newtype MultiLineString v srid = MultiLineString {
-    _mlLineStrings :: V.Vector (LineString v srid)
+    _multiLineStringLineStrings :: V.Vector (LineString v srid)
 } deriving (Eq, Show)
-makeLenses ''MultiLineString
+makeFields ''MultiLineString
 
 deriving instance VectorSpace v => NFData (MultiLineString v srid)
 
@@ -551,32 +551,32 @@ derivingUnbox "Triangle"
     [| \(a, b, c) -> Triangle a b c|]
 
 data Polygon v srid = Polygon {
-    _pOuterRing :: LinearRing v srid
-  , _pRings     :: V.Vector (LinearRing v srid) 
+    _polygonOuterRing  :: LinearRing v srid
+  , _polygonInnerRings :: V.Vector (LinearRing v srid)
 } deriving (Eq, Show)
-makeLenses ''Polygon
+makeFields ''Polygon
 
 instance VectorSpace v => NFData (Polygon v srid) where
   rnf (Polygon o r) = rnf o `seq` rnf r `seq` ()
 
 newtype MultiPolygon v srid = MultiPolygon {
-    _mpPolygons :: V.Vector (Polygon v srid)
+    _multiPolygonPolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
-makeLenses ''MultiPolygon
+makeFields ''MultiPolygon
 
 deriving instance VectorSpace v => NFData (MultiPolygon v srid)
 
 newtype PolyhedralSurface v srid = PolyhedralSurface {
-    _psPolygons :: V.Vector (Polygon v srid)
+    _polyhedralSurfacePolygons :: V.Vector (Polygon v srid)
 } deriving (Eq, Show)
-makeLenses ''PolyhedralSurface
+makeFields ''PolyhedralSurface
 
 deriving instance VectorSpace v => NFData (PolyhedralSurface v srid)
 
 newtype TIN v srid = TIN {
-    _tinTriangles :: U.Vector (Triangle v srid)
+    _tINTriangles :: U.Vector (Triangle v srid)
 } deriving (Eq, Show)
-makeLenses ''TIN
+makeFields ''TIN
 
 deriving instance VectorSpace v => NFData (TIN v srid)
 
@@ -606,9 +606,9 @@ instance VectorSpace v => NFData (Geometry v srid) where
   rnf (GeoCollection g)        = rnf g
 
 newtype GeometryCollection v srid = GeometryCollection {
-    _gcGeometries :: V.Vector (Geometry v srid)
+    _geometryCollectionGeometries :: V.Vector (Geometry v srid)
 } deriving (Eq, Show)
-makeLenses ''GeometryCollection
+makeFields ''GeometryCollection
 makePrisms ''Geometry
 
 deriving instance VectorSpace v => NFData (GeometryCollection v srid)
@@ -642,7 +642,7 @@ mkLinearRing ls
   where v = U.fromList ls
 
 mkPolygon :: [LinearRing v srid] -> Maybe (Polygon v srid)
-mkPolygon (oRing:rings) = Just $ Polygon oRing $ V.fromList rings
+mkPolygon (oRing:rings_) = Just $ Polygon oRing $ V.fromList rings_
 mkPolygon _ = Nothing
 
 mkTriangle :: VectorSpace v
@@ -650,40 +650,73 @@ mkTriangle :: VectorSpace v
 mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
                  | otherwise = Nothing
 
-pointCoordinates :: VectorSpace v => Point v srid -> [Double]
-pointCoordinates = views pVertex coords
-{-# INLINE pointCoordinates #-}
+class HasCoordinates o a | o -> a where
+  coordinates :: o -> a
 
-lineStringCoordinates :: VectorSpace v => LineString v srid -> [[Double]]
-lineStringCoordinates = vectorCoordinates . _lsPoints
-{-# INLINE lineStringCoordinates #-}
+instance VectorSpace v => HasCoordinates (Point v srid) [Double] where
+  coordinates = views vertex coords
+  {-# INLINE coordinates #-}
 
-linearRingCoordinates :: VectorSpace v => LinearRing v srid -> [[Double]]
-linearRingCoordinates = vectorCoordinates . _lrPoints
-{-# INLINE linearRingCoordinates #-}
+instance VectorSpace v => HasCoordinates (MultiPoint v srid) [[Double]] where
+  coordinates = views points (G.toList . V.map coordinates . G.convert)
+  {-# INLINE coordinates #-}
 
-polygonCoordinates :: VectorSpace v => Polygon v srid -> [[[Double]]]
-polygonCoordinates = V.toList . V.map linearRingCoordinates . polygonRings
-{-# INLINE polygonCoordinates #-}
+instance VectorSpace v => HasCoordinates (LineString v srid) [[Double]] where
+  coordinates = views points coordinates
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v
+  => HasCoordinates (MultiLineString v srid) [[[Double]]] where
+  coordinates = views lineStrings (G.toList . G.map coordinates)
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v => HasCoordinates (LinearRing v srid) [[Double]] where
+  coordinates = views points coordinates
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v => HasCoordinates (Polygon v srid) [[[Double]]] where
+  coordinates = V.toList . V.map coordinates . polygonRings
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v
+  => HasCoordinates (MultiPolygon v srid) [[[[Double]]]] where
+  coordinates = views polygons (G.toList . G.map coordinates)
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v
+  => HasCoordinates (PolyhedralSurface v srid) [[[[Double]]]] where
+  coordinates = views polygons (G.toList . G.map coordinates)
+  {-# INLINE coordinates #-}
 
 polygonRings :: Polygon v srid -> V.Vector (LinearRing v srid)
 polygonRings (Polygon ir rs) = V.cons ir rs
 {-# INLINE polygonRings #-}
 
-triangleCoordinates :: VectorSpace v => Triangle v srid -> [[Double]]
-triangleCoordinates (Triangle a b c) = map pointCoordinates [a, b, c, a]
-{-# INLINE triangleCoordinates #-}
+instance VectorSpace v => HasCoordinates (Triangle v srid) [[Double]] where
+  coordinates (Triangle a b c) = map coordinates [a, b, c, a]
+  {-# INLINE coordinates #-}
 
-vectorCoordinates :: VectorSpace v => U.Vector (Point v srid) -> [[Double]]
-vectorCoordinates = V.toList . V.map pointCoordinates . V.convert
-{-# INLINE vectorCoordinates #-}
+instance VectorSpace v
+  => HasCoordinates (TIN v srid) [[[Double]]] where
+  coordinates = views triangles (V.toList . V.map coordinates . G.convert)
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v
+  => HasCoordinates (U.Vector (Point v srid)) [[Double]] where
+  coordinates = V.toList . V.map coordinates . V.convert
+  {-# INLINE coordinates #-}
+
+instance VectorSpace v
+  => HasCoordinates (V.Vector (Point v srid)) [[Double]] where
+  coordinates = V.toList . V.map coordinates
+  {-# INLINE coordinates #-}
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
 data FeatureT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = Feature {
-    _fGeom :: !(g v srid)
-  , _fData :: !d
+    _featureTGeometry :: !(g v srid)
+  , _featureTProperties :: !d
   } deriving (Eq, Show, Functor)
-makeLenses ''FeatureT
+makeFields ''FeatureT
 
 instance (NFData d, NFData (g v srid)) => NFData (FeatureT g v srid d) where
   rnf (Feature g v) = rnf g `seq` rnf v `seq` ()
@@ -696,10 +729,11 @@ derivingUnbox "PointFeature"
     [| \(Feature p v) -> (p,v) |]
     [| \(p,v) -> Feature p v|]
 
-newtype FeatureCollectionT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d = FeatureCollection {
-    _fcFeatures :: [FeatureT g v srid d]
-} deriving (Eq, Show, Functor)
-makeLenses ''FeatureCollectionT
+newtype FeatureCollectionT (g :: (* -> *) -> Nat -> *) v (srid::Nat) d
+  = FeatureCollection {
+    _featureCollectionTFeatures :: [FeatureT g v srid d]
+  } deriving (Eq, Show, Functor)
+makeFields ''FeatureCollectionT
 
 type FeatureCollection = FeatureCollectionT Geometry
 

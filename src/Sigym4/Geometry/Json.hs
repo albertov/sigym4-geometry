@@ -20,6 +20,7 @@ import Data.Text (Text, unpack)
 import Data.Aeson.Types (Parser, Pair)
 import Sigym4.Geometry.Types
 import Data.ByteString.Lazy (ByteString)
+import Control.Lens ((^.))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as HM
@@ -54,47 +55,36 @@ jsonDecode = eitherDecode
 {-# INLINE jsonDecode #-}
 
 instance VectorSpace v => ToJSON (Point v srid) where
-    toJSON g = typedObject "Point" ["coordinates" .= pointCoordinates g]
+    toJSON g = typedObject "Point" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (MultiPoint v srid) where
-    toJSON (MultiPoint g) =
-      typedObject "MultiPoint" ["coordinates" .= V.map pointCoordinates g]
+    toJSON g = typedObject "MultiPoint" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (LineString v srid) where
-    toJSON g =
-      typedObject "LineString" ["coordinates" .= lineStringCoordinates g]
+    toJSON g = typedObject "LineString" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (MultiLineString v srid) where
-    toJSON (MultiLineString g) =
-      typedObject "MultiLineString"
-        ["coordinates" .= V.map lineStringCoordinates g]
+    toJSON g = typedObject "MultiLineString" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (Polygon v srid) where
-    toJSON g =
-      typedObject "Polygon" ["coordinates" .= polygonCoordinates g]
+    toJSON g = typedObject "Polygon" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (MultiPolygon v srid) where
-    toJSON (MultiPolygon g)
-      = typedObject "MultiPolygon"
-        ["coordinates" .= V.map polygonCoordinates g]
+    toJSON g = typedObject "MultiPolygon" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (Triangle v srid) where
-    toJSON g = typedObject "Triangle" ["coordinates" .= triangleCoordinates g]
+    toJSON g = typedObject "Triangle" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (PolyhedralSurface v srid) where
-    toJSON (PolyhedralSurface g)
-      = typedObject "PolyhedralSurface"
-        ["coordinates" .= V.map polygonCoordinates g]
+    toJSON g = typedObject "PolyhedralSurface" ["coordinates" .= coordinates g]
 
 instance VectorSpace v => ToJSON (TIN v srid) where
-    toJSON (TIN g)
-      = typedObject "TIN"
-        ["coordinates" .= V.map triangleCoordinates (V.convert g)]
+    toJSON g = typedObject "TIN" ["coordinates" .= coordinates g]
 
 instance (KnownNat srid, VectorSpace v)
   => ToJSON (GeometryCollection v srid) where
-    toJSON (GeometryCollection g) =
-      typedObject "GeometryCollection" ["geometries" .= g]
+    toJSON g =
+      typedObject "GeometryCollection" ["geometries" .= (g^.geometries)]
 
 
 instance (KnownNat srid, VectorSpace v) => ToJSON (Geometry v srid) where
@@ -113,22 +103,20 @@ instance (KnownNat srid, VectorSpace v) => ToJSON (Geometry v srid) where
     {-# INLINABLE toJSON  #-}
 
 parsePoint :: VectorSpace v => [Double] -> Parser (Point v srid)
-parsePoint = maybe (fail "parsePoint: wrong dimension") (return . Point) . fromCoords
-
-parsePoints :: VectorSpace v => [[Double]] -> Parser (V.Vector (Point v srid))
-parsePoints = V.mapM parsePoint . V.fromList
+parsePoint =
+  maybe (fail "parsePoint: wrong dimension") (return . Point) . fromCoords
 
 parseLineString :: VectorSpace v => [[Double]] -> Parser (LineString v srid)
 parseLineString ps = do
-    points <- mapM parsePoint ps
+    ps' <- mapM parsePoint ps
     maybe (fail "parseLineString: Invalid linestring") return
-          (mkLineString points)
+          (mkLineString ps')
 
 parseLinearRing :: VectorSpace v => [[Double]] -> Parser (LinearRing v srid)
 parseLinearRing ps = do
-    points <- mapM parsePoint ps
+    ps' <- mapM parsePoint ps
     maybe (fail "parseLinearRing: Invalid linear ring") return
-          (mkLinearRing points)
+          (mkLinearRing ps')
 
 parseTriangle :: VectorSpace v => [[Double]] -> Parser (Triangle v srid)
 parseTriangle ps = do
@@ -140,55 +128,58 @@ parseTriangle ps = do
 
 parsePolygon :: VectorSpace v => [[[Double]]] -> Parser (Polygon v srid)
 parsePolygon ps = do
-    rings <- V.mapM parseLinearRing (V.fromList ps)
-    if V.length rings == 0
-       then fail $ "parseJSON(Geometry): Polygon requires at least one linear ring"
-       else return $ Polygon (V.head rings) (V.tail rings)
+  rings <- V.mapM parseLinearRing (V.fromList ps)
+  if V.length rings == 0
+     then fail "parseJSON(Geometry): Polygon requires at least one linear ring"
+     else return $ Polygon (V.head rings) (V.tail rings)
 
-coordinates :: FromJSON a => Object -> Parser a
-coordinates o = o .: "coordinates"
+parseCoordinates :: FromJSON a => Object -> Parser a
+parseCoordinates o = o .: "coordinates"
 
 typedObject :: Text -> [Pair] -> Value
 typedObject k = object . ((:) ("type" .= k))
 
 instance VectorSpace v => FromJSON (Point v srid) where
-    parseJSON (Object o) = coordinates o >>= parsePoint
+    parseJSON (Object o) = parseCoordinates o >>= parsePoint
     parseJSON _ = fail "parseJSON(Point): Expected an object"
 
 instance VectorSpace v => FromJSON (MultiPoint v srid) where
-    parseJSON (Object o) = coordinates o >>= fmap MultiPoint . parsePoints
+    parseJSON (Object o) =
+      parseCoordinates o >>=
+        fmap (MultiPoint . U.convert) . V.mapM parsePoint . V.fromList
+
     parseJSON _ = fail "parseJSON(MultiPoint): Expected an object"
 
 instance VectorSpace v => FromJSON (LineString v srid) where
-    parseJSON (Object o) = coordinates o >>= parseLineString
+    parseJSON (Object o) = parseCoordinates o >>= parseLineString
     parseJSON _ = fail "parseJSON(LineString): Expected an object"
 
 instance VectorSpace v => FromJSON (MultiLineString v srid) where
     parseJSON (Object o) =
-      coordinates o >>= fmap MultiLineString . V.mapM parseLineString
+      parseCoordinates o >>= fmap MultiLineString . V.mapM parseLineString
     parseJSON _ = fail "parseJSON(MultiLineString): Expected an object"
 
 instance VectorSpace v => FromJSON (Polygon v srid) where
-    parseJSON (Object o) = coordinates o >>= parsePolygon
+    parseJSON (Object o) = parseCoordinates o >>= parsePolygon
     parseJSON _ = fail "parseJSON(Polygon): Expected an object"
 
 instance VectorSpace v => FromJSON (MultiPolygon v srid) where
     parseJSON (Object o) =
-      coordinates o >>= fmap MultiPolygon . V.mapM parsePolygon
+      parseCoordinates o >>= fmap MultiPolygon . V.mapM parsePolygon
     parseJSON _ = fail "parseJSON(MultiPolygon): Expected an object"
 
 instance VectorSpace v => FromJSON (Triangle v srid) where
-    parseJSON (Object o) = coordinates o >>= parseTriangle
+    parseJSON (Object o) = parseCoordinates o >>= parseTriangle
     parseJSON _ = fail "parseJSON(Triangle): Expected an object"
 
 instance VectorSpace v => FromJSON (PolyhedralSurface v srid) where
     parseJSON (Object o) =
-      coordinates o >>= fmap PolyhedralSurface . V.mapM parsePolygon
+      parseCoordinates o >>= fmap PolyhedralSurface . V.mapM parsePolygon
     parseJSON _ = fail "parseJSON(PolyhedralSurface): Expected an object"
 
 instance VectorSpace v => FromJSON (TIN v srid) where
     parseJSON (Object o) =
-      coordinates o >>= fmap (TIN . U.convert) . V.mapM parseTriangle
+      parseCoordinates o >>= fmap (TIN . U.convert) . V.mapM parseTriangle
     parseJSON _ = fail "parseJSON(TIN): Expected an object"
 
 instance VectorSpace v => FromJSON (GeometryCollection v srid) where
@@ -245,12 +236,10 @@ instance (FromJSON (g v srid), FromFeatureProperties d)
 instance (ToFeatureProperties d, ToJSON (g v srid))
   => ToJSON (FeatureCollectionT g v srid d)
   where
-    toJSON (FeatureCollection fs)
-      = typedObject "FeatureCollection" ["features" .= fs]
+    toJSON f = typedObject "FeatureCollection" ["features" .= (f^.features)]
 
 instance (FromFeatureProperties d, FromJSON (g v srid))
   => FromJSON (FeatureCollectionT g v srid d)
   where
-    parseJSON (Object o) = do
-      FeatureCollection <$> o.: "features"
+    parseJSON (Object o) = FeatureCollection <$> o.: "features"
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"

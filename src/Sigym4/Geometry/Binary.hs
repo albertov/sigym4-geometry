@@ -9,10 +9,11 @@ module Sigym4.Geometry.Binary (
 #include "MachDeps.h"
 
 import Control.Monad.Reader
-import Control.Lens ((^?))
+import Control.Lens
 import Data.Proxy (Proxy(Proxy))
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.Vector.Generic as G
+import qualified Data.Vector as V
 import Sigym4.Geometry.Types
 import Data.Binary
 import Data.Bits
@@ -135,44 +136,41 @@ instance forall v srid. (VectorSpace v, KnownNat srid)
         geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
         geoTIN = GeoTIN <$> getBO
 
-unwrapGeo :: ( G.Vector vec a
-             , G.Vector vec (Maybe a)
-             , G.Vector vec (Geometry v srid)
-             , KnownNat srid
-             , VectorSpace v
-             )
-          => String -> (Geometry v srid -> Maybe a) -> GetBO (vec a)
-unwrapGeo msg f = justOrFail msg
-              =<< fmap (G.sequence . G.map f) (getVector (lift get))
+unwrapGeo
+  :: (KnownNat srid , VectorSpace v)
+  => String -> (Geometry v srid -> Maybe a) -> GetBO (V.Vector a)
+unwrapGeo msg f =
+  justOrFail msg
+    =<< fmap (G.sequence . G.map f) (getVector (lift get))
 {-# INLINE unwrapGeo #-}
 
 instance forall v srid. VectorSpace v => BinaryBO (Point v srid) where
     getBO = Point <$> (justOrFail "getBO(Point v)" . fromCoords
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
-    putBO = mapM_ putBO . coords . _pVertex
+    putBO = mapM_ putBO . coords . (^.vertex)
 
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiPoint v srid) where
-    getBO = MultiPoint  <$> unwrapGeo "MultiPoint" (^?_GeoPoint)
-    putBO = putVectorBo . G.map GeoPoint . _mpPoints
+    getBO = MultiPoint  . G.convert <$> unwrapGeo "MultiPoint" (^?_GeoPoint)
+    putBO = putVectorBo . V.map GeoPoint . V.convert . (^.points)
 
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (GeometryCollection v srid) where
     getBO = GeometryCollection  <$> getVector (lift get)
-    putBO = putVectorBo . _gcGeometries
+    putBO = putVectorBo . (^.geometries)
 
 instance forall v srid. VectorSpace v => BinaryBO (LineString v srid) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
-    putBO = putVectorBo . _lsPoints
+    putBO = putVectorBo . (^.points)
 
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiLineString v srid) where
     getBO = MultiLineString <$> unwrapGeo "MultiLineString" (^?_GeoLineString)
-    putBO = putVectorBo . G.map GeoLineString . _mlLineStrings
+    putBO = putVectorBo . G.map GeoLineString . (^.lineStrings)
 
 instance forall v srid. VectorSpace v => BinaryBO (LinearRing v srid) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
-    putBO = putVectorBo . _lrPoints
+    putBO = putVectorBo . (^.points)
 
 instance forall v srid. VectorSpace v => BinaryBO (Polygon v srid) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
@@ -181,7 +179,7 @@ instance forall v srid. VectorSpace v => BinaryBO (Polygon v srid) where
 instance forall v srid. (VectorSpace v, KnownNat srid)
   => BinaryBO (MultiPolygon v srid) where
     getBO = MultiPolygon <$> unwrapGeo "MultiPolygon" (^?_GeoPolygon)
-    putBO = putVectorBo . G.map GeoPolygon . _mpPolygons
+    putBO = putVectorBo . G.map GeoPolygon . (^.polygons)
 
 instance forall v srid. VectorSpace v => BinaryBO (Triangle v srid) where
     getBO = do
@@ -197,11 +195,11 @@ instance forall v srid. VectorSpace v => BinaryBO (Triangle v srid) where
 
 instance forall v srid. VectorSpace v => BinaryBO (PolyhedralSurface v srid) where
     getBO = PolyhedralSurface <$> getVector getBO
-    putBO = putVectorBo . _psPolygons
+    putBO = putVectorBo . (^.polygons)
 
 instance forall v srid. VectorSpace v => BinaryBO (TIN v srid) where
     getBO = TIN <$> getVector getBO
-    putBO = putVectorBo . _tinTriangles
+    putBO = putVectorBo . (^.triangles)
 
 justOrFail :: Monad m => String -> Maybe a -> m a
 justOrFail msg = maybe (fail msg) return
