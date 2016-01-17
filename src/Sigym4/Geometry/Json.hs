@@ -9,7 +9,7 @@
 module Sigym4.Geometry.Json (
     jsonEncode
   , jsonDecode
-  , RootObject (..)
+  , toJSON_crs
   , FromFeatureProperties (..)
   , ToFeatureProperties (..)
   ) where
@@ -26,33 +26,34 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as HM
 
 jsonEncode
-  :: forall o v srid. (VectorSpace v, KnownNat srid, ToJSON (o v srid))
-  => o v srid -> ByteString
-jsonEncode o = encode (RootObject o)
+  :: forall g v srid. (VectorSpace v, KnownNat srid, ToJSON (g v srid))
+  => g v srid -> ByteString
+jsonEncode = encode
 {-# INLINE jsonEncode #-}
 
-newtype RootObject o = RootObject o
-
-instance (KnownNat s, VectorSpace v, ToJSON (o v s))
-  => ToJSON (RootObject (o v s)) where
-  toJSON (RootObject o) =
-    case toJSON o of
-      Object hm -> Object (HM.insert "crs" crsObject hm)
-      z         -> z
-    where
-      crsObject =
-        object [
-            "type"       .= ("name" :: Text)
-          , "properties" .=  object [
-              "name" .=
-                ("urn:ogc:def:crs:EPSG:" ++ show (gSrid (Proxy::Proxy s)))
-            ]
-          ]
-
-jsonDecode :: (VectorSpace v)
-           => ByteString -> Either String (Geometry v srid)
+jsonDecode :: (VectorSpace v, KnownNat srid, FromJSON (g v srid))
+           => ByteString -> Either String (g v srid)
 jsonDecode = eitherDecode
 {-# INLINE jsonDecode #-}
+
+
+toJSON_crs
+  :: forall o s. (KnownNat s, ToJSON o) => Proxy s -> o -> Value
+toJSON_crs p o =
+  case (srid, toJSON o) of
+    (0,z)         -> z
+    (_,Object hm) -> Object (HM.insert "crs" crsObject hm)
+    (_,z)         -> z
+  where
+    srid = gSrid p
+    crsObject =
+      object [
+          "type"       .= ("name" :: Text)
+        , "properties" .=  object [
+            "name"     .= ("urn:ogc:def:crs:EPSG:" ++ show srid)
+          ]
+        ]
+
 
 instance VectorSpace v => ToJSON (Point v srid) where
     toJSON g = typedObject "Point" ["coordinates" .= coordinates g]
@@ -233,10 +234,12 @@ instance (FromJSON (g v srid), FromFeatureProperties d)
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (ToFeatureProperties d, ToJSON (g v srid))
+instance (KnownNat srid, ToFeatureProperties d, ToJSON (g v srid))
   => ToJSON (FeatureCollectionT g v srid d)
   where
-    toJSON f = typedObject "FeatureCollection" ["features" .= (f^.features)]
+    toJSON f =
+      toJSON_crs (Proxy :: Proxy srid) $
+        typedObject "FeatureCollection" ["features" .= (f^.features)]
 
 instance (FromFeatureProperties d, FromJSON (g v srid))
   => FromJSON (FeatureCollectionT g v srid d)
