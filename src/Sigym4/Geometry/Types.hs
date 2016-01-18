@@ -16,6 +16,7 @@
            , ScopedTypeVariables
            , FunctionalDependencies
            , ExistentialQuantification
+           , UndecidableInstances
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -148,6 +149,7 @@ import Linear.V as VN hiding (dim)
 import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | A vertex
 type Vertex v = v Double
@@ -770,12 +772,32 @@ instance Monoid (FeatureCollectionT g v crs d) where
 data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
   = forall crs. KnownSymbol crs => SomeGeometry (g v crs)
 
+
+instance Show (g v NoCrs) => Show (SomeGeometry g v) where
+  show (SomeGeometry g) = show (unsafeCoerce g :: g v NoCrs)
+  showsPrec i (SomeGeometry g) = showsPrec i (unsafeCoerce g :: g v NoCrs)
+
+instance Eq (g v NoCrs) => Eq (SomeGeometry g v) where
+  sa@(SomeGeometry a) == sb@(SomeGeometry b) =
+    sameCrs sa sb &&
+        (unsafeCoerce a :: g v NoCrs) == (unsafeCoerce b :: g v NoCrs)
+
 instance HasVertex (SomeGeometry Point v) (Vertex v) where
   vertex = lens (\(SomeGeometry v) -> v^.vertex)
                 (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
 
 data SomeFeatureT g v a
   = forall crs. KnownSymbol crs => SomeFeature (FeatureT g v crs a)
+
+instance (Show (g v NoCrs), Show a) => Show (SomeFeatureT g v a) where
+  show (SomeFeature g) = show (unsafeCoerce g :: FeatureT g v NoCrs a)
+  showsPrec i (SomeFeature g)
+    = showsPrec i (unsafeCoerce g :: FeatureT g v NoCrs a)
+
+instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureT g v a) where
+  sa@(SomeFeature a) == sb@(SomeFeature b) =
+    sameCrs sa sb &&
+        (unsafeCoerce a :: FeatureT g v NoCrs a) == (unsafeCoerce b :: FeatureT g v NoCrs a)
 
 instance HasProperties (SomeFeatureT g v a) a where
   properties = lens (\(SomeFeature f) -> f^.properties)
@@ -791,6 +813,17 @@ data SomeFeatureCollectionT g v a
   = forall crs. KnownSymbol crs
   => SomeFeatureCollection (FeatureCollectionT g v crs a)
 
+instance (Show (g v NoCrs), Show a)
+  => Show (SomeFeatureCollectionT g v a) where
+  show (SomeFeatureCollection g) =
+    show (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
+  showsPrec i (SomeFeatureCollection g)
+    = showsPrec i (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
+
+instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureCollectionT g v a) where
+  sa@(SomeFeatureCollection a) == sb@(SomeFeatureCollection b) =
+    sameCrs sa sb &&
+        (unsafeCoerce a :: FeatureCollectionT g v NoCrs a) == (unsafeCoerce b :: FeatureCollectionT g v NoCrs a)
 
 type SomeFeatureCollection v a = SomeFeatureCollectionT Geometry
 type SomeFeature v a = SomeFeatureT Geometry

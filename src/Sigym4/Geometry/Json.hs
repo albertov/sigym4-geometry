@@ -290,7 +290,7 @@ withParsedCrs v f =
           mProperties <- o' .:? "properties"
           case mProperties of
             Just (Object p) -> do
-              mName <- p .: "name"
+              mName <- p .:? "name"
               case mName of
                 Just c -> withCrs c f
                 _ -> withCrs "" f
