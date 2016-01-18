@@ -15,6 +15,7 @@
            , DeriveFunctor
            , ScopedTypeVariables
            , FunctionalDependencies
+           , ExistentialQuantification
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -102,6 +103,12 @@ module Sigym4.Geometry.Types (
   , _GeoCollection
 
   , NoCrs
+  , SomeFeature
+  , SomeFeatureCollection
+  , SomeFeatureT (..)
+  , SomeFeatureCollectionT (..)
+  , SomeGeometry (..)
+  , HasSameCrs (..)
 
   -- re-exports
   , KnownSymbol
@@ -118,6 +125,7 @@ import Prelude hiding (product)
 import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
 import Data.Distributive (Distributive)
+import Data.Aeson
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData(rnf))
@@ -758,11 +766,69 @@ instance Monoid (FeatureCollectionT g v crs d) where
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
 
+
+
+data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
+  = forall crs. (ToJSON (g v crs), KnownSymbol crs) => SomeGeometry (g v crs)
+
+instance HasVertex (SomeGeometry Point v) (Vertex v) where
+  vertex = lens (\(SomeGeometry v) -> v^.vertex)
+                (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
+
+data SomeFeatureT g v a
+  = forall crs. (ToJSON (g v crs) , KnownSymbol crs)
+  => SomeFeature (FeatureT g v crs a)
+
+instance HasProperties (SomeFeatureT g v a) a where
+  properties = lens (\(SomeFeature f) -> f^.properties)
+                    (\(SomeFeature f) p -> SomeFeature (f & properties .~ p))
+
+instance HasGeometry (SomeFeatureT g v a) (SomeGeometry g v) where
+  geometry =
+    lens (\(SomeFeature v) -> SomeGeometry (v^.geometry))
+         (\(SomeFeature (Feature _ p)) (SomeGeometry g) ->
+            SomeFeature (Feature g p))
+
+data SomeFeatureCollectionT g v a
+  = forall crs. (ToJSON (g v crs), KnownSymbol crs)
+  => SomeFeatureCollection (FeatureCollectionT g v crs a)
+
+
+type SomeFeatureCollection v a = SomeFeatureCollectionT Geometry
+type SomeFeature v a = SomeFeatureT Geometry
+
+class HasSameCrs o where
+  sameCrs :: o -> o -> Bool
+
+instance HasSameCrs (SomeGeometry g v) where
+  sameCrs (SomeGeometry (_ :: g v c1))
+          (SomeGeometry (_ :: g v c2)) =
+    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+      Just _  -> True
+      Nothing -> False
+
+instance HasSameCrs (SomeFeatureT g v a) where
+  sameCrs (SomeFeature (_ :: FeatureT g v c1 a))
+          (SomeFeature (_ :: FeatureT g v c2 a)) =
+    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+      Just _  -> True
+      Nothing -> False
+
+instance HasSameCrs (SomeFeatureCollectionT g v a) where
+  sameCrs (SomeFeatureCollection (_ :: FeatureCollectionT g v c1 a))
+          (SomeFeatureCollection (_ :: FeatureCollectionT g v c2 a)) =
+    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+      Just _  -> True
+      Nothing -> False
+
 data Raster vs (t :: OffsetType) crs v a
   = Raster {
       rGeoReference :: !(GeoReference vs crs)
     , rData         :: !(v a)
     } deriving (Eq, Show)
+
+
+
 
 rasterIndex
   :: forall vs t crs v a. (HasOffset vs t)

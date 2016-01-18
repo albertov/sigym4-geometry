@@ -7,7 +7,6 @@
            , DataKinds
            , OverloadedStrings
            , DefaultSignatures
-           , ExistentialQuantification
            , RankNTypes
            #-}
 module Sigym4.Geometry.Json (
@@ -15,10 +14,6 @@ module Sigym4.Geometry.Json (
   , eitherDecode
   , FromFeatureProperties (..)
   , ToFeatureProperties (..)
-  , SomeFeatureT (..)
-  , SomeFeatureCollectionT (..)
-  , SomeGeometry (..)
-  , HasSameCrs (..)
   ) where
 
 import Data.Aeson
@@ -30,7 +25,6 @@ import Control.Lens ((^.))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as HM
-import GHC.TypeLits
 
 
 instance (KnownSymbol crs, VectorSpace v) => ToJSON (Point v crs) where
@@ -253,51 +247,17 @@ instance (FromFeatureProperties d, FromJSON (g v crs))
 
 
 
-data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
-  = forall crs. (ToJSON (g v crs), KnownSymbol crs) => SomeGeometry (g v crs)
-
-data SomeFeatureT g v a
-  = forall crs. (ToJSON (FeatureT g v crs a), KnownSymbol crs)
-  => SomeFeatureT (FeatureT g v crs a)
-
-data SomeFeatureCollectionT g v a
-  = forall crs. (ToJSON (FeatureCollectionT g v crs a), KnownSymbol crs)
-  => SomeFeatureCollectionT (FeatureCollectionT g v crs a)
-
-class HasSameCrs o where
-  sameCrs :: o -> o -> Bool
-
-instance HasSameCrs (SomeGeometry g v) where
-  sameCrs (SomeGeometry (_ :: g v c1))
-          (SomeGeometry (_ :: g v c2)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureT g v a) where
-  sameCrs (SomeFeatureT (_ :: FeatureT g v c1 a))
-          (SomeFeatureT (_ :: FeatureT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureCollectionT g v a) where
-  sameCrs (SomeFeatureCollectionT (_ :: FeatureCollectionT g v c1 a))
-          (SomeFeatureCollectionT (_ :: FeatureCollectionT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
 
 instance ToJSON (SomeGeometry g v) where
   toJSON (SomeGeometry (g :: g v crs)) =
     toJSON_crs (Proxy :: Proxy crs) g
 
-instance ToJSON (SomeFeatureT g v a) where
-  toJSON (SomeFeatureT (g :: FeatureT g v crs a)) =
+instance ToFeatureProperties a => ToJSON (SomeFeatureT g v a) where
+  toJSON (SomeFeature (g :: FeatureT g v crs a)) =
     toJSON_crs (Proxy :: Proxy crs) g
 
-instance ToJSON (SomeFeatureCollectionT g v a) where
-  toJSON (SomeFeatureCollectionT (g :: FeatureCollectionT g v crs a)) =
+instance ToFeatureProperties a => ToJSON (SomeFeatureCollectionT g v a) where
+  toJSON (SomeFeatureCollection (g :: FeatureCollectionT g v crs a)) =
     toJSON_crs (Proxy :: Proxy crs) g
 
 
@@ -344,12 +304,12 @@ instance (ToFeatureProperties a, FromFeatureProperties a, VectorSpace v) => From
   parseJSON o =\
     withParsedCrs o $ \(Proxy :: Proxy crs) -> do {\
 ;     f :: FeatureT ty v crs a <- parseJSON o\
-;     return (SomeFeatureT f)}};\
+;     return (SomeFeature f)}};\
 instance (ToFeatureProperties a, FromFeatureProperties a, VectorSpace v) => FromJSON (SomeFeatureCollectionT ty v a) where { \
   parseJSON o =\
     withParsedCrs o $ \(Proxy :: Proxy crs) -> do {\
 ;     f :: FeatureCollectionT ty v crs a <- parseJSON o\
-;     return (SomeFeatureCollectionT f)}}
+;     return (SomeFeatureCollection f)}}
 
 fromJSONAnyCrs(Geometry)
 fromJSONAnyCrs(GeometryCollection)
