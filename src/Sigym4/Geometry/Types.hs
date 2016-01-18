@@ -125,7 +125,6 @@ import Prelude hiding (product)
 import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
 import Data.Distributive (Distributive)
-import Data.Aeson
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData(rnf))
@@ -769,15 +768,14 @@ instance Monoid (FeatureCollectionT g v crs d) where
 
 
 data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
-  = forall crs. (ToJSON (g v crs), KnownSymbol crs) => SomeGeometry (g v crs)
+  = forall crs. KnownSymbol crs => SomeGeometry (g v crs)
 
 instance HasVertex (SomeGeometry Point v) (Vertex v) where
   vertex = lens (\(SomeGeometry v) -> v^.vertex)
                 (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
 
 data SomeFeatureT g v a
-  = forall crs. (ToJSON (g v crs) , KnownSymbol crs)
-  => SomeFeature (FeatureT g v crs a)
+  = forall crs. KnownSymbol crs => SomeFeature (FeatureT g v crs a)
 
 instance HasProperties (SomeFeatureT g v a) a where
   properties = lens (\(SomeFeature f) -> f^.properties)
@@ -790,7 +788,7 @@ instance HasGeometry (SomeFeatureT g v a) (SomeGeometry g v) where
             SomeFeature (Feature g p))
 
 data SomeFeatureCollectionT g v a
-  = forall crs. (ToJSON (g v crs), KnownSymbol crs)
+  = forall crs. KnownSymbol crs
   => SomeFeatureCollection (FeatureCollectionT g v crs a)
 
 

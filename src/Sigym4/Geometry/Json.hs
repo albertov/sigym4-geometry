@@ -1,13 +1,13 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleContexts
            , FlexibleInstances
-           , CPP
            , ScopedTypeVariables
            , KindSignatures
            , DataKinds
            , OverloadedStrings
            , DefaultSignatures
            , RankNTypes
+           , UndecidableInstances
            #-}
 module Sigym4.Geometry.Json (
     encode
@@ -25,42 +25,43 @@ import Control.Lens ((^.))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as HM
+import Unsafe.Coerce (unsafeCoerce)
 
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (Point v crs) where
+instance VectorSpace v => ToJSON (Point v crs) where
     toJSON g = typedObject "Point" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (MultiPoint v crs) where
+instance VectorSpace v => ToJSON (MultiPoint v crs) where
     toJSON g = typedObject "MultiPoint" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (LineString v crs) where
+instance VectorSpace v => ToJSON (LineString v crs) where
     toJSON g = typedObject "LineString" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (MultiLineString v crs) where
+instance VectorSpace v => ToJSON (MultiLineString v crs) where
     toJSON g = typedObject "MultiLineString" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (Polygon v crs) where
+instance VectorSpace v => ToJSON (Polygon v crs) where
     toJSON g = typedObject "Polygon" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (MultiPolygon v crs) where
+instance VectorSpace v => ToJSON (MultiPolygon v crs) where
     toJSON g = typedObject "MultiPolygon" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (Triangle v crs) where
+instance VectorSpace v => ToJSON (Triangle v crs) where
     toJSON g = typedObject "Triangle" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (PolyhedralSurface v crs) where
+instance VectorSpace v => ToJSON (PolyhedralSurface v crs) where
     toJSON g = typedObject "PolyhedralSurface" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (TIN v crs) where
+instance VectorSpace v => ToJSON (TIN v crs) where
     toJSON g = typedObject "TIN" ["coordinates" .= coordinates g]
 
-instance (KnownSymbol crs, VectorSpace v)
+instance VectorSpace v
   => ToJSON (GeometryCollection v crs) where
     toJSON g =
       typedObject "GeometryCollection" ["geometries" .= (g^.geometries)]
 
 
-instance (KnownSymbol crs, VectorSpace v) => ToJSON (Geometry v crs) where
+instance VectorSpace v => ToJSON (Geometry v crs) where
     toJSON (GeoPoint g)             = toJSON g
     toJSON (GeoMultiPoint g)        = toJSON g
     toJSON (GeoLineString g)        = toJSON g
@@ -112,54 +113,54 @@ parseCoordinates o = o .: "coordinates"
 typedObject :: Text -> [Pair] -> Value
 typedObject k = object . ((:) ("type" .= k))
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (Point v crs) where
+instance VectorSpace v => FromJSON (Point v crs) where
     parseJSON (Object o) = parseCoordinates o >>= parsePoint
     parseJSON _ = fail "parseJSON(Point): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (MultiPoint v crs) where
+instance VectorSpace v => FromJSON (MultiPoint v crs) where
     parseJSON (Object o) =
       parseCoordinates o >>=
         fmap (MultiPoint . U.convert) . V.mapM parsePoint . V.fromList
 
     parseJSON _ = fail "parseJSON(MultiPoint): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (LineString v crs) where
+instance VectorSpace v => FromJSON (LineString v crs) where
     parseJSON (Object o) = parseCoordinates o >>= parseLineString
     parseJSON _ = fail "parseJSON(LineString): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (MultiLineString v crs) where
+instance VectorSpace v => FromJSON (MultiLineString v crs) where
     parseJSON (Object o) =
       parseCoordinates o >>= fmap MultiLineString . V.mapM parseLineString
     parseJSON _ = fail "parseJSON(MultiLineString): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (Polygon v crs) where
+instance VectorSpace v => FromJSON (Polygon v crs) where
     parseJSON (Object o) = parseCoordinates o >>= parsePolygon
     parseJSON _ = fail "parseJSON(Polygon): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (MultiPolygon v crs) where
+instance VectorSpace v => FromJSON (MultiPolygon v crs) where
     parseJSON (Object o) =
       parseCoordinates o >>= fmap MultiPolygon . V.mapM parsePolygon
     parseJSON _ = fail "parseJSON(MultiPolygon): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (Triangle v crs) where
+instance VectorSpace v => FromJSON (Triangle v crs) where
     parseJSON (Object o) = parseCoordinates o >>= parseTriangle
     parseJSON _ = fail "parseJSON(Triangle): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (PolyhedralSurface v crs) where
+instance VectorSpace v => FromJSON (PolyhedralSurface v crs) where
     parseJSON (Object o) =
       parseCoordinates o >>= fmap PolyhedralSurface . V.mapM parsePolygon
     parseJSON _ = fail "parseJSON(PolyhedralSurface): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (TIN v crs) where
+instance VectorSpace v => FromJSON (TIN v crs) where
     parseJSON (Object o) =
       parseCoordinates o >>= fmap (TIN . U.convert) . V.mapM parseTriangle
     parseJSON _ = fail "parseJSON(TIN): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (GeometryCollection v crs) where
+instance VectorSpace v => FromJSON (GeometryCollection v crs) where
     parseJSON (Object o) = fmap GeometryCollection (o .: "geometries")
     parseJSON _ = fail "parseJSON(GeometryCollection): Expected an object"
 
-instance (KnownSymbol crs, VectorSpace v) => FromJSON (Geometry v crs) where
+instance VectorSpace v => FromJSON (Geometry v crs) where
     parseJSON v@(Object o) = do
         typ <- o .: "type"
         case typ of
@@ -230,11 +231,10 @@ instance (FromJSON (g v crs), FromFeatureProperties d)
     parseJSON _ = fail "parseJSON(Feature): Expected an object"
 
 
-instance (KnownSymbol crs, ToFeatureProperties d, ToJSON (g v crs))
+instance (ToFeatureProperties d, ToJSON (g v crs))
   => ToJSON (FeatureCollectionT g v crs d)
   where
     toJSON f =
-      toJSON_crs (Proxy :: Proxy crs) $
         typedObject "FeatureCollection" ["features" .= (f^.features)]
 
 instance (FromFeatureProperties d, FromJSON (g v crs))
@@ -248,21 +248,24 @@ instance (FromFeatureProperties d, FromJSON (g v crs))
 
 
 
-instance ToJSON (SomeGeometry g v) where
+instance ToJSON (g v NoCrs) => ToJSON (SomeGeometry g v) where
   toJSON (SomeGeometry (g :: g v crs)) =
-    toJSON_crs (Proxy :: Proxy crs) g
+    toJSON_crs (Proxy :: Proxy crs) (unsafeCoerce g :: g v NoCrs)
 
-instance ToFeatureProperties a => ToJSON (SomeFeatureT g v a) where
+instance (ToJSON (g v NoCrs), ToFeatureProperties a)
+  => ToJSON (SomeFeatureT g v a) where
   toJSON (SomeFeature (g :: FeatureT g v crs a)) =
-    toJSON_crs (Proxy :: Proxy crs) g
+    toJSON_crs (Proxy :: Proxy crs) (unsafeCoerce g :: FeatureT g v NoCrs a)
 
-instance ToFeatureProperties a => ToJSON (SomeFeatureCollectionT g v a) where
+instance (ToJSON (g v NoCrs), ToFeatureProperties a)
+  => ToJSON (SomeFeatureCollectionT g v a) where
   toJSON (SomeFeatureCollection (g :: FeatureCollectionT g v crs a)) =
-    toJSON_crs (Proxy :: Proxy crs) g
+    toJSON_crs (Proxy :: Proxy crs)
+               (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
 
 
 toJSON_crs
-  :: forall o s. (KnownSymbol s, ToJSON o) => Proxy s -> o -> Value
+  :: forall o crs. (KnownSymbol crs, ToJSON o) => Proxy crs -> o -> Value
 toJSON_crs p o =
   case (c, toJSON o) of
     ("",z)         -> z
@@ -278,47 +281,39 @@ toJSON_crs p o =
 withParsedCrs
   :: Value -> (forall crs. KnownSymbol crs => Proxy crs -> Parser a)
   -> Parser a
-withParsedCrs (Object o) f = do
-  mCrs <- o .:? "crs"
-  case mCrs of
-    Just (Object o') -> do
-      mProperties <- o' .:? "properties"
-      case mProperties of
-        Just (Object p) -> do
-          mName <- p .: "name"
-          case mName of
-            Just c -> withCrs c f
+withParsedCrs v f =
+  case v of
+    Object o -> do
+      mCrs <- o .:? "crs"
+      case mCrs of
+        Just (Object o') -> do
+          mProperties <- o' .:? "properties"
+          case mProperties of
+            Just (Object p) -> do
+              mName <- p .: "name"
+              case mName of
+                Just c -> withCrs c f
+                _ -> withCrs "" f
             _ -> withCrs "" f
         _ -> withCrs "" f
     _ -> withCrs "" f
-withParsedCrs _ f = withCrs "" f
 
+instance FromJSON (ty v NoCrs) => FromJSON (SomeGeometry ty v) where
+  parseJSON o =
+    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+      g :: ty v NoCrs <- parseJSON o
+      return (SomeGeometry (unsafeCoerce g :: ty v crs))
 
-#define fromJSONAnyCrs(ty) \
-instance VectorSpace v => FromJSON (SomeGeometry ty v) where { \
-  parseJSON o =\
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do {\
-;     g :: ty v crs <- parseJSON o\
-;     return (SomeGeometry g)}};\
-instance (ToFeatureProperties a, FromFeatureProperties a, VectorSpace v) => FromJSON (SomeFeatureT ty v a) where { \
-  parseJSON o =\
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do {\
-;     f :: FeatureT ty v crs a <- parseJSON o\
-;     return (SomeFeature f)}};\
-instance (ToFeatureProperties a, FromFeatureProperties a, VectorSpace v) => FromJSON (SomeFeatureCollectionT ty v a) where { \
-  parseJSON o =\
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do {\
-;     f :: FeatureCollectionT ty v crs a <- parseJSON o\
-;     return (SomeFeatureCollection f)}}
+instance (FromJSON (FeatureT ty v NoCrs a))
+  => FromJSON (SomeFeatureT ty v a) where
+  parseJSON o =
+    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+      f :: FeatureT ty v NoCrs a <- parseJSON o
+      return (SomeFeature (unsafeCoerce f :: FeatureT ty v crs a))
 
-fromJSONAnyCrs(Geometry)
-fromJSONAnyCrs(GeometryCollection)
-fromJSONAnyCrs(PolyhedralSurface)
-fromJSONAnyCrs(TIN)
-fromJSONAnyCrs(Triangle)
-fromJSONAnyCrs(MultiPolygon)
-fromJSONAnyCrs(Polygon)
-fromJSONAnyCrs(MultiLineString)
-fromJSONAnyCrs(LineString)
-fromJSONAnyCrs(MultiPoint)
-fromJSONAnyCrs(Point)
+instance (FromJSON (FeatureCollectionT ty v NoCrs a))
+  => FromJSON (SomeFeatureCollectionT ty v a) where
+  parseJSON o =
+    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+      f :: FeatureCollectionT ty v NoCrs a <- parseJSON o
+      return (SomeFeatureCollection (unsafeCoerce f :: FeatureCollectionT ty v crs a))
