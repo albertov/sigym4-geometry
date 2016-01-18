@@ -91,7 +91,7 @@ qtLocCode qt p
 
 calculateExtent
   :: VectorSpace v
-  => QuadTree v srid a -> Level -> LocCode v -> Extent v 0
+  => QuadTree v srid a -> Level -> LocCode v -> Extent v NoCrs
 calculateExtent qt l code = Extent lo hi
   where
     !(QtVertex lo) = qtLocCode2Vertex qt code

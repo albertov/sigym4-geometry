@@ -35,7 +35,8 @@ instance Arbitrary Level where
     where lo = fromIntegral (unLevel minBound)
           hi = fromIntegral (unLevel maxBound)
 
-type ExtentAndPoints v = (QuadTree v 0 (Extent v 0), Point v 0, Point v 0)
+type ExtentAndPoints v =
+  (QuadTree v NoCrs (Extent v NoCrs), Point v NoCrs, Point v NoCrs)
 
 newtype RandomQT v = RandomQT {unRQt :: ExtentAndPoints v} deriving Show
 
@@ -58,7 +59,7 @@ randomOrDelicateOrProbablyInvalid
   :: Either (RandomQT v) (Either (DelicateQT v) (ProbablyInvalidPointsQT v))
   -> ExtentAndPoints v
 randomOrDelicateOrProbablyInvalid = either unRQt (either unDelQt unPiQt)
-  
+
 instance VectorSpace v => Arbitrary (LocCode v) where
   arbitrary = (LocCode . unsafeFromCoords) <$> replicateM n arbitrary
     where n = dim (Proxy :: Proxy v)

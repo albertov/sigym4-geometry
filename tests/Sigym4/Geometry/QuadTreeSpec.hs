@@ -54,7 +54,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
       quadrantAtLevel level (setChildBits level q (0::LocCode v)) == q
 
   describe "neighborsDefault " $ do
-    it " has correct length" $ 
+    it " has correct length" $
       length (neighborsDefault :: Neighbors v) == 3^(dim (Proxy :: Proxy v)) - 1
 
   describe "is a functor" $ do
@@ -89,7 +89,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
 
   describe "qtMinBox" $ do
-    
+
     prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v srid) ->
       let eq      = runIdentity (generate2 (Leaf ()) ext minBound)
           Right q = eq
@@ -117,7 +117,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
           Nothing  -> False
           Just e   -> e `contains` p
 
-    prop "can lookup any point" $ \(arg, p :: Point v 0) -> 
+    prop "can lookup any point" $ \(arg, p :: Point v NoCrs) ->
       let RandomQT (qt,_,_) = arg :: RandomQT v
       in case lookupByPoint qt p of
           Nothing  -> not (qtExtent qt `contains` p)
