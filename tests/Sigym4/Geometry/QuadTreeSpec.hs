@@ -75,13 +75,13 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
          qt == runIdentity (mapM return qt)
 
   describe "is Foldable" $ do
-    prop "length is correct" $ \(Level l, ext::Extent v srid) ->
+    prop "length is correct" $ \(Level l, ext::Extent v) ->
       l <= 3 ==>
         let gen = Node (\e -> return (e, gen))
             Right qt = runIdentity (generate2 gen ext (Level l))
         in length qt == (2 ^ dim (Proxy :: Proxy v)) ^ l
 
-    prop "length of toList is correct" $ \(Level l, ext::Extent v srid) ->
+    prop "length of toList is correct" $ \(Level l, ext::Extent v) ->
       l <= 3 ==>
         let gen = Node (\e -> return (e, gen))
             Right qt = runIdentity (generate2 gen ext (Level l))
@@ -90,13 +90,13 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
 
   describe "qtMinBox" $ do
 
-    prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v srid) ->
+    prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v) ->
       let eq      = runIdentity (generate2 (Leaf ()) ext minBound)
           Right q = eq
       in isRight eq ==> qtMinBox q == eSize (qtExtent q)
 
     prop "qtMinBox is constant after grows" $ \( dirs :: [Quadrant v]
-                                               , ext  :: Extent v srid
+                                               , ext  :: Extent v
                                                ) ->
       let eq = runIdentity (generate2 (Leaf ()) ext minBound)
           eq2 = foldr growIt eq dirs
@@ -117,7 +117,7 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
           Nothing  -> False
           Just e   -> e `contains` p
 
-    prop "can lookup any point" $ \(arg, p :: Point v NoCrs) ->
+    prop "can lookup any point" $ \(arg, p :: Point v) ->
       let RandomQT (qt,_,_) = arg :: RandomQT v
       in case lookupByPoint qt p of
           Nothing  -> not (qtExtent qt `contains` p)

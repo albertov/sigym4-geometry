@@ -74,7 +74,7 @@ spec = parallel $ do
 
   describe "northUpGeoTransform" $ do
     prop "preserves origin and has diagonal matrix" $
-      \(e :: Extent V2 NoCrs, s :: Size V2) ->
+      \(e :: Extent V2, s :: Size V2) ->
         case northUpGeoTransform e s of
           Right (GeoTransform (V2 (V2 dx ry) (V2 rx dy)) (V2 x0 y0)) ->
             let V2 dx' dy' = eSize e / fmap fromIntegral (unSize s)
@@ -100,10 +100,10 @@ spec = parallel $ do
 
     prop "invalid extent returns Left" $
       forAll (liftA2 (,) genInvalidExtent arbitrary) $
-        \(e :: Extent V2 NoCrs, s :: Size V2) ->
+        \(e :: Extent V2, s :: Size V2) ->
           isLeft (northUpGeoTransform e s)
 
     prop "invalid size returns Left" $
       forAll (liftA2 (,) arbitrary genInvalidSize) $
-        \(e :: Extent V2 NoCrs, s :: Size V2) ->
+        \(e :: Extent V2, s :: Size V2) ->
           isLeft (northUpGeoTransform e s)

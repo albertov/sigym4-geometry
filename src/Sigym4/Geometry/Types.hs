@@ -98,15 +98,9 @@ module Sigym4.Geometry.Types (
   , _GeoCollection
 
   , NoCrs
-  , SomeFeature
-  , SomeFeatureCollection
-  , SomeFeatureT (..)
-  , SomeFeatureCollectionT (..)
-  , SomeGeometry (..)
   , HasCrs (..)
-  , HasSrid (..)
+  , HasEquivalentCrs (..)
   , HasSameCrs (..)
-  , HasSameCrsK (..)
 
   -- re-exports
   , KnownNat
@@ -374,23 +368,20 @@ instance HasOffset V3 ColumnMajor where
             (py,pz) =  r `divMod` sz
     {-# INLINE unsafeFromOffset #-}
 
-type NoCrs = ""
-
-
 -- | An extent in v space is a pair of minimum and maximum vertices
-data Extent v (crs :: Symbol) = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
-deriving instance VectorSpace v => Eq (Extent v crs)
-deriving instance VectorSpace v => Show (Extent v crs)
+data Extent v  = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
+deriving instance VectorSpace v => Eq (Extent v)
+deriving instance VectorSpace v => Show (Extent v)
 
-instance NFData (Vertex v) => NFData (Extent v crs) where
+instance NFData (Vertex v) => NFData (Extent v) where
   rnf (Extent lo hi) = rnf lo `seq` rnf hi `seq` ()
 
 
-eSize :: VectorSpace v => Extent v crs -> Vertex v
+eSize :: VectorSpace v => Extent v -> Vertex v
 eSize e = eMax e - eMin e
 {-# INLINE eSize #-}
 
-instance VectorSpace v => SG.Semigroup (Extent v crs) where
+instance VectorSpace v => SG.Semigroup (Extent v) where
     Extent a0 a1 <> Extent b0 b1
         = Extent (min <$> a0 <*> b0) (max <$> a1 <*> b1)
     {-# INLINE (<>) #-}
@@ -412,15 +403,15 @@ scalarSize = product . unSize
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
 -- 'Pixel' coordinates and back. gtMatrix *must* be invertible so smart
 -- constructors are provided
-data GeoTransform v (crs :: Symbol) = GeoTransform
+data GeoTransform v = GeoTransform
       { gtMatrix :: !(SqMatrix v)
       , gtOrigin :: !(Vertex v)
       }
-deriving instance VectorSpace v => Eq (GeoTransform v crs)
-deriving instance VectorSpace v => Show (GeoTransform v crs)
+deriving instance VectorSpace v => Eq (GeoTransform v)
+deriving instance VectorSpace v => Show (GeoTransform v)
 
-northUpGeoTransform :: Extent V2 crs -> Size V2
-                    -> Either String (GeoTransform V2 crs)
+northUpGeoTransform :: Extent V2 -> Size V2
+                    -> Either String (GeoTransform V2)
 northUpGeoTransform e s
   | not isValidBox   = Left "northUpGeoTransform: invalid extent"
   | not isValidSize  = Left "northUpGeoTransform: invalid size"
@@ -435,7 +426,7 @@ northUpGeoTransform e s
     V2 dx dy    = (eMax e - eMin e)/s'
     matrix      = V2 (V2 dx 0) (V2 0 (-dy))
 
-gtForward :: VectorSpace v => GeoTransform v crs -> Point v crs -> Pixel v
+gtForward :: VectorSpace v => GeoTransform v -> Point v -> Pixel v
 gtForward gt (Point v) = Pixel $ m !* (v-v0)
   where v0  = gtOrigin gt
         m
@@ -445,70 +436,70 @@ gtForward gt (Point v) = Pixel $ m !* (v-v0)
           | otherwise                      = inv (gtMatrix gt)
 
 
-gtBackward :: VectorSpace v => GeoTransform v crs -> Pixel v -> Point v crs
+gtBackward :: VectorSpace v => GeoTransform v -> Pixel v -> Point v
 gtBackward gt p = Point $ v0 + (unPx p) *! m
   where m  = gtMatrix gt
         v0 = gtOrigin gt
 
-data GeoReference v crs = GeoReference
-      { grTransform :: !(GeoTransform v crs)
+data GeoReference v = GeoReference
+      { grTransform :: !(GeoTransform v)
       , grSize      :: !(Size v)
       }
-deriving instance VectorSpace v => Eq (GeoReference v crs)
-deriving instance VectorSpace v => Show (GeoReference v crs)
+deriving instance VectorSpace v => Eq (GeoReference v)
+deriving instance VectorSpace v => Show (GeoReference v)
 
 
-grScalarSize :: VectorSpace v => GeoReference v crs -> Int
+grScalarSize :: VectorSpace v => GeoReference v -> Int
 grScalarSize = scalarSize . grSize
 {-# INLINE grScalarSize #-}
 
 
 pointOffset :: (HasOffset v t, VectorSpace v)
-  => GeoReference v crs -> Point v crs -> Maybe (Offset t)
+  => GeoReference v -> Point v -> Maybe (Offset t)
 pointOffset gr =  toOffset (grSize gr) . grForward gr
 {-# INLINE pointOffset #-}
 
 unsafePointOffset :: (HasOffset v t, VectorSpace v)
-  => GeoReference v crs -> Point v crs -> Offset t
+  => GeoReference v -> Point v -> Offset t
 unsafePointOffset gr =  unsafeToOffset (grSize gr) . grForward gr
 {-# INLINE unsafePointOffset #-}
 
 
-grForward :: VectorSpace v => GeoReference v crs -> Point v crs -> Pixel v
+grForward :: VectorSpace v => GeoReference v -> Point v -> Pixel v
 grForward gr = gtForward (grTransform gr)
 {-# INLINE grForward #-}
 
-grBackward :: VectorSpace v => GeoReference v crs -> Pixel v -> Point v crs
+grBackward :: VectorSpace v => GeoReference v -> Pixel v -> Point v
 grBackward gr = gtBackward (grTransform gr)
 {-# INLINE grBackward #-}
 
 
-mkGeoReference :: Extent V2 crs -> Size V2 -> Either String (GeoReference V2 crs)
+mkGeoReference :: Extent V2 -> Size V2 -> Either String (GeoReference V2)
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
-newtype Point v (crs :: Symbol) = Point {_pointVertex:: Vertex v}
-deriving instance VectorSpace v          => Show (Point v crs)
-deriving instance VectorSpace v          => Eq (Point v crs)
-deriving instance VectorSpace v          => Ord (Point v crs)
-deriving instance NFData      (Vertex v) => NFData (Point v crs)
-deriving instance Hashable    (Vertex v) => Hashable (Point v crs)
-deriving instance Storable    (Vertex v) => Storable (Point v crs)
+newtype Point v = Point {_pointVertex:: Vertex v}
+deriving instance VectorSpace v          => Show (Point v)
+deriving instance VectorSpace v          => Eq (Point v)
+deriving instance VectorSpace v          => Ord (Point v)
+deriving instance NFData      (Vertex v) => NFData (Point v)
+deriving instance Hashable    (Vertex v) => Hashable (Point v)
+deriving instance Storable    (Vertex v) => Storable (Point v)
 
 class HasVertex o a | o->a where
   vertex :: Lens' o a
 
-instance HasVertex (Point v crs) (Vertex v) where
+instance HasVertex (Point v) (Vertex v) where
   vertex = lens coerce (const coerce)
   {-# INLINE vertex #-}
 
 
 derivingUnbox "Point"
-    [t| forall v crs. VectorSpace v => Point v crs -> Vertex v |]
+    [t| forall v. VectorSpace v => Point v -> Vertex v |]
     [| coerce |]
     [| coerce |]
 
 derivingUnbox "Extent"
-    [t| forall v crs. VectorSpace v => Extent v crs -> (Vertex v,Vertex v) |]
+    [t| forall v. VectorSpace v => Extent v -> (Vertex v,Vertex v) |]
     [| \(Extent e0 e1) -> (e0,e1) |]
     [| \(e0,e1) -> Extent e0 e1 |]
 
@@ -522,89 +513,89 @@ derivingUnbox "Offset"
     [| coerce |]
     [| coerce |]
 
-newtype MultiPoint v crs = MultiPoint {
-    _multiPointPoints :: U.Vector (Point v crs)
+newtype MultiPoint v = MultiPoint {
+    _multiPointPoints :: U.Vector (Point v)
 } deriving (Eq, Show)
 makeFields ''MultiPoint
 
-deriving instance VectorSpace v => NFData (MultiPoint v crs)
+deriving instance VectorSpace v => NFData (MultiPoint v)
 
-newtype LinearRing v crs
-  = LinearRing {_linearRingPoints :: U.Vector (Point v crs)}
+newtype LinearRing v
+  = LinearRing {_linearRingPoints :: U.Vector (Point v)}
   deriving (Eq, Show)
 makeFields ''LinearRing
 
-deriving instance VectorSpace v => NFData (LinearRing v crs)
+deriving instance VectorSpace v => NFData (LinearRing v)
 
-newtype LineString v crs
-  = LineString {_lineStringPoints :: U.Vector (Point v crs)}
+newtype LineString v
+  = LineString {_lineStringPoints :: U.Vector (Point v)}
   deriving (Eq, Show)
 makeFields ''LineString
 
-deriving instance VectorSpace v => NFData (LineString v crs)
+deriving instance VectorSpace v => NFData (LineString v)
 
-newtype MultiLineString v crs = MultiLineString {
-    _multiLineStringLineStrings :: V.Vector (LineString v crs)
+newtype MultiLineString v = MultiLineString {
+    _multiLineStringLineStrings :: V.Vector (LineString v)
 } deriving (Eq, Show)
 makeFields ''MultiLineString
 
-deriving instance VectorSpace v => NFData (MultiLineString v crs)
+deriving instance VectorSpace v => NFData (MultiLineString v)
 
-data Triangle v crs = Triangle !(Point v crs) !(Point v crs) !(Point v crs)
+data Triangle v = Triangle !(Point v) !(Point v) !(Point v)
     deriving (Eq, Show)
 
-instance VectorSpace v => NFData (Triangle v crs) where
+instance VectorSpace v => NFData (Triangle v) where
   rnf (Triangle a b c) = rnf a `seq` rnf b `seq` rnf c `seq` ()
 
 derivingUnbox "Triangle"
-    [t| forall v crs. VectorSpace v => Triangle v crs -> (Point v crs, Point v crs, Point v crs) |]
+    [t| forall v. VectorSpace v => Triangle v -> (Point v, Point v, Point v) |]
     [| \(Triangle a b c) -> (a, b, c) |]
     [| \(a, b, c) -> Triangle a b c|]
 
-data Polygon v crs = Polygon {
-    _polygonOuterRing  :: !(LinearRing v crs)
-  , _polygonInnerRings :: !(V.Vector (LinearRing v crs))
+data Polygon v = Polygon {
+    _polygonOuterRing  :: !(LinearRing v)
+  , _polygonInnerRings :: !(V.Vector (LinearRing v))
 } deriving (Eq, Show)
 makeFields ''Polygon
 
-instance VectorSpace v => NFData (Polygon v crs) where
+instance VectorSpace v => NFData (Polygon v) where
   rnf (Polygon o r) = rnf o `seq` rnf r `seq` ()
 
-newtype MultiPolygon v crs = MultiPolygon {
-    _multiPolygonPolygons :: V.Vector (Polygon v crs)
+newtype MultiPolygon v = MultiPolygon {
+    _multiPolygonPolygons :: V.Vector (Polygon v)
 } deriving (Eq, Show)
 makeFields ''MultiPolygon
 
-deriving instance VectorSpace v => NFData (MultiPolygon v crs)
+deriving instance VectorSpace v => NFData (MultiPolygon v)
 
-newtype PolyhedralSurface v crs = PolyhedralSurface {
-    _polyhedralSurfacePolygons :: V.Vector (Polygon v crs)
+newtype PolyhedralSurface v = PolyhedralSurface {
+    _polyhedralSurfacePolygons :: V.Vector (Polygon v)
 } deriving (Eq, Show)
 makeFields ''PolyhedralSurface
 
-deriving instance VectorSpace v => NFData (PolyhedralSurface v crs)
+deriving instance VectorSpace v => NFData (PolyhedralSurface v)
 
-newtype TIN v crs = TIN {
-    _tINTriangles :: U.Vector (Triangle v crs)
+newtype TIN v = TIN {
+    _tINTriangles :: U.Vector (Triangle v)
 } deriving (Eq, Show)
 makeFields ''TIN
 
-deriving instance VectorSpace v => NFData (TIN v crs)
+deriving instance VectorSpace v => NFData (TIN v)
 
-data Geometry v (crs::Symbol)
-    = GeoPoint !(Point v crs)
-    | GeoMultiPoint !(MultiPoint v crs)
-    | GeoLineString !(LineString v crs)
-    | GeoMultiLineString !(MultiLineString v crs)
-    | GeoPolygon !(Polygon v crs)
-    | GeoMultiPolygon !(MultiPolygon v crs)
-    | GeoTriangle !(Triangle v crs)
-    | GeoPolyhedralSurface !(PolyhedralSurface v crs)
-    | GeoTIN !(TIN v crs)
-    | GeoCollection !(GeometryCollection v crs)
+data Geometry v
+    = GeoPoint !(Point v)
+    | GeoMultiPoint !(MultiPoint v)
+    | GeoLineString !(LineString v)
+    | GeoMultiLineString !(MultiLineString v)
+    | GeoPolygon !(Polygon v)
+    | GeoMultiPolygon !(MultiPolygon v)
+    | GeoTriangle !(Triangle v)
+    | GeoPolyhedralSurface !(PolyhedralSurface v)
+    | GeoTIN !(TIN v)
+    | GeoCollection !(GeometryCollection v)
     deriving (Eq, Show)
 
-instance VectorSpace v => NFData (Geometry v crs) where
+instance VectorSpace v => NFData (Geometry v) where
   rnf (GeoPoint g)             = rnf g
   rnf (GeoMultiPoint g)        = rnf g
   rnf (GeoLineString g)        = rnf g
@@ -616,13 +607,13 @@ instance VectorSpace v => NFData (Geometry v crs) where
   rnf (GeoTIN g)               = rnf g
   rnf (GeoCollection g)        = rnf g
 
-newtype GeometryCollection v crs = GeometryCollection {
-    _geometryCollectionGeometries :: V.Vector (Geometry v crs)
+newtype GeometryCollection v = GeometryCollection {
+    _geometryCollectionGeometries :: V.Vector (Geometry v)
 } deriving (Eq, Show)
 makeFields ''GeometryCollection
 makePrisms ''Geometry
 
-deriving instance VectorSpace v => NFData (GeometryCollection v crs)
+deriving instance VectorSpace v => NFData (GeometryCollection v)
 
 data LinkType
   = Proj4
@@ -631,8 +622,8 @@ data LinkType
 
 type Href = String
 
-class HasSameCrsK (a::k) (b::k) where
-  sameCrsK :: Proxy a -> Proxy b -> Maybe (a :~: b)
+class HasSameCrs (a::k) (b::k) where
+  sameCrs :: Proxy a -> Proxy b -> Maybe (a :~: b)
 
 class HasCrs (a :: k) where
   data Crs (a :: k) :: *
@@ -645,8 +636,8 @@ instance KnownSymbol k => HasCrs k where
   withCrs (Named s) f = case someSymbolVal s of
                            SomeSymbol p -> f p
 
-instance (KnownSymbol a, KnownSymbol b) => HasSameCrsK a b where
-  sameCrsK = sameSymbol
+instance (KnownSymbol a, KnownSymbol b) => HasSameCrs a b where
+  sameCrs = sameSymbol
 
 instance KnownNat k => HasCrs k where
   data Crs k = Srid Int
@@ -655,25 +646,21 @@ instance KnownNat k => HasCrs k where
                            Just (SomeNat p) -> f p
                            Nothing          -> f (Proxy :: Proxy 0)
 
-instance (KnownNat a, KnownNat b) => HasSameCrsK a b where
-  sameCrsK = sameNat
+instance (KnownNat a, KnownNat b) => HasSameCrs a b where
+  sameCrs = sameNat
+
+type NoCrs = ()
 
 instance HasCrs () where
   data Crs () = NoCrs
   crs _ = NoCrs
   withCrs NoCrs f = f (Proxy :: Proxy ())
 
-instance HasSameCrsK () () where
-  sameCrsK _ _ = Just Refl
+instance HasSameCrs () () where
+  sameCrs _ _ = Just Refl
 
-class HasCrs crs => HasSrid crs where
-  srid :: Proxy crs -> Int
-
-instance KnownNat k => HasSrid k where
-  srid p = let Srid i = crs p in i
-
-instance HasSrid () where
-  srid _ = 0
+class (HasCrs a, HasCrs b) => HasEquivalentCrs a b where
+  equivalentCrs :: Crs a -> Crs b
 
 {-
   srid p = stripPrefix prefix (crs p) >>= readMaybe
@@ -683,207 +670,123 @@ instance HasSrid () where
 
 
 
-mkLineString :: VectorSpace v => [Point v crs] -> Maybe (LineString v crs)
+mkLineString :: VectorSpace v => [Point v] -> Maybe (LineString v)
 mkLineString ls
   | U.length v >= 2 = Just $ LineString v
   | otherwise = Nothing
   where v = U.fromList ls
 
-mkLinearRing :: VectorSpace v => [Point v crs] -> Maybe (LinearRing v crs)
+mkLinearRing :: VectorSpace v => [Point v] -> Maybe (LinearRing v)
 mkLinearRing ls
   | U.length v >= 4, U.last v == U.head v = Just $ LinearRing v
   | otherwise = Nothing
   where v = U.fromList ls
 
-mkPolygon :: [LinearRing v crs] -> Maybe (Polygon v crs)
+mkPolygon :: [LinearRing v] -> Maybe (Polygon v)
 mkPolygon (oRing:rings_) = Just $ Polygon oRing $ V.fromList rings_
 mkPolygon _ = Nothing
 
 mkTriangle :: VectorSpace v
-  => Point v crs -> Point v crs -> Point v crs -> Maybe (Triangle v crs)
+  => Point v -> Point v -> Point v -> Maybe (Triangle v)
 mkTriangle a b c | a/=b, b/=c, a/=c = Just $ Triangle a b c
                  | otherwise = Nothing
 
 class HasCoordinates o a | o -> a where
   coordinates :: o -> a
 
-instance VectorSpace v => HasCoordinates (Point v crs) [Double] where
+instance VectorSpace v => HasCoordinates (Point v) [Double] where
   coordinates = views vertex coords
   {-# INLINE coordinates #-}
 
-instance VectorSpace v => HasCoordinates (MultiPoint v crs) [[Double]] where
+instance VectorSpace v => HasCoordinates (MultiPoint v) [[Double]] where
   coordinates = views points (G.toList . V.map coordinates . G.convert)
   {-# INLINE coordinates #-}
 
-instance VectorSpace v => HasCoordinates (LineString v crs) [[Double]] where
+instance VectorSpace v => HasCoordinates (LineString v) [[Double]] where
   coordinates = views points coordinates
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (MultiLineString v crs) [[[Double]]] where
+  => HasCoordinates (MultiLineString v) [[[Double]]] where
   coordinates = views lineStrings (G.toList . G.map coordinates)
   {-# INLINE coordinates #-}
 
-instance VectorSpace v => HasCoordinates (LinearRing v crs) [[Double]] where
+instance VectorSpace v => HasCoordinates (LinearRing v) [[Double]] where
   coordinates = views points coordinates
   {-# INLINE coordinates #-}
 
-instance VectorSpace v => HasCoordinates (Polygon v crs) [[[Double]]] where
+instance VectorSpace v => HasCoordinates (Polygon v) [[[Double]]] where
   coordinates = V.toList . V.map coordinates . polygonRings
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (MultiPolygon v crs) [[[[Double]]]] where
+  => HasCoordinates (MultiPolygon v) [[[[Double]]]] where
   coordinates = views polygons (G.toList . G.map coordinates)
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (PolyhedralSurface v crs) [[[[Double]]]] where
+  => HasCoordinates (PolyhedralSurface v) [[[[Double]]]] where
   coordinates = views polygons (G.toList . G.map coordinates)
   {-# INLINE coordinates #-}
 
-polygonRings :: Polygon v crs -> V.Vector (LinearRing v crs)
+polygonRings :: Polygon v -> V.Vector (LinearRing v)
 polygonRings (Polygon ir rs) = V.cons ir rs
 {-# INLINE polygonRings #-}
 
-instance VectorSpace v => HasCoordinates (Triangle v crs) [[Double]] where
+instance VectorSpace v => HasCoordinates (Triangle v) [[Double]] where
   coordinates (Triangle a b c) = map coordinates [a, b, c, a]
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (TIN v crs) [[[Double]]] where
+  => HasCoordinates (TIN v) [[[Double]]] where
   coordinates = views triangles (V.toList . V.map coordinates . G.convert)
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (U.Vector (Point v crs)) [[Double]] where
+  => HasCoordinates (U.Vector (Point v)) [[Double]] where
   coordinates = V.toList . V.map coordinates . V.convert
   {-# INLINE coordinates #-}
 
 instance VectorSpace v
-  => HasCoordinates (V.Vector (Point v crs)) [[Double]] where
+  => HasCoordinates (V.Vector (Point v)) [[Double]] where
   coordinates = V.toList . V.map coordinates
   {-# INLINE coordinates #-}
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data FeatureT (g :: (* -> *) -> Symbol -> *) v (crs::Symbol) d = Feature {
-    _featureTGeometry   :: g v crs
+data FeatureT (g :: (* -> *) -> *) v d = Feature {
+    _featureTGeometry   :: g v
   , _featureTProperties :: d
   } deriving (Eq, Show, Functor)
 makeFields ''FeatureT
 
-instance (NFData d, NFData (g v crs)) => NFData (FeatureT g v crs d) where
+instance (NFData d, NFData (g v)) => NFData (FeatureT g v d) where
   rnf (Feature g v) = rnf g `seq` rnf v `seq` ()
 
 type Feature = FeatureT Geometry
 
 derivingUnbox "UnboxFeature"
-    [t| forall g v crs a. (VectorSpace v, U.Unbox a, U.Unbox (g v crs))
-        => FeatureT g v crs a -> (g v crs, a) |]
+    [t| forall g v a. (VectorSpace v, U.Unbox a, U.Unbox (g v))
+        => FeatureT g v a -> (g v, a) |]
     [| \(Feature p v) -> (p,v) |]
     [| \(p,v) -> Feature p v|]
 
-newtype FeatureCollectionT (g :: (* -> *) -> Symbol -> *) v (crs::Symbol) d
+newtype FeatureCollectionT (g :: (* -> *) -> *) v  d
   = FeatureCollection {
-    _featureCollectionTFeatures :: [FeatureT g v crs d]
+    _featureCollectionTFeatures :: [FeatureT g v d]
   } deriving (Eq, Show, Functor)
 makeFields ''FeatureCollectionT
 
 type FeatureCollection = FeatureCollectionT Geometry
 
-instance Monoid (FeatureCollectionT g v crs d) where
+instance Monoid (FeatureCollectionT g v d) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
 
 
-
-data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
-  = forall crs. KnownSymbol crs => SomeGeometry (g v crs)
-
-
-instance Show (g v NoCrs) => Show (SomeGeometry g v) where
-  show (SomeGeometry g) = show (unsafeCoerce g :: g v NoCrs)
-  showsPrec i (SomeGeometry g) = showsPrec i (unsafeCoerce g :: g v NoCrs)
-
-instance Eq (g v NoCrs) => Eq (SomeGeometry g v) where
-  sa@(SomeGeometry a) == sb@(SomeGeometry b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: g v NoCrs) == (unsafeCoerce b :: g v NoCrs)
-
-instance HasVertex (SomeGeometry Point v) (Vertex v) where
-  vertex = lens (\(SomeGeometry v) -> v^.vertex)
-                (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
-
-data SomeFeatureT g v a
-  = forall crs. KnownSymbol crs => SomeFeature (FeatureT g v crs a)
-
-instance (Show (g v NoCrs), Show a) => Show (SomeFeatureT g v a) where
-  show (SomeFeature g) = show (unsafeCoerce g :: FeatureT g v NoCrs a)
-  showsPrec i (SomeFeature g)
-    = showsPrec i (unsafeCoerce g :: FeatureT g v NoCrs a)
-
-instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureT g v a) where
-  sa@(SomeFeature a) == sb@(SomeFeature b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: FeatureT g v NoCrs a) == (unsafeCoerce b :: FeatureT g v NoCrs a)
-
-instance HasProperties (SomeFeatureT g v a) a where
-  properties = lens (\(SomeFeature f) -> f^.properties)
-                    (\(SomeFeature f) p -> SomeFeature (f & properties .~ p))
-
-instance HasGeometry (SomeFeatureT g v a) (SomeGeometry g v) where
-  geometry =
-    lens (\(SomeFeature v) -> SomeGeometry (v^.geometry))
-         (\(SomeFeature (Feature _ p)) (SomeGeometry g) ->
-            SomeFeature (Feature g p))
-
-data SomeFeatureCollectionT g v a
-  = forall crs. KnownSymbol crs
-  => SomeFeatureCollection (FeatureCollectionT g v crs a)
-
-instance (Show (g v NoCrs), Show a)
-  => Show (SomeFeatureCollectionT g v a) where
-  show (SomeFeatureCollection g) =
-    show (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
-  showsPrec i (SomeFeatureCollection g)
-    = showsPrec i (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
-
-instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureCollectionT g v a) where
-  sa@(SomeFeatureCollection a) == sb@(SomeFeatureCollection b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: FeatureCollectionT g v NoCrs a) == (unsafeCoerce b :: FeatureCollectionT g v NoCrs a)
-
-type SomeFeatureCollection v a = SomeFeatureCollectionT Geometry
-type SomeFeature v a = SomeFeatureT Geometry
-
-class HasSameCrs o where
-  sameCrs :: o -> o -> Bool
-
-instance HasSameCrs (SomeGeometry g v) where
-  sameCrs (SomeGeometry (_ :: g v c1))
-          (SomeGeometry (_ :: g v c2)) =
-    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureT g v a) where
-  sameCrs (SomeFeature (_ :: FeatureT g v c1 a))
-          (SomeFeature (_ :: FeatureT g v c2 a)) =
-    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureCollectionT g v a) where
-  sameCrs (SomeFeatureCollection (_ :: FeatureCollectionT g v c1 a))
-          (SomeFeatureCollection (_ :: FeatureCollectionT g v c2 a)) =
-    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-data Raster vs (t :: OffsetType) crs v a
+data Raster vs (t :: OffsetType) v a
   = Raster {
-      rGeoReference :: !(GeoReference vs crs)
+      rGeoReference :: !(GeoReference vs)
     , rData         :: !(v a)
     } deriving (Eq, Show)
 
@@ -891,32 +794,32 @@ data Raster vs (t :: OffsetType) crs v a
 
 
 rasterIndex
-  :: forall vs t crs v a. (HasOffset vs t)
-  => Raster vs t crs v a -> Point vs crs -> Maybe Int
+  :: forall vs t v a. (HasOffset vs t)
+  => Raster vs t v a -> Point vs -> Maybe Int
 rasterIndex r p = fmap unOff offset
   where
     offset = pointOffset (rGeoReference r) p :: Maybe (Offset t)
 {-# INLINE rasterIndex #-}
 
 unsafeRasterIndex
-  :: forall vs t crs v a. (HasOffset vs t)
-  => Raster vs t crs v a -> Point vs crs -> Int
+  :: forall vs t v a. (HasOffset vs t)
+  => Raster vs t v a -> Point vs -> Int
 unsafeRasterIndex r p = unOff offset
   where
     offset = unsafePointOffset (rGeoReference r) p :: Offset t
 {-# INLINE unsafeRasterIndex #-}
 
 rasterIndexPixel
-  :: forall vs t crs v a. (HasOffset vs t)
-  => Raster vs t crs v a -> Pixel vs -> Maybe Int
+  :: forall vs t v a. (HasOffset vs t)
+  => Raster vs t v a -> Pixel vs -> Maybe Int
 rasterIndexPixel r px = fmap unOff offset
   where
     offset = toOffset (grSize (rGeoReference r)) px :: Maybe  (Offset t)
 {-# INLINE rasterIndexPixel #-}
 
 unsafeRasterIndexPixel
-  :: forall vs t crs v a. (HasOffset vs t)
-  => Raster vs t crs v a -> Pixel vs -> Int
+  :: forall vs t v a. (HasOffset vs t)
+  => Raster vs t v a -> Pixel vs -> Int
 unsafeRasterIndexPixel r px = unOff offset
   where
     offset = unsafeToOffset (grSize (rGeoReference r)) px :: Offset t
@@ -924,8 +827,8 @@ unsafeRasterIndexPixel r px = unOff offset
 
 
 convertRasterOffsetType
-  :: forall vs t1 t2 crs v a. (G.Vector v a, HasOffset vs t1, HasOffset vs t2)
-  => Raster vs t1 crs v a -> Raster vs t2 crs v a
+  :: forall vs t1 t2 v a. (G.Vector v a, HasOffset vs t1, HasOffset vs t2)
+  => Raster vs t1 v a -> Raster vs t2 v a
 convertRasterOffsetType r = r {rData = G.generate n go}
   where go i = let px        = unsafeFromOffset s (Offset i :: Offset t2)
                    Offset i' = unsafeToOffset s px :: Offset t1

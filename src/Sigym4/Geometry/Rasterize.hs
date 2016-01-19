@@ -9,8 +9,8 @@ import qualified Data.Vector.Storable.Mutable as Stm
 
 import Sigym4.Geometry.Types
 
-rasterizeFeatures :: forall a b v srid. (Stm.Storable a, VectorSpace v, R2 v)
-  => GeoReference V2 srid -> a -> [b -> a] -> [Feature v srid b]
+rasterizeFeatures :: forall a b v. (Stm.Storable a, VectorSpace v, R2 v)
+  => GeoReference V2 -> a -> [b -> a] -> [Feature v b]
   -> [St.Vector a]
 rasterizeFeatures geoRef nodata projs feats = runST $ do
   rasters <- replicateM (length projs) (Stm.replicate size nodata)
@@ -18,10 +18,10 @@ rasterizeFeatures geoRef nodata projs feats = runST $ do
   mapM St.unsafeFreeze rasters
   where
     size    = grScalarSize geoRef
-    featOff :: Feature v srid b -> Maybe (Offset RowMajor)
+    featOff :: Feature v b -> Maybe (Offset RowMajor)
     featOff = join . fmap (pointOffset geoRef . to2D) . (^?geometry._GeoPoint)
     to2D = Point . (\v -> V2 (v^._x) (v^._y)) . (^.vertex)
-    rasterize :: [Stm.MVector s a] -> Feature v srid b -> ST s ()
+    rasterize :: [Stm.MVector s a] -> Feature v b -> ST s ()
     rasterize rs f
       = case featOff f of
           Nothing         -> return ()
