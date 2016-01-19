@@ -72,7 +72,7 @@ geomType :: forall v crs. (VectorSpace v, HasSrid crs)
 geomType g
   = let flags = (if dim (Proxy :: Proxy v) >= 3 then zFlag else 0)
               + (if dim (Proxy :: Proxy v) == 4 then mFlag else 0)
-              + (if hasCrs g then sridFlag else 0)
+              + sridFlag
     in flags + case g of
                     GeoPoint _ -> 1
                     GeoLineString _ -> 2
@@ -90,9 +90,7 @@ instance forall v crs. (VectorSpace v, HasSrid crs)
     putBO g = do
         ask >>= lift . put
         putBO $ geomType g
-        case (srid g) of
-          Just s -> putWord32bo $ fromIntegral s
-          Nothing -> return ()
+        putWord32bo $ fromIntegral (srid :: Proxy crs)
         case g of
             GeoPoint g' -> putBO g'
             GeoLineString g' ->  putBO g'
@@ -109,12 +107,10 @@ instance forall v crs. (VectorSpace v, HasSrid crs)
         type_ <- getWord32bo
         let testFlag f = type_ .&. f /= 0
         when (testFlag sridFlag) $ do
-            srid' <- fmap fromIntegral getWord32bo
-            case srid (undefined :: Geometry v crs) of
-              Just s | s==srid' -> return ()
-              Nothing           -> return ()
-              Just s            -> fail $
-                printf "getBO(Geometry): srid mismatch: %d /= %d" srid' s
+            s1 <- fmap fromIntegral getWord32bo
+            let s2 = srid (Proxy :: Proxy crs)
+            when (s1 /= s2) $
+              fail $ printf "getBO(Geometry): srid mismatch: %d /= %d" s1 s2
         case type_ .&. 0x000000ff of
            1  -> geoPoint
            2  -> geoLineString

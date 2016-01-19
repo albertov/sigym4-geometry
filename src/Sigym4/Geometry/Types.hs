@@ -1,5 +1,6 @@
 {-# LANGUAGE StandaloneDeriving
            , DataKinds
+           , PolyKinds
            , TypeOperators
            , TypeFamilies
            , GeneralizedNewtypeDeriving
@@ -11,7 +12,6 @@
            , TypeSynonymInstances
            , RankNTypes
            , CPP
-           , KindSignatures
            , DeriveFunctor
            , ScopedTypeVariables
            , FunctionalDependencies
@@ -70,12 +70,6 @@ module Sigym4.Geometry.Types (
   , polygonRings
   , convertRasterOffsetType
 
-  , HasSrid (..)
-  , crs
-  , hasCrs
-  , hasSrid
-  , withCrs
-
   , eSize
   , invertible
 
@@ -109,11 +103,13 @@ module Sigym4.Geometry.Types (
   , SomeFeatureT (..)
   , SomeFeatureCollectionT (..)
   , SomeGeometry (..)
+  , HasCrs (..)
+  , HasSrid (..)
   , HasSameCrs (..)
+  , HasSameCrsK (..)
 
   -- re-exports
-  , KnownSymbol
-  , Symbol
+  , KnownNat
   , module V1
   , module V2
   , module V3
@@ -149,6 +145,7 @@ import Linear.V as VN hiding (dim)
 import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
+import Data.Type.Equality
 import Unsafe.Coerce (unsafeCoerce)
 
 -- | A vertex
@@ -627,32 +624,64 @@ makePrisms ''Geometry
 
 deriving instance VectorSpace v => NFData (GeometryCollection v crs)
 
-class KnownSymbol crs => HasSrid (crs :: Symbol) where
-  srid :: proxy crs -> Maybe Int
+data LinkType
+  = Proj4
+  | OgcWkt
+  deriving (Eq, Show)
+
+type Href = String
+
+class HasSameCrsK (a::k) (b::k) where
+  sameCrsK :: Proxy a -> Proxy b -> Maybe (a :~: b)
+
+class HasCrs (a :: k) where
+  data Crs (a :: k) :: *
+  crs     :: Proxy (a :: k) -> Crs (a :: k)
+  withCrs :: Crs (a :: k) -> (forall (n::k). HasCrs n => Proxy n -> b) -> b
+
+instance KnownSymbol k => HasCrs k where
+  data Crs k = Named String
+  crs = Named . symbolVal
+  withCrs (Named s) f = case someSymbolVal s of
+                           SomeSymbol p -> f p
+
+instance (KnownSymbol a, KnownSymbol b) => HasSameCrsK a b where
+  sameCrsK = sameSymbol
+
+instance KnownNat k => HasCrs k where
+  data Crs k = Srid Int
+  crs = Srid . fromIntegral . natVal
+  withCrs (Srid s) f = case someNatVal (fromIntegral s) of
+                           Just (SomeNat p) -> f p
+                           Nothing          -> f (Proxy :: Proxy 0)
+
+instance (KnownNat a, KnownNat b) => HasSameCrsK a b where
+  sameCrsK = sameNat
+
+instance HasCrs () where
+  data Crs () = NoCrs
+  crs _ = NoCrs
+  withCrs NoCrs f = f (Proxy :: Proxy ())
+
+instance HasSameCrsK () () where
+  sameCrsK _ _ = Just Refl
+
+class HasCrs crs => HasSrid crs where
+  srid :: Proxy crs -> Int
+
+instance KnownNat k => HasSrid k where
+  srid p = let Srid i = crs p in i
+
+instance HasSrid () where
+  srid _ = 0
+
+{-
   srid p = stripPrefix prefix (crs p) >>= readMaybe
     where
       prefix = "urn:ogc:def:crs:EPSG::"
+-}
 
-instance HasSrid "" where
-  srid _ = Nothing
 
-hasSrid :: HasSrid crs => proxy crs -> Bool
-hasSrid = isJust . srid
-
-crs :: KnownSymbol crs => proxy crs -> String
-crs = symbolVal
-{-# INLINE crs #-}
-
-withCrs
-  :: String
-  -> (forall crs. KnownSymbol crs => Proxy crs -> a)
-  -> a
-withCrs c f
-  = case someSymbolVal c of
-      SomeSymbol a -> f a
-
-hasCrs :: KnownSymbol crs => Geometry v crs -> Bool
-hasCrs = (/= "") . crs
 
 mkLineString :: VectorSpace v => [Point v crs] -> Maybe (LineString v crs)
 mkLineString ls
@@ -834,21 +863,21 @@ class HasSameCrs o where
 instance HasSameCrs (SomeGeometry g v) where
   sameCrs (SomeGeometry (_ :: g v c1))
           (SomeGeometry (_ :: g v c2)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
       Just _  -> True
       Nothing -> False
 
 instance HasSameCrs (SomeFeatureT g v a) where
   sameCrs (SomeFeature (_ :: FeatureT g v c1 a))
           (SomeFeature (_ :: FeatureT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
       Just _  -> True
       Nothing -> False
 
 instance HasSameCrs (SomeFeatureCollectionT g v a) where
   sameCrs (SomeFeatureCollection (_ :: FeatureCollectionT g v c1 a))
           (SomeFeatureCollection (_ :: FeatureCollectionT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
+    case sameCrsK (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
       Just _  -> True
       Nothing -> False
 

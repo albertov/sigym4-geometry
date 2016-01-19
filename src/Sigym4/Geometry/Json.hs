@@ -265,17 +265,16 @@ instance (ToJSON (g v NoCrs), ToFeatureProperties a)
 
 
 toJSON_crs
-  :: forall o crs. (KnownSymbol crs, ToJSON o) => Proxy crs -> o -> Value
+  :: forall o crs. (ToJSON o, ToJSON (Crs crs)) => Proxy crs -> o -> Value
 toJSON_crs p o =
-  case (c, toJSON o) of
-    ("",z)         -> z
-    (_,Object hm) -> Object (HM.insert "crs" crsObject hm)
-    (_,z)         -> z
-  where
-    c = crs p
-    crsObject =
+  case toJSON o of
+    Object hm -> Object (HM.insert "crs" (toJSON (crs p)))
+    z         -> z
+
+instance ToJSON Named where
+  toJSON (Named s) =
       object [ "type"       .= ("name" :: Text)
-             , "properties" .=  object ["name" .= c]]
+             , "properties" .=  object ["name" .= s]]
 
 
 withParsedCrs
