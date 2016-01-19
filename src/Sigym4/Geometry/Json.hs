@@ -25,7 +25,6 @@ import Control.Lens ((^.))
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import qualified Data.HashMap.Strict as HM
-import Unsafe.Coerce (unsafeCoerce)
 
 
 instance VectorSpace v => ToJSON (Point v) where

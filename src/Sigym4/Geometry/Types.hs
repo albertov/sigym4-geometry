@@ -15,8 +15,9 @@
            , DeriveFunctor
            , ScopedTypeVariables
            , FunctionalDependencies
-           , ExistentialQuantification
+           , GADTs
            , UndecidableInstances
+           , ConstraintKinds
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -97,10 +98,18 @@ module Sigym4.Geometry.Types (
   , _GeoTIN
   , _GeoCollection
 
+  , Crs (..)
+  , LinkType (..)
+  , ReifiesCrs (..)
+  , reifyCrs
+  , sameCrs
+
+{-
   , NoCrs
-  , HasCrs (..)
+  , KnownCrs (..)
   , HasEquivalentCrs (..)
   , HasSameCrs (..)
+  -}
 
   -- re-exports
   , KnownNat
@@ -115,6 +124,7 @@ module Sigym4.Geometry.Types (
 import Prelude hiding (product)
 import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
+import Data.Tagged
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
@@ -615,58 +625,6 @@ makePrisms ''Geometry
 
 deriving instance VectorSpace v => NFData (GeometryCollection v)
 
-data LinkType
-  = Proj4
-  | OgcWkt
-  deriving (Eq, Show)
-
-type Href = String
-
-class HasSameCrs (a::k) (b::k) where
-  sameCrs :: Proxy a -> Proxy b -> Maybe (a :~: b)
-
-class HasCrs (a :: k) where
-  data Crs (a :: k) :: *
-  crs     :: Proxy (a :: k) -> Crs (a :: k)
-  withCrs :: Crs (a :: k) -> (forall (n::k). HasCrs n => Proxy n -> b) -> b
-
-instance KnownSymbol k => HasCrs k where
-  data Crs k = Named String
-  crs = Named . symbolVal
-  withCrs (Named s) f = case someSymbolVal s of
-                           SomeSymbol p -> f p
-
-instance (KnownSymbol a, KnownSymbol b) => HasSameCrs a b where
-  sameCrs = sameSymbol
-
-instance KnownNat k => HasCrs k where
-  data Crs k = Srid Int
-  crs = Srid . fromIntegral . natVal
-  withCrs (Srid s) f = case someNatVal (fromIntegral s) of
-                           Just (SomeNat p) -> f p
-                           Nothing          -> f (Proxy :: Proxy 0)
-
-instance (KnownNat a, KnownNat b) => HasSameCrs a b where
-  sameCrs = sameNat
-
-type NoCrs = ()
-
-instance HasCrs () where
-  data Crs () = NoCrs
-  crs _ = NoCrs
-  withCrs NoCrs f = f (Proxy :: Proxy ())
-
-instance HasSameCrs () () where
-  sameCrs _ _ = Just Refl
-
-class (HasCrs a, HasCrs b) => HasEquivalentCrs a b where
-  equivalentCrs :: Crs a -> Crs b
-
-{-
-  srid p = stripPrefix prefix (crs p) >>= readMaybe
-    where
-      prefix = "urn:ogc:def:crs:EPSG::"
--}
 
 
 
@@ -836,3 +794,41 @@ convertRasterOffsetType r = r {rData = G.generate n go}
         s = grSize (rGeoReference r)
         rd = rData r
         n  = G.length rd
+
+
+
+
+data LinkType = Proj4 | OgcWkt | EsriWkt
+  deriving (Show, Eq)
+
+data Crs
+  = Named { _crsName     :: String  }
+  | Srid  { _crsSrid     :: Int     }
+  | Link  { _crsLinkType :: LinkType
+          , _crsHref     :: String  }
+  deriving (Show, Eq)
+
+makeFields ''Crs
+
+data GeoReferenced a = GeoReferenced Crs a
+  deriving (Eq, Show)
+
+
+class ReifiesCrs s where
+  reflectCrs :: proxy s -> Crs
+
+instance KnownSymbol s => ReifiesCrs s where
+  reflectCrs = Named . symbolVal
+
+instance KnownNat s => ReifiesCrs s where
+  reflectCrs = Srid . fromIntegral . natVal
+
+reifyCrs
+  :: forall r. Crs -> (forall (s :: *). ReifiesCrs s => Proxy s -> r) -> r
+reifyCrs a k = unsafeCoerce (Magic k :: Magic r) (const a) Proxy
+{-# INLINE reifyCrs #-}
+
+newtype Magic r = Magic (forall (s :: *). ReifiesCrs s => Proxy s -> r)
+
+sameCrs :: (ReifiesCrs a, ReifiesCrs b) => Proxy a -> Proxy b -> Bool
+sameCrs a b = reflectCrs a == reflectCrs b
