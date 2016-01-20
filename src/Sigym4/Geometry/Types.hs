@@ -17,7 +17,6 @@
            , FunctionalDependencies
            , GADTs
            , UndecidableInstances
-           , ConstraintKinds
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -74,6 +73,11 @@ module Sigym4.Geometry.Types (
   , eSize
   , invertible
 
+  , Tagged
+  , WithCrs (..)
+  , withTaggedCrs
+  , untagCrs
+
   -- lenses & prisms
   , HasGeometry (..)
   , HasProperties (..)
@@ -98,19 +102,6 @@ module Sigym4.Geometry.Types (
   , _GeoTIN
   , _GeoCollection
 
-  , Crs (..)
-  , LinkType (..)
-  , ReifiesCrs (..)
-  , reifyCrs
-  , sameCrs
-
-{-
-  , NoCrs
-  , KnownCrs (..)
-  , HasEquivalentCrs (..)
-  , HasSameCrs (..)
-  -}
-
   -- re-exports
   , KnownNat
   , module V1
@@ -119,6 +110,7 @@ module Sigym4.Geometry.Types (
   , module V4
   , module VN
   , module Linear.Epsilon
+  , module SpatialReference
 ) where
 
 import Prelude hiding (product)
@@ -131,9 +123,7 @@ import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData(rnf))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Maybe (fromMaybe, isJust)
-import Data.List (stripPrefix)
-import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
@@ -150,7 +140,7 @@ import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
 import Data.Type.Equality
-import Unsafe.Coerce (unsafeCoerce)
+import SpatialReference
 
 -- | A vertex
 type Vertex v = v Double
@@ -797,38 +787,15 @@ convertRasterOffsetType r = r {rData = G.generate n go}
 
 
 
+data WithCrs a = WithCrs Crs a
+  deriving (Eq, Show, Functor)
 
-data LinkType = Proj4 | OgcWkt | EsriWkt
-  deriving (Show, Eq)
+untagCrs :: forall a crs. KnownCrs crs
+         => Tagged crs a -> WithCrs a
+untagCrs t = WithCrs (reflectCrs (Proxy :: Proxy crs)) (untag t)
+{-# INLINE untagCrs #-}
 
-data Crs
-  = Named { _crsName     :: String  }
-  | Srid  { _crsSrid     :: Int     }
-  | Link  { _crsLinkType :: LinkType
-          , _crsHref     :: String  }
-  deriving (Show, Eq)
-
-makeFields ''Crs
-
-data GeoReferenced a = GeoReferenced Crs a
-  deriving (Eq, Show)
-
-
-class ReifiesCrs s where
-  reflectCrs :: proxy s -> Crs
-
-instance KnownSymbol s => ReifiesCrs s where
-  reflectCrs = Named . symbolVal
-
-instance KnownNat s => ReifiesCrs s where
-  reflectCrs = Srid . fromIntegral . natVal
-
-reifyCrs
-  :: forall r. Crs -> (forall (s :: *). ReifiesCrs s => Proxy s -> r) -> r
-reifyCrs a k = unsafeCoerce (Magic k :: Magic r) (const a) Proxy
-{-# INLINE reifyCrs #-}
-
-newtype Magic r = Magic (forall (s :: *). ReifiesCrs s => Proxy s -> r)
-
-sameCrs :: (ReifiesCrs a, ReifiesCrs b) => Proxy a -> Proxy b -> Bool
-sameCrs a b = reflectCrs a == reflectCrs b
+withTaggedCrs
+  :: WithCrs a -> (forall crs. KnownCrs crs => Tagged crs a -> b) -> b
+withTaggedCrs (WithCrs crs a) f = reifyCrs crs (f . flip tagWith a)
+{-# INLINE withTaggedCrs #-}

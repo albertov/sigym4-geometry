@@ -1,5 +1,9 @@
-{-# LANGUAGE CPP, LambdaCase, ScopedTypeVariables, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Sigym4.Geometry.Binary (
     ByteOrder (..)
   , wkbEncode
@@ -21,7 +25,6 @@ import Data.Binary.Put
 import Data.Binary.Get
 import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
                            , putFloat64be)
-import Text.Printf (printf)
 
 data ByteOrder = BigEndian | LittleEndian deriving (Eq, Show, Enum)
 
@@ -32,26 +35,23 @@ nativeEndian = BigEndian
 nativeEndian = LittleEndian
 #endif
 
-wkbEncode :: VectorSpace v
-          => ByteOrder -> Geometry v -> ByteString
-wkbEncode bo = runPut . flip runReaderT (bo,Nothing) . putBO
+wkbEncode :: BinaryBO g => ByteOrder -> g -> ByteString
+wkbEncode bo = runPut . flip runReaderT bo . putBO
 {-# INLINABLE wkbEncode #-}
 
-wkbDecode :: VectorSpace v => ByteString -> Either String (Geometry v)
+wkbDecode :: Binary o => ByteString -> Either String o
 wkbDecode s = case decodeOrFail s of
                 Left  (_,_,e) -> Left e
                 Right (_,_,a) -> Right a
 {-# INLINABLE wkbDecode #-}
 
-type Env      = (ByteOrder, Maybe Int)
+type Env      = ByteOrder
 type PutBO    = ReaderT Env PutM ()
 type GetBO  a = ReaderT Env Get a
 
 askBO :: MonadReader Env m => m ByteOrder
-askBO = asks fst
+askBO = ask
 
-askSrid :: MonadReader Env m => m (Maybe Int)
-askSrid = asks snd
 
 class BinaryBO a where
     putBO :: a -> PutBO
@@ -62,11 +62,15 @@ class BinaryBO a where
 -- Instances
 --
 --
+instance VectorSpace v => Binary (WithCrs (Geometry v)) where
+    put = void . flip runReaderT nativeEndian . putBO
+    get = runReaderT getBO =<< get
+    {-# INLINABLE put #-}
+    {-# INLINABLE get #-}
+
 instance VectorSpace v => Binary (Geometry v) where
-    put = void . flip runReaderT (nativeEndian,Nothing) . putBO
-    get = do
-      bo <- get
-      runReaderT getBO (bo,Nothing)
+    put = put . WithCrs noCrs
+    get = liftM discardCrs get
     {-# INLINABLE put #-}
     {-# INLINABLE get #-}
 
@@ -92,17 +96,23 @@ geomType g
                     GeoPolyhedralSurface _ -> 15
                     GeoTIN _ -> 16
 
-instance forall v. VectorSpace v
-  => BinaryBO (Geometry v) where
-    putBO g = do
+discardCrs :: WithCrs t -> t
+discardCrs (WithCrs crs o) = o
+
+instance forall v. VectorSpace v => BinaryBO (Geometry v) where
+  putBO = putBO . WithCrs noCrs
+  getBO = liftM discardCrs getBO
+
+instance forall v. VectorSpace v => BinaryBO (WithCrs (Geometry v)) where
+    putBO (WithCrs crs g) = do
         askBO >>= lift . put
-        mSrid <- askSrid
-        case mSrid of
-          Just srid -> do
+        case crs of
+          Coded _ srid -> do
             putBO (geomType g + sridFlag)
             putWord32bo $ fromIntegral srid
-          Nothing ->
+          NoCrs ->
             putBO (geomType g)
+          _ -> fail "Binary(WithCrs Geometry): expected a coded crs"
         case g of
             GeoPoint g' -> putBO g'
             GeoLineString g' ->  putBO g'
@@ -121,12 +131,7 @@ instance forall v. VectorSpace v
         rSrid <- if testFlag sridFlag
                     then fmap (Just . fromIntegral) getWord32bo
                     else return Nothing
-        mSrid <- askSrid
-        case (mSrid, rSrid) of
-          (Just a, Just b) | a/=b ->
-            fail $ printf "getBO(Geometry): srid mismatch: %d /= %d" a b
-          _ -> return ()
-        case type_ .&. 0x000000ff of
+        geom <- case type_ .&. 0x000000ff of
            1  -> geoPoint
            2  -> geoLineString
            3  -> geoPolygon
@@ -138,6 +143,11 @@ instance forall v. VectorSpace v
            15 -> geoPolyhedralSurface
            16 -> geoTIN
            _  -> fail "get(Geometry): wrong geometry type"
+        crs <- case rSrid of
+                 Just srid ->
+                   maybe (fail "wkbDecode: invalid srid") return (epsgCrs srid)
+                 Nothing -> return noCrs
+        return $ WithCrs crs geom
       where
         geoPoint = GeoPoint <$> getBO
         geoLineString = GeoLineString <$> getBO

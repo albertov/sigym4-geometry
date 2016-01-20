@@ -7,7 +7,7 @@
            , OverloadedStrings
            , DefaultSignatures
            , RankNTypes
-           , UndecidableInstances
+           , GADTs
            #-}
 module Sigym4.Geometry.Json (
     encode
@@ -243,77 +243,24 @@ instance (FromFeatureProperties d, FromJSON (g v))
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"
 
 
+instance ToJSON a => ToJSON (WithCrs a) where
+  toJSON (WithCrs crs a) =
+    case toJSON a of
+      Object o -> Object (HM.insert "crs" (toJSON crs) o)
+      o        -> o
+
+instance FromJSON a => FromJSON (WithCrs a) where
+  parseJSON = withObject "FromJSON(WithCrs): expected an object" $ \o -> do
+    WithCrs <$> o .: "crs" <*> parseJSON (Object o)
 
 
+instance (KnownCrs crs, ToJSON a) => ToJSON (Tagged crs a) where
+  toJSON = toJSON . untagCrs
 
-
-{-
-instance ToJSON (g v NoCrs) => ToJSON (SomeGeometry g v) where
-  toJSON (SomeGeometry (g :: g v)) =
-    toJSON_crs (Proxy :: Proxy crs) (unsafeCoerce g :: g v NoCrs)
-
-instance (ToJSON (g v NoCrs), ToFeatureProperties a)
-  => ToJSON (SomeFeatureT g v a) where
-  toJSON (SomeFeature (g :: FeatureT g v a)) =
-    toJSON_crs (Proxy :: Proxy crs) (unsafeCoerce g :: FeatureT g v NoCrs a)
-
-instance (ToJSON (g v NoCrs), ToFeatureProperties a)
-  => ToJSON (SomeFeatureCollectionT g v a) where
-  toJSON (SomeFeatureCollection (g :: FeatureCollectionT g v a)) =
-    toJSON_crs (Proxy :: Proxy crs)
-               (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
-
-
-toJSON_crs
-  :: forall o crs. (ToJSON o, ToJSON (Crs crs)) => Proxy crs -> o -> Value
-toJSON_crs p o =
-  case toJSON o of
-    Object hm -> Object (HM.insert "crs" (toJSON (crs p)))
-    z         -> z
-
-instance ToJSON Named where
-  toJSON (Named s) =
-      object [ "type"       .= ("name" :: Text)
-             , "properties" .=  object ["name" .= s]]
-
-
-withParsedCrs
-  :: Value -> (forall crs. KnownSymbol crs => Proxy crs -> Parser a)
-  -> Parser a
-withParsedCrs v f =
-  case v of
-    Object o -> do
-      mCrs <- o .:? "crs"
-      case mCrs of
-        Just (Object o') -> do
-          mProperties <- o' .:? "properties"
-          case mProperties of
-            Just (Object p) -> do
-              mName <- p .:? "name"
-              case mName of
-                Just c -> withCrs c f
-                _ -> withCrs "" f
-            _ -> withCrs "" f
-        _ -> withCrs "" f
-    _ -> withCrs "" f
-
-instance FromJSON (ty v NoCrs) => FromJSON (SomeGeometry ty v) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
-      g :: ty v NoCrs <- parseJSON o
-      return (SomeGeometry (unsafeCoerce g :: ty v))
-
-instance (FromJSON (FeatureT ty v NoCrs a))
-  => FromJSON (SomeFeatureT ty v a) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
-      f :: FeatureT ty v NoCrs a <- parseJSON o
-      return (SomeFeature (unsafeCoerce f :: FeatureT ty v a))
-
-instance (FromJSON (FeatureCollectionT ty v NoCrs a))
-  => FromJSON (SomeFeatureCollectionT ty v a) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
-      f :: FeatureCollectionT ty v NoCrs a <- parseJSON o
-      return (SomeFeatureCollection (unsafeCoerce f :: FeatureCollectionT ty v a))
--}
+instance (KnownCrs crs, FromJSON a) => FromJSON (Tagged crs a) where
+  parseJSON o = do
+    t <- parseJSON o
+    withTaggedCrs t $ \(ret :: Tagged crs2 a) ->
+      case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
+        Just Refl -> return ret
+        Nothing   -> fail "FromJSON(Tagged crs): crs mismatch"
