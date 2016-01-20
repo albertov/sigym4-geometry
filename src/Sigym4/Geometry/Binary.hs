@@ -72,11 +72,15 @@ instance (KnownCrs (Coded t s), BinaryBO (WithCrs (Geometry v)))
       case sameCrs (Proxy :: Proxy (Coded t s)) (Proxy :: Proxy crs2) of
         Just Refl -> return ret
         Nothing   -> fail "Binary(Tagged crs): crs mismatch"
+  {-# INLINABLE putBO #-}
+  {-# INLINABLE getBO #-}
 
 instance (VectorSpace v, KnownCrs (Coded t s), Binary (WithCrs (Geometry v)))
   => Binary (Tagged (Coded t s) (Geometry v)) where
   put = void . flip runReaderT nativeEndian . putBO
   get = runReaderT getBO =<< get
+  {-# INLINABLE put #-}
+  {-# INLINABLE get #-}
 
 instance VectorSpace v => Binary (WithCrs (Geometry v)) where
     put = void . flip runReaderT nativeEndian . putBO
@@ -95,8 +99,7 @@ sridFlag = 0x20000000
 zFlag = 0x80000000
 mFlag = 0x40000000
 
-geomType :: forall v. VectorSpace v
-  => Geometry v -> Word32
+geomType :: forall v. VectorSpace v => Geometry v -> Word32
 geomType g
   = let flags = (if dim (Proxy :: Proxy v) >= 3 then zFlag else 0)
               + (if dim (Proxy :: Proxy v) == 4 then mFlag else 0)
@@ -118,63 +121,67 @@ discardCrs (WithCrs _ o) = o
 instance forall v. VectorSpace v => BinaryBO (Geometry v) where
   putBO = putBO . WithCrs noCrs
   getBO = liftM discardCrs getBO
+  {-# INLINABLE putBO #-}
+  {-# INLINABLE getBO #-}
 
 instance forall v. VectorSpace v => BinaryBO (WithCrs (Geometry v)) where
-    putBO (WithCrs crs g) = do
-        askBO >>= lift . put
-        case crs of
-          Coded _ srid -> do
-            putBO (geomType g + sridFlag)
-            putWord32bo $ fromIntegral srid
-          NoCrs ->
-            putBO (geomType g)
-          _ -> fail "Binary(WithCrs Geometry): expected a coded crs"
-        case g of
-            GeoPoint g' -> putBO g'
-            GeoLineString g' ->  putBO g'
-            GeoPolygon g' -> putBO g'
-            GeoTriangle g' -> putBO g'
-            GeoMultiPoint g' -> putBO g'
-            GeoMultiLineString g' -> putBO g'
-            GeoMultiPolygon g' -> putBO g'
-            GeoCollection g' ->  putBO g'
-            GeoPolyhedralSurface g' -> putBO g'
-            GeoTIN g' -> putBO g'
+  putBO (WithCrs crs g) = do
+      askBO >>= lift . put
+      case crs of
+        Coded _ srid -> do
+          putBO (geomType g + sridFlag)
+          putWord32bo $ fromIntegral srid
+        NoCrs ->
+          putBO (geomType g)
+        _ -> fail "Binary(WithCrs Geometry): expected a coded crs"
+      case g of
+          GeoPoint g' -> putBO g'
+          GeoLineString g' ->  putBO g'
+          GeoPolygon g' -> putBO g'
+          GeoTriangle g' -> putBO g'
+          GeoMultiPoint g' -> putBO g'
+          GeoMultiLineString g' -> putBO g'
+          GeoMultiPolygon g' -> putBO g'
+          GeoCollection g' ->  putBO g'
+          GeoPolyhedralSurface g' -> putBO g'
+          GeoTIN g' -> putBO g'
 
-    getBO = do
-        type_ <- getWord32bo
-        let testFlag f = type_ .&. f /= 0
-        rSrid <- if testFlag sridFlag
-                    then fmap (Just . fromIntegral) getWord32bo
-                    else return Nothing
-        geom <- case type_ .&. 0x000000ff of
-           1  -> geoPoint
-           2  -> geoLineString
-           3  -> geoPolygon
-           17 -> geoTriangle
-           4  -> geoMultiPoint
-           5  -> geoMultiLineString
-           6  -> geoMultiPolygon
-           7  -> geoCollection
-           15 -> geoPolyhedralSurface
-           16 -> geoTIN
-           _  -> fail "get(Geometry): wrong geometry type"
-        crs <- case rSrid of
-                 Just srid ->
-                   maybe (fail "wkbDecode: invalid srid") return (epsgCrs srid)
-                 Nothing -> return noCrs
-        return $ WithCrs crs geom
-      where
-        geoPoint = GeoPoint <$> getBO
-        geoLineString = GeoLineString <$> getBO
-        geoPolygon = GeoPolygon <$> getBO
-        geoTriangle = GeoTriangle <$> getBO
-        geoMultiPoint = GeoMultiPoint <$> getBO
-        geoMultiLineString = GeoMultiLineString <$> getBO
-        geoMultiPolygon = GeoMultiPolygon <$> getBO
-        geoCollection = GeoCollection <$> getBO
-        geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
-        geoTIN = GeoTIN <$> getBO
+  getBO = do
+      type_ <- getWord32bo
+      let testFlag f = type_ .&. f /= 0
+      rSrid <- if testFlag sridFlag
+                  then fmap (Just . fromIntegral) getWord32bo
+                  else return Nothing
+      geom <- case type_ .&. 0x000000ff of
+         1  -> geoPoint
+         2  -> geoLineString
+         3  -> geoPolygon
+         17 -> geoTriangle
+         4  -> geoMultiPoint
+         5  -> geoMultiLineString
+         6  -> geoMultiPolygon
+         7  -> geoCollection
+         15 -> geoPolyhedralSurface
+         16 -> geoTIN
+         _  -> fail "get(Geometry): wrong geometry type"
+      crs <- case rSrid of
+               Just srid ->
+                 maybe (fail "wkbDecode: invalid srid") return (epsgCrs srid)
+               Nothing -> return noCrs
+      return $ WithCrs crs geom
+    where
+      geoPoint = GeoPoint <$> getBO
+      geoLineString = GeoLineString <$> getBO
+      geoPolygon = GeoPolygon <$> getBO
+      geoTriangle = GeoTriangle <$> getBO
+      geoMultiPoint = GeoMultiPoint <$> getBO
+      geoMultiLineString = GeoMultiLineString <$> getBO
+      geoMultiPolygon = GeoMultiPolygon <$> getBO
+      geoCollection = GeoCollection <$> getBO
+      geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
+      geoTIN = GeoTIN <$> getBO
+  {-# INLINABLE putBO #-}
+  {-# INLINABLE getBO #-}
 
 unwrapGeo
   :: VectorSpace v
