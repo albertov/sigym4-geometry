@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 module Sigym4.Geometry.Binary (
     ByteOrder (..)
   , wkbEncode
@@ -62,6 +63,21 @@ class BinaryBO a where
 -- Instances
 --
 --
+instance (KnownCrs (Coded t s), BinaryBO (WithCrs (Geometry v)))
+  => BinaryBO (Tagged (Coded t s) (Geometry v)) where
+  putBO = putBO . untagCrs
+  getBO = do
+    t <- getBO
+    withTaggedCrs t $ \(ret :: Tagged crs2 (Geometry v)) ->
+      case sameCrs (Proxy :: Proxy (Coded t s)) (Proxy :: Proxy crs2) of
+        Just Refl -> return ret
+        Nothing   -> fail "Binary(Tagged crs): crs mismatch"
+
+instance (VectorSpace v, KnownCrs (Coded t s), Binary (WithCrs (Geometry v)))
+  => Binary (Tagged (Coded t s) (Geometry v)) where
+  put = void . flip runReaderT nativeEndian . putBO
+  get = runReaderT getBO =<< get
+
 instance VectorSpace v => Binary (WithCrs (Geometry v)) where
     put = void . flip runReaderT nativeEndian . putBO
     get = runReaderT getBO =<< get
@@ -97,7 +113,7 @@ geomType g
                     GeoTIN _ -> 16
 
 discardCrs :: WithCrs t -> t
-discardCrs (WithCrs crs o) = o
+discardCrs (WithCrs _ o) = o
 
 instance forall v. VectorSpace v => BinaryBO (Geometry v) where
   putBO = putBO . WithCrs noCrs

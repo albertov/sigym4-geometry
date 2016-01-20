@@ -52,5 +52,5 @@ spec = do
              bs <- hGetContents =<<
                     openFile "tests/fixtures/big_geom.wkb" ReadMode
              case wkbDecode bs :: Either String (WithCrs (Geometry V2)) of
-               Right (WithCrs crs geom) -> crs `shouldBe` noCrs
+               Right (WithCrs crs _) -> crs `shouldBe` noCrs
                Left _ -> expectationFailure "could not decode postgis dump"
