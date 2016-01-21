@@ -63,33 +63,33 @@ class BinaryBO a where
 -- Instances
 --
 --
-instance (KnownCrs (Coded t s), BinaryBO (WithCrs (Geometry v)))
-  => BinaryBO (Tagged (Coded t s) (Geometry v)) where
+instance (KnownCrs (Coded t s), BinaryBO (WithSomeCrs (Geometry v)))
+  => BinaryBO (WithCrs (Coded t s) (Geometry v)) where
   putBO = putBO . untagCrs
   getBO = do
     t <- getBO
-    withTaggedCrs t $ \(ret :: Tagged crs2 (Geometry v)) ->
+    withCrs t $ \(ret :: WithCrs crs2 (Geometry v)) ->
       case sameCrs (Proxy :: Proxy (Coded t s)) (Proxy :: Proxy crs2) of
         Just Refl -> return ret
-        Nothing   -> fail "Binary(Tagged crs): crs mismatch"
+        Nothing   -> fail "Binary(WithCrs crs): crs mismatch"
   {-# INLINABLE putBO #-}
   {-# INLINABLE getBO #-}
 
-instance (VectorSpace v, KnownCrs (Coded t s), Binary (WithCrs (Geometry v)))
-  => Binary (Tagged (Coded t s) (Geometry v)) where
+instance (VectorSpace v, KnownCrs (Coded t s), Binary (WithSomeCrs (Geometry v)))
+  => Binary (WithCrs (Coded t s) (Geometry v)) where
   put = void . flip runReaderT nativeEndian . putBO
   get = runReaderT getBO =<< get
   {-# INLINABLE put #-}
   {-# INLINABLE get #-}
 
-instance VectorSpace v => Binary (WithCrs (Geometry v)) where
+instance VectorSpace v => Binary (WithSomeCrs (Geometry v)) where
     put = void . flip runReaderT nativeEndian . putBO
     get = runReaderT getBO =<< get
     {-# INLINABLE put #-}
     {-# INLINABLE get #-}
 
 instance VectorSpace v => Binary (Geometry v) where
-    put = put . WithCrs noCrs
+    put = put . WithSomeCrs noCrs
     get = liftM discardCrs get
     {-# INLINABLE put #-}
     {-# INLINABLE get #-}
@@ -115,17 +115,17 @@ geomType g
                     GeoPolyhedralSurface _ -> 15
                     GeoTIN _ -> 16
 
-discardCrs :: WithCrs t -> t
-discardCrs (WithCrs _ o) = o
+discardCrs :: WithSomeCrs t -> t
+discardCrs (WithSomeCrs _ o) = o
 
 instance forall v. VectorSpace v => BinaryBO (Geometry v) where
-  putBO = putBO . WithCrs noCrs
+  putBO = putBO . WithSomeCrs noCrs
   getBO = liftM discardCrs getBO
   {-# INLINABLE putBO #-}
   {-# INLINABLE getBO #-}
 
-instance forall v. VectorSpace v => BinaryBO (WithCrs (Geometry v)) where
-  putBO (WithCrs crs g) = do
+instance forall v. VectorSpace v => BinaryBO (WithSomeCrs (Geometry v)) where
+  putBO (WithSomeCrs crs g) = do
       askBO >>= lift . put
       case crs of
         Coded _ srid -> do
@@ -133,7 +133,7 @@ instance forall v. VectorSpace v => BinaryBO (WithCrs (Geometry v)) where
           putWord32bo $ fromIntegral srid
         NoCrs ->
           putBO (geomType g)
-        _ -> fail "Binary(WithCrs Geometry): expected a coded crs"
+        _ -> fail "Binary(WithSomeCrs Geometry): expected a coded crs"
       case g of
           GeoPoint g' -> putBO g'
           GeoLineString g' ->  putBO g'
@@ -168,7 +168,7 @@ instance forall v. VectorSpace v => BinaryBO (WithCrs (Geometry v)) where
                Just srid ->
                  maybe (fail "wkbDecode: invalid srid") return (epsgCrs srid)
                Nothing -> return noCrs
-      return $ WithCrs crs geom
+      return $ WithSomeCrs crs geom
     where
       geoPoint = GeoPoint <$> getBO
       geoLineString = GeoLineString <$> getBO

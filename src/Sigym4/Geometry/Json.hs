@@ -241,26 +241,3 @@ instance (FromFeatureProperties d, FromJSON (g v))
   where
     parseJSON (Object o) = FeatureCollection <$> o.: "features"
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"
-
-
-instance ToJSON a => ToJSON (WithCrs a) where
-  toJSON (WithCrs crs a) =
-    case toJSON a of
-      Object o -> Object (HM.insert "crs" (toJSON crs) o)
-      o        -> o
-
-instance FromJSON a => FromJSON (WithCrs a) where
-  parseJSON = withObject "FromJSON(WithCrs): expected an object" $ \o -> do
-    WithCrs <$> o .: "crs" <*> parseJSON (Object o)
-
-
-instance (KnownCrs crs, ToJSON a) => ToJSON (Tagged crs a) where
-  toJSON = toJSON . untagCrs
-
-instance (KnownCrs crs, FromJSON a) => FromJSON (Tagged crs a) where
-  parseJSON o = do
-    t <- parseJSON o
-    withTaggedCrs t $ \(ret :: Tagged crs2 a) ->
-      case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
-        Just Refl -> return ret
-        Nothing   -> fail "FromJSON(Tagged crs): crs mismatch"

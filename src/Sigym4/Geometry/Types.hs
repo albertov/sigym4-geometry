@@ -73,11 +73,6 @@ module Sigym4.Geometry.Types (
   , eSize
   , invertible
 
-  , Tagged
-  , WithCrs (..)
-  , withTaggedCrs
-  , untagCrs
-
   -- lenses & prisms
   , HasGeometry (..)
   , HasProperties (..)
@@ -116,7 +111,6 @@ module Sigym4.Geometry.Types (
 import Prelude hiding (product)
 import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
-import Data.Tagged
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable)
@@ -784,18 +778,3 @@ convertRasterOffsetType r = r {rData = G.generate n go}
         s = grSize (rGeoReference r)
         rd = rData r
         n  = G.length rd
-
-
-
-data WithCrs a = WithCrs Crs a
-  deriving (Eq, Show, Functor)
-
-untagCrs :: forall a crs. KnownCrs crs
-         => Tagged crs a -> WithCrs a
-untagCrs t = WithCrs (reflectCrs (Proxy :: Proxy crs)) (untag t)
-{-# INLINE untagCrs #-}
-
-withTaggedCrs
-  :: WithCrs a -> (forall crs. KnownCrs crs => Tagged crs a -> b) -> b
-withTaggedCrs (WithCrs crs a) f = reifyCrs crs (f . flip tagWith a)
-{-# INLINE withTaggedCrs #-}

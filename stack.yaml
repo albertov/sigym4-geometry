@@ -3,7 +3,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/meteogrid/spatial-reference.git
-    commit: 2bcae8cb478514666dbd0fc1f5db58c0282da2a8
+    commit: 19e686dfab907443019216b96c1584fbe938fa29
   extra-dep: true
 
 extra-deps:

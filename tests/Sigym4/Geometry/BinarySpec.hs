@@ -36,10 +36,10 @@ spec = do
         \(g :: Geometry V2, bo) ->
           (wkbDecode . wkbEncode bo $ g) == Right g
 
-    describe "WithCrs (Geometry V2)" $ do
+    describe "WithSomeCrs (Geometry V2)" $ do
       prop "deserializes the same thing it serializes" $
         \(g :: Geometry V2, bo, crs) ->
-          let g' = WithCrs crs g
+          let g' = WithSomeCrs crs g
           in (wkbDecode . wkbEncode bo $ g') == Right g'
 
     describe "Geometry V3" $ do
@@ -51,6 +51,6 @@ spec = do
         it "can decode a postgis wkb dump" $ do
              bs <- hGetContents =<<
                     openFile "tests/fixtures/big_geom.wkb" ReadMode
-             case wkbDecode bs :: Either String (WithCrs (Geometry V2)) of
-               Right (WithCrs crs _) -> crs `shouldBe` noCrs
+             case wkbDecode bs :: Either String (WithSomeCrs (Geometry V2)) of
+               Right (WithSomeCrs crs _) -> crs `shouldBe` noCrs
                Left _ -> expectationFailure "could not decode postgis dump"
