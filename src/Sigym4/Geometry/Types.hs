@@ -701,6 +701,14 @@ data FeatureT (g :: (* -> *) -> *) v d = Feature {
   } deriving (Eq, Show, Functor)
 makeFields ''FeatureT
 
+instance HasGeometry (WithCrs crs (FeatureT g v d)) (WithCrs crs (g v)) where
+  geometry = lens (\f -> (unCrs f ^. geometry) `asCrsOf` f)
+                  (\f g -> WithCrs (unCrs f & geometry .~ unCrs g))
+
+instance HasProperties (WithCrs crs (FeatureT g v d)) d where
+  properties = lens ((^.properties) . unCrs)
+                    (\f d -> WithCrs (unCrs f & properties .~ d))
+
 instance (NFData d, NFData (g v)) => NFData (FeatureT g v d) where
   rnf (Feature g v) = rnf g `seq` rnf v `seq` ()
 
@@ -717,6 +725,11 @@ newtype FeatureCollectionT (g :: (* -> *) -> *) v  d
     _featureCollectionTFeatures :: [FeatureT g v d]
   } deriving (Eq, Show, Functor)
 makeFields ''FeatureCollectionT
+
+instance HasFeatures (WithCrs crs (FeatureCollectionT g v d))
+                     [WithCrs crs (FeatureT g v d)] where
+  features = lens (map WithCrs . (^.features) . unCrs)
+                    (\f d -> WithCrs (unCrs f & features .~ map unCrs d))
 
 type FeatureCollection = FeatureCollectionT Geometry
 
