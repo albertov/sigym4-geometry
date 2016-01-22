@@ -30,7 +30,7 @@ instance VectorSpace v => Arbitrary (Size v) where
 instance Arbitrary (Offset t) where
   arbitrary = Offset . getNonNegative <$> arbitrary
 
-instance VectorSpace v => Arbitrary (Extent v) where
+instance VectorSpace v => Arbitrary (Extent v srid) where
   arbitrary = do
     lr <- arbitrary
     d  <- positiveV
@@ -39,52 +39,52 @@ instance VectorSpace v => Arbitrary (Extent v) where
 instance Arbitrary (Vertex v) => Arbitrary (Pixel v) where
   arbitrary = Pixel <$> arbitrary
 
-instance Arbitrary (Vertex v) => Arbitrary (Point v) where
+instance Arbitrary (Vertex v) => Arbitrary (Point v srid) where
     arbitrary = fmap Point arbitrary
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (MultiPoint v) where
+  => Arbitrary (MultiPoint v srid) where
     arbitrary = MultiPoint <$> fmap U.fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (LinearRing v) where
+  => Arbitrary (LinearRing v srid) where
     arbitrary = do ps <- (++) <$> vector 3 <*> arbitrary
                    return . fromJust . mkLinearRing $ ps ++ [head ps]
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (LineString v) where
+  => Arbitrary (LineString v srid) where
     arbitrary = fmap (fromJust . mkLineString) $ (++) <$> vector 2 <*> arbitrary
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (MultiLineString v) where
+  => Arbitrary (MultiLineString v srid) where
     arbitrary = MultiLineString <$> fmap fromList (resized arbitrary)
 
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Polygon v) where
+  => Arbitrary (Polygon v srid) where
     arbitrary = Polygon <$> arbitrary <*> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Triangle v) where
+  => Arbitrary (Triangle v srid) where
     arbitrary = do
         mRet <- mkTriangle <$> arbitrary <*> arbitrary <*> arbitrary
         maybe arbitrary return mRet
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (MultiPolygon v) where
+  => Arbitrary (MultiPolygon v srid) where
     arbitrary = MultiPolygon <$> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (PolyhedralSurface v) where
+  => Arbitrary (PolyhedralSurface v srid) where
     arbitrary = PolyhedralSurface <$> fmap fromList (resized arbitrary)
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (TIN v) where
+  => Arbitrary (TIN v srid) where
     arbitrary = TIN <$> fmap U.fromList (resized arbitrary)
 
 
 instance (VectorSpace v, Arbitrary (Vertex v))
-  => Arbitrary (Geometry v) where
+  => Arbitrary (Geometry v srid) where
     arbitrary = oneof (geometryCollection:geometries)
         where
             geometryCollection = GeoCollection . GeometryCollection . fromList

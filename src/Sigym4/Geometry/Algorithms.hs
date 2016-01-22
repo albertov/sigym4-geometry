@@ -46,7 +46,7 @@ import Data.Maybe (catMaybes)
 import GHC.TypeLits
 
 class HasContains a b where
-    contains :: (VectorSpace v) => a v -> b v -> Bool
+    contains :: (VectorSpace v) => a v (crs::Symbol) -> b v (crs::Symbol) -> Bool
 
 instance HasContains Extent Point where
     Extent{eMin=l, eMax=h} `contains` (Point v) = vBetween l h v
@@ -117,7 +117,7 @@ instance HasContains Extent GeometryCollection where
 
 class HasIntersects a b where
   intersects
-    :: HasHyperplanes v => a v -> b v -> Bool
+    :: HasHyperplanes v => a v (crs::Symbol) -> b v (crs::Symbol) -> Bool
 
 instance HasIntersects Extent Point where
   intersects = contains
@@ -136,8 +136,8 @@ instance HasIntersects Extent Extent where
 
 instance HasIntersects Extent LineString where
   intersects
-    :: forall v. HasHyperplanes v
-    => Extent v  -> LineString v -> Bool
+    :: forall v crs. HasHyperplanes v
+    => Extent v (crs::Symbol) -> LineString v (crs::Symbol) -> Bool
   ext@Extent{eMin=lo, eMax=hi} `intersects` LineString ps
     = G.any id
     $ G.zipWith segmentIntersects ps (G.tail ps)
@@ -159,8 +159,8 @@ instance HasIntersects Extent LineString where
   {-# INLINE intersects #-}
 
 extentCorners
-  :: forall v. VectorSpace v
-  => Extent v -> [Vertex v]
+  :: forall v crs. VectorSpace v
+  => Extent v crs -> [Vertex v]
 extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
   where
     d = dim (Proxy :: Proxy v)
@@ -169,7 +169,7 @@ extentCorners (Extent lo hi)  = map mkCorner (replicateM d [False,True])
 
 
 class HasCentroid a where
-    centroid :: (VectorSpace v) => a v -> Point v
+    centroid :: (VectorSpace v) => a v (crs::Symbol) -> Point v (crs::Symbol)
 
 instance HasCentroid Point where
     centroid = id
@@ -181,14 +181,14 @@ instance HasCentroid Extent where
 
 
 class HasDistance a b where
-    distance :: (VectorSpace v) => a v -> b v -> Double
+    distance :: (VectorSpace v) => a v (crs::Symbol) -> b v (crs::Symbol) -> Double
 
 instance HasDistance Point Point where
     distance (Point a) (Point b) = M.distance a b
     {-# INLINE distance #-}
 
 class HasExtent a where
-    extent :: (VectorSpace v) => a v -> Extent v
+    extent :: (VectorSpace v) => a v (crs::Symbol) -> Extent v (crs::Symbol)
 
 instance HasExtent Point where
     extent (Point v) = Extent v v
@@ -253,7 +253,7 @@ instance HasExtent GeometryCollection where
 
 extentFromVector
   :: (HasExtent a, VectorSpace v)
-  => V.Vector (a v) -> Extent v
+  => V.Vector (a v (crs::Symbol)) -> Extent v (crs::Symbol)
 extentFromVector v = G.foldl' (SG.<>) (G.head es) (G.tail es)
   where es = G.map extent v
 {-# INLINE extentFromVector #-}

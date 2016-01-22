@@ -36,7 +36,7 @@ instance Arbitrary Level where
           hi = fromIntegral (unLevel maxBound)
 
 type ExtentAndPoints v =
-  (QuadTree v (Extent v), Point v, Point v)
+  (QuadTree v NoCrs (Extent v NoCrs), Point v NoCrs, Point v NoCrs)
 
 newtype RandomQT v = RandomQT {unRQt :: ExtentAndPoints v} deriving Show
 

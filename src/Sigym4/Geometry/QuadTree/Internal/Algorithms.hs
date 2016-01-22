@@ -37,7 +37,7 @@ import qualified Prelude as P
 -- Translates a Point's coordinates to a Vertex in the [0,1) Extent. Makes sure
 -- to round the coordinates to the highest resolution we can safely calculate
 -- intersections with traceRay
-qtBackward :: VectorSpace v => QuadTree v a -> Point v -> QtVertex v
+qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
 qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
   = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
   where !ratio   = (v/(hi-lo) - (lo/(hi-lo)))
@@ -46,7 +46,7 @@ qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
         !absMax  = fromIntegral (maxValue (Level boxBits))
 {-# INLINE qtBackward #-}
 
-qtForward :: VectorSpace v => QuadTree v a -> QtVertex v -> Point v
+qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
 qtForward QuadTree{qtExtent=Extent lo hi} (QtVertex v)
   = Point (lo + v*(hi-lo))
 {-# INLINE qtForward #-}
@@ -58,7 +58,7 @@ vertex2LocCode l (QtVertex v)  = LocCode (fmap (truncate . (*m)) v)
 {-# INLINE vertex2LocCode #-}
 
 qtVertex2LocCode
-  :: VectorSpace v => QuadTree v a -> QtVertex v -> LocCode v
+  :: VectorSpace v => QuadTree v srid a -> QtVertex v -> LocCode v
 qtVertex2LocCode qt = vertex2LocCode (qtLevel qt)
 {-# INLINE qtVertex2LocCode #-}
 
@@ -69,18 +69,18 @@ locCode2Vertex l (LocCode c) = QtVertex (fmap ((/m) . fromIntegral) c)
 {-# INLINE locCode2Vertex #-}
 
 qtLocCode2Vertex
-  :: VectorSpace v => QuadTree v a -> LocCode v -> QtVertex v
+  :: VectorSpace v => QuadTree v srid a -> LocCode v -> QtVertex v
 qtLocCode2Vertex qt = locCode2Vertex (qtLevel qt)
 {-# INLINE qtLocCode2Vertex #-}
 
 
-qtContainsPoint :: VectorSpace v => QuadTree v a -> Point v -> Bool
+qtContainsPoint :: VectorSpace v => QuadTree v srid a -> Point v srid -> Bool
 qtContainsPoint qt = isJust . qtLocCode qt
 {-# INLINE qtContainsPoint #-}
 
 qtLocCode
   :: VectorSpace v
-  => QuadTree v a -> Point v -> Maybe (LocCode v)
+  => QuadTree v srid a -> Point v srid -> Maybe (LocCode v)
 qtLocCode qt p
   | all (\c -> 0<=c && c<1) (unQtVertex p') = Just code
   | otherwise                               = Nothing
@@ -91,7 +91,7 @@ qtLocCode qt p
 
 calculateExtent
   :: VectorSpace v
-  => QuadTree v a -> Level -> LocCode v -> Extent v
+  => QuadTree v srid a -> Level -> LocCode v -> Extent v NoCrs
 calculateExtent qt l code = Extent lo hi
   where
     !(QtVertex lo) = qtLocCode2Vertex qt code
@@ -108,8 +108,8 @@ qtCellCode l (LocCode code) = LocCode (fmap (.&. mask) code)
 
 traverseToLevel
   :: VectorSpace v
-  => TraversedNode v a
-  -> Level -> LocCode v -> TraversedNode v a
+  => TraversedNode v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
 traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
   where
     go !n@QLeaf{} !l          = TNode l n (qtCellCode l code)
@@ -121,8 +121,8 @@ traverseToLevel TNode{tNode=node, tLevel=start} end code = go node start
 
 qtTraverseToLevel
   :: VectorSpace v
-  => QuadTree v a
-  -> Level -> LocCode v -> TraversedNode v a
+  => QuadTree v srid a
+  -> Level -> LocCode v -> TraversedNode v srid a
 qtTraverseToLevel QuadTree{..}
   = traverseToLevel (TNode qtLevel qtRoot (LocCode (pure 0)))
 {-# INLINE qtTraverseToLevel #-}
@@ -132,7 +132,7 @@ qtTraverseToLevel QuadTree{..}
 
 lookupByPoint
   :: VectorSpace v
-  => QuadTree v a -> Point v -> P.Maybe a
+  => QuadTree v srid a -> Point v srid -> P.Maybe a
 lookupByPoint qt p
   = case qtLocCode qt p of
       Just c ->
@@ -142,17 +142,17 @@ lookupByPoint qt p
 {-# INLINE lookupByPoint #-}
 
 
-leafData :: QNode v a -> a
+leafData :: QNode v srid a -> a
 leafData QLeaf{..} = qData
 leafData _         = error "expected a leaf"
 {-# INLINE leafData #-}
 
 leavesTouching
-  :: forall v a. VectorSpace v
-  => NeighborPosition v -> TraversedNode v a -> [TraversedNode v a]
+  :: forall v srid a. VectorSpace v
+  => NeighborPosition v -> TraversedNode v srid a -> [TraversedNode v srid a]
 leavesTouching pos = go
   where
-    go :: TraversedNode v a -> [TraversedNode v a]
+    go :: TraversedNode v srid a -> [TraversedNode v srid a]
     go !n@TNode{tNode=QLeaf{}} = [n]
     go !TNode{tNode=QNode{qChildren=cs}, tLevel=Level l, tCellCode=code}
       = concatMap go (map getChild' (quadrantsTouching pos))
@@ -172,8 +172,8 @@ quadrantsTouching pos
 
 
 
-traceRay :: forall v a. (HasHyperplanes v, Eq (v Int), Num (v Int))
-  => QuadTree v a -> Point v -> Point v -> [a]
+traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Int), Num (v Int))
+  => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
 traceRay qt@QuadTree{..} from to
   | isJust mCodeFrom && isJust mCodeTo = go [tNodeFrom] maxIterations
   | otherwise                          = []
@@ -298,11 +298,11 @@ traceRay qt@QuadTree{..} from to
 
 {-# INLINABLE traceRay #-}
 {-# SPECIALISE traceRay ::
-      QuadTree V2 a -> Point V2 -> Point V2 -> [a] #-}
+      QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
 {-# SPECIALISE traceRay ::
-      QuadTree V3 a -> Point V3 -> Point V3 -> [a] #-}
+      QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
 {-# SPECIALISE traceRay ::
-      QuadTree V4 a -> Point V4 -> Point V4 -> [a] #-}
+      QuadTree V4 srid a -> Point V4 srid -> Point V4 srid -> [a] #-}
 
 -- Calculates whether we need to check an intersection with a given neighbor
 -- given the origin and destination of a ray. For example, we don't need to
@@ -318,16 +318,16 @@ checkNeighbor (QtVertex from) (QtVertex to) ng
 
 traverseViaAncestor
   :: VectorSpace v
-  => QuadTree v a -> TraversedNode v a -> Level -> LocCode v
-  -> TraversedNode v a
+  => QuadTree v srid a -> TraversedNode v srid a -> Level -> LocCode v
+  -> TraversedNode v srid a
 traverseViaAncestor qt node level code
   = traverseToLevel (traverseToCommonAncestor qt node code) level code
 {-# INLINE traverseViaAncestor #-}
 
 traverseToCommonAncestor
   :: VectorSpace v
-  => QuadTree v a -> TraversedNode v a -> LocCode v
-  -> TraversedNode v a
+  => QuadTree v srid a -> TraversedNode v srid a -> LocCode v
+  -> TraversedNode v srid a
 traverseToCommonAncestor QuadTree{..} TNode{..} code
   = TNode { tNode     = findAncestor tNode tLevel
           , tLevel    = al

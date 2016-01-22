@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sigym4-geometry
-version:             0.5
+version:             0.4.3
 synopsis:            Geometry types for GIS applications.
 description:         Geometry types for GIS applications, algorithms and
                      de/serialization from/into well-known formats.
@@ -69,7 +69,6 @@ library
                     , primitive
                     , strict
                     , unordered-containers
-                    , spatial-reference
   default-language: Haskell2010
   hs-source-dirs:   src
   ghc-options:      -Wall

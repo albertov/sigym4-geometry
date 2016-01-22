@@ -6,14 +6,13 @@
 
 module Sigym4.Geometry.BinarySpec (main, spec) where
 
-import Control.Monad
-import Data.Maybe (fromJust)
 import System.IO hiding (hGetContents)
 import Data.ByteString.Lazy (hGetContents)
+import Data.Either (isRight)
 import Test.Hspec
 import Test.QuickCheck
 import Test.Hspec.QuickCheck
-import Sigym4.Geometry
+import Sigym4.Geometry (Geometry, NoCrs, V2, V3)
 import Sigym4.Geometry.Binary (ByteOrder(..), wkbEncode, wkbDecode)
 import Arbitrary ()
 
@@ -23,34 +22,23 @@ main = hspec spec
 instance Arbitrary ByteOrder where
     arbitrary = elements [LittleEndian, BigEndian]
 
-instance Arbitrary Crs where
-  arbitrary = oneof [
-    liftM  (fromJust . epsgCrs . getPositive) arbitrary, return noCrs]
-
 spec :: Spec
 spec = do
   describe "Sigym4.Geometry.Binary" $ do
-
     describe "Geometry V2" $ do
       prop "deserializes the same thing it serializes" $
-        \(g :: Geometry V2, bo) ->
+        \(g :: Geometry V2 NoCrs, bo) ->
           (wkbDecode . wkbEncode bo $ g) == Right g
-
-    describe "WithSomeCrs (Geometry V2)" $ do
-      prop "deserializes the same thing it serializes" $
-        \(g :: Geometry V2, bo, crs) ->
-          let g' = WithSomeCrs crs g
-          in (wkbDecode . wkbEncode bo $ g') == Right g'
-
     describe "Geometry V3" $ do
       prop "deserializes the same thing it serializes" $
-        \(g :: Geometry V3, bo) ->
+        \(g :: Geometry V3 NoCrs, bo) ->
           (wkbDecode . wkbEncode bo $ g) == Right g
-
     describe "wkbDecode" $ do
         it "can decode a postgis wkb dump" $ do
              bs <- hGetContents =<<
                     openFile "tests/fixtures/big_geom.wkb" ReadMode
-             case wkbDecode bs :: Either String (WithSomeCrs (Geometry V2)) of
-               Right (WithSomeCrs crs _) -> crs `shouldBe` noCrs
-               Left _ -> expectationFailure "could not decode postgis dump"
+             let rGeom = wkbDecode bs :: Either String (Geometry V2 NoCrs)
+             isRight rGeom `shouldBe` True
+
+
+
