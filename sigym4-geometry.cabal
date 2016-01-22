@@ -42,10 +42,9 @@ library
   exposed-modules:    Sigym4.Geometry
                     , Sigym4.Geometry.Types
                     , Sigym4.Geometry.Algorithms
+                    , Sigym4.Geometry.Arrow
                     , Sigym4.Geometry.Binary
                     , Sigym4.Geometry.Json
-                    , Sigym4.Geometry.Arrow
-                    , Sigym4.Geometry.Rasterize
                     , Sigym4.Geometry.QuadTree
                     , Sigym4.Geometry.QuadTree.Internal.Types
                     , Sigym4.Geometry.QuadTree.Internal.Algorithms

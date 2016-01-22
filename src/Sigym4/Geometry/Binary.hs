@@ -59,12 +59,12 @@ class BinaryBO a where
 --
 instance (KnownCrs crs, VectorSpace v)
   => Binary (Geometry v crs) where
-    put = put . SomeGeometry
-    get = justOrFail "wkbDecode: crs mismatch" =<< liftM unSomeGeometry get
+    put = put . WithSomeCrs
+    get = justOrFail "wkbDecode: crs mismatch" =<< liftM unWithSomeCrs get
     {-# INLINABLE put #-}
     {-# INLINABLE get #-}
 
-instance VectorSpace v => Binary (SomeGeometry Geometry v) where
+instance VectorSpace v => Binary (WithSomeCrs (Geometry v)) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
     {-# INLINABLE put #-}
@@ -94,15 +94,15 @@ geomType g
 
 instance forall v crs. (KnownCrs crs, VectorSpace v)
   => BinaryBO (Geometry v crs) where
-    putBO = putBO . SomeGeometry
+    putBO = putBO . WithSomeCrs
     getBO = justOrFail "wkbDecode: crs mismatch"
-              =<< liftM unSomeGeometry getBO
+              =<< liftM unWithSomeCrs getBO
     {-# INLINABLE putBO #-}
     {-# INLINABLE getBO #-}
 
 instance forall v. VectorSpace v
-  => BinaryBO (SomeGeometry Geometry v) where
-    putBO (SomeGeometry (g :: Geometry v crs)) = do
+  => BinaryBO (WithSomeCrs (Geometry v)) where
+    putBO (WithSomeCrs (g :: Geometry v crs)) = do
         ask >>= lift . put
         case reflectCrs (Proxy :: Proxy crs) of
           Epsg srid -> do
@@ -143,7 +143,7 @@ instance forall v. VectorSpace v
                15 -> GeoPolyhedralSurface <$> getBO
                16 -> GeoTIN <$> getBO
                _  -> fail "get(Geometry): wrong geometry type"
-          return (SomeGeometry geom)
+          return (WithSomeCrs geom)
 
 unwrapGeo
   :: (KnownCrs crs, VectorSpace v)

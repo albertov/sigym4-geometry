@@ -12,10 +12,8 @@
            , RankNTypes
            , CPP
            , KindSignatures
-           , DeriveFunctor
            , ScopedTypeVariables
            , FunctionalDependencies
-           , ExistentialQuantification
            , UndecidableInstances
            #-}
 module Sigym4.Geometry.Types (
@@ -33,10 +31,8 @@ module Sigym4.Geometry.Types (
   , TIN (..)
   , PolyhedralSurface (..)
   , GeometryCollection (..)
-  , Feature
-  , FeatureCollection
-  , FeatureT (..)
-  , FeatureCollectionT (..)
+  , Feature (..)
+  , FeatureCollection (..)
   , VectorSpace (..)
   , HasOffset (..)
   , Pixel (..)
@@ -97,17 +93,6 @@ module Sigym4.Geometry.Types (
   , _GeoTIN
   , _GeoCollection
 
-  , SomeFeatureT (..)
-  , SomeFeature
-  , unSomeFeature
-
-  , SomeFeatureCollectionT (..)
-  , SomeFeatureCollection
-  , unSomeFeatureCollection
-
-  , SomeGeometry (..)
-  , unSomeGeometry
-
   -- re-exports
   , KnownNat
   , module V1
@@ -144,7 +129,6 @@ import Linear.V as VN hiding (dim)
 import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
-import Unsafe.Coerce (unsafeCoerce)
 import SpatialReference
 
 -- | A vertex
@@ -703,130 +687,46 @@ instance VectorSpace v
   coordinates = V.toList . V.map coordinates
   {-# INLINE coordinates #-}
 
--- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data FeatureT (g :: (* -> *) -> * -> *) v crs d = Feature {
-    _featureTGeometry   :: g v crs
-  , _featureTProperties :: d
-  } deriving (Eq, Show, Functor)
-makeFields ''FeatureT
 
-instance (NFData d, NFData (g v crs)) => NFData (FeatureT g v crs d) where
+
+
+-- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
+data Feature (g :: * -> *) d crs = Feature {
+    _featureGeometry   :: g crs
+  , _featureProperties :: d
+  } deriving (Eq, Show)
+makeFields ''Feature
+
+instance HasProperties (WithSomeCrs (Feature g d)) d where
+  properties = lens (\(WithSomeCrs f) -> f^.properties)
+                    (\(WithSomeCrs f) p -> WithSomeCrs (f & properties .~ p))
+
+
+instance HasGeometry (WithSomeCrs (Feature g d)) (WithSomeCrs g) where
+  geometry = lens (\(WithSomeCrs f) -> WithSomeCrs (f^.geometry))
+                  (\(WithSomeCrs (Feature _ p)) (WithSomeCrs g) ->
+                      WithSomeCrs (Feature g p))
+
+instance (NFData d, NFData (g crs)) => NFData (Feature g d crs) where
   rnf (Feature g v) = rnf g `seq` rnf v `seq` ()
 
-type Feature = FeatureT Geometry
 
 derivingUnbox "UnboxFeature"
-    [t| forall g v crs a. (VectorSpace v, U.Unbox a, U.Unbox (g v crs))
-        => FeatureT g v crs a -> (g v crs, a) |]
+    [t| forall g crs a. (U.Unbox a, U.Unbox (g crs))
+        => Feature g a crs -> (g crs, a) |]
     [| \(Feature p v) -> (p,v) |]
     [| \(p,v) -> Feature p v|]
 
-newtype FeatureCollectionT (g :: (* -> *) -> * -> *) v crs d
+newtype FeatureCollection (g :: * -> *) d crs
   = FeatureCollection {
-    _featureCollectionTFeatures :: [FeatureT g v crs d]
-  } deriving (Eq, Show, Functor)
-makeFields ''FeatureCollectionT
+    _featureCollectionFeatures :: [Feature g d crs]
+  } deriving (Eq, Show)
+makeFields ''FeatureCollection
 
-type FeatureCollection = FeatureCollectionT Geometry
-
-instance Monoid (FeatureCollectionT g v crs d) where
+instance Monoid (FeatureCollection g d crs) where
     mempty = FeatureCollection mempty
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
-
-
-
-data SomeGeometry (g :: (* -> *) -> * -> *) v
-  = forall crs. KnownCrs crs => SomeGeometry (g v crs)
-
-unSomeGeometry
-  :: forall g v crs. KnownCrs crs => SomeGeometry g v -> Maybe (g v crs)
-unSomeGeometry (SomeGeometry (g :: g v crs1)) =
-  case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
-    Just Refl -> Just g
-    _         -> Nothing
-
-instance Show (g v NoCrs) => Show (SomeGeometry g v) where
-  show (SomeGeometry g) = show (unsafeCoerce g :: g v NoCrs)
-  showsPrec i (SomeGeometry g) = showsPrec i (unsafeCoerce g :: g v NoCrs)
-
-instance Eq (g v NoCrs) => Eq (SomeGeometry g v) where
-  SomeGeometry (a :: g v crs) == SomeGeometry (b :: g v crs2) =
-    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
-      Just Refl -> (==) (unsafeCoerce a :: g v NoCrs)
-                        (unsafeCoerce b :: g v NoCrs)
-      _         -> False
-
-instance HasVertex (SomeGeometry Point v) (Vertex v) where
-  vertex = lens (\(SomeGeometry v) -> v^.vertex)
-                (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
-
-data SomeFeatureT g v a
-  = forall crs. KnownCrs crs => SomeFeature (FeatureT g v crs a)
-
-unSomeFeature
-  :: forall g v crs a. KnownCrs crs
-  => SomeFeatureT g v a -> Maybe (FeatureT g v crs a)
-unSomeFeature (SomeFeature (f :: FeatureT g v crs1 a)) =
-  case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
-    Just Refl -> Just f
-    _         -> Nothing
-
-instance (Show (g v NoCrs), Show a) => Show (SomeFeatureT g v a) where
-  show (SomeFeature g) = show (unsafeCoerce g :: FeatureT g v NoCrs a)
-  showsPrec i (SomeFeature g)
-    = showsPrec i (unsafeCoerce g :: FeatureT g v NoCrs a)
-
-instance Eq (FeatureT g v NoCrs a) => Eq (SomeFeatureT g v a) where
-  (==) (SomeFeature (a :: FeatureT g v crs a))
-       (SomeFeature (b :: FeatureT g v crs2 a)) =
-    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
-      Just Refl -> (==) (unsafeCoerce a :: FeatureT g v NoCrs a)
-                        (unsafeCoerce b :: FeatureT g v NoCrs a)
-      _         -> False
-
-instance HasProperties (SomeFeatureT g v a) a where
-  properties = lens (\(SomeFeature f) -> f^.properties)
-                    (\(SomeFeature f) p -> SomeFeature (f & properties .~ p))
-
-instance HasGeometry (SomeFeatureT g v a) (SomeGeometry g v) where
-  geometry =
-    lens (\(SomeFeature v) -> SomeGeometry (v^.geometry))
-         (\(SomeFeature (Feature _ p)) (SomeGeometry g) ->
-            SomeFeature (Feature g p))
-
-data SomeFeatureCollectionT g v a
-  = forall crs. KnownCrs crs
-  => SomeFeatureCollection (FeatureCollectionT g v crs a)
-
-unSomeFeatureCollection
-  :: forall g v crs a. KnownCrs crs
-  => SomeFeatureCollectionT g v a -> Maybe (FeatureCollectionT g v crs a)
-unSomeFeatureCollection
-  (SomeFeatureCollection (f :: FeatureCollectionT g v crs1 a)) =
-    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
-      Just Refl -> Just f
-      _         -> Nothing
-
-instance (Show (g v NoCrs), Show a)
-  => Show (SomeFeatureCollectionT g v a) where
-  show (SomeFeatureCollection g) =
-    show (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
-  showsPrec i (SomeFeatureCollection g)
-    = showsPrec i (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
-
-instance Eq (FeatureCollectionT g v NoCrs a)
-  => Eq (SomeFeatureCollectionT g v a) where
-  (==) (SomeFeatureCollection (a :: FeatureCollectionT g v crs a))
-       (SomeFeatureCollection (b :: FeatureCollectionT g v crs2 a)) =
-    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
-      Just Refl -> (==) (unsafeCoerce a :: FeatureCollectionT g v NoCrs a)
-                        (unsafeCoerce b :: FeatureCollectionT g v NoCrs a)
-      _         -> False
-
-
-type SomeFeatureCollection v a = SomeFeatureCollectionT Geometry
-type SomeFeature v a = SomeFeatureT Geometry
 
 
 data Raster vs (t :: OffsetType) crs v a

@@ -15,10 +15,10 @@ spec :: Spec
 spec = do
   describe "Sigym4.Geometry.Json" $ do
 
-    describe "SomeGeometry V2" $ do
+    describe "WithSomeCrs (Geometry V2)" $ do
       prop "deserializes the same thing it serializes" $
         \(g :: Geometry V2 (Epsg 23030)) ->
-          (eitherDecode . encode $ SomeGeometry g) == Right (SomeGeometry g)
+          (eitherDecode . encode $ WithSomeCrs g) == Right (WithSomeCrs g)
 
     describe "Geometry V2" $ do
       prop "deserializes the same thing it serializes" $
