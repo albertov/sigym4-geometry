@@ -71,7 +71,7 @@ data QtError
   | QtCannotGrow
   deriving (Show, Eq, Enum)
 
-data QuadTree (v :: * -> *) (crs :: Symbol) a
+data QuadTree (v :: * -> *) crs a
   = QuadTree {
       qtRoot   :: QNode v crs a
     , qtExtent :: {-# UNPACK #-} !(Extent v crs)
@@ -173,7 +173,7 @@ instance VectorSpace v => Show (QuadTree v crs a) where
 
 type Box v = Vertex v
 
-data QNode (v :: * -> *) (crs :: Symbol) a
+data QNode (v :: * -> *) crs a
   = QLeaf { qParent   :: QNode v crs a   -- undefined if root
           , qData     :: a
           }
@@ -213,7 +213,7 @@ instance VectorSpace v => Foldable (QNode v crs) where
             | otherwise = acc
           !n = numChildren (Proxy :: Proxy v)
 
-data Node m v (crs::Symbol) a
+data Node m v crs a
   = Leaf a
   | Node (Extent v crs -> m (a, Node m v crs a))
 
@@ -348,7 +348,7 @@ liftNeighbor (Ng v ns) = [|| Ng $$(liftTExp v) (unsafeFromCoords $$(planes)) ||]
   where
     planes = liftM (TExp . ListE) (mapM (fmap unType . liftTExp) (coords ns))
 
-data TraversedNode (v :: * -> *) (crs :: Symbol) a
+data TraversedNode (v :: * -> *) crs a
   = TNode
     { tLevel    :: {-# UNPACK #-} !Level
     , tNode     :: !(QNode v crs a)

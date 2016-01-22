@@ -247,7 +247,6 @@ instance (FromFeatureProperties d, FromJSON (g v crs))
 
 
 
-
 instance ToJSON (g v NoCrs) => ToJSON (SomeGeometry g v) where
   toJSON (SomeGeometry (g :: g v crs)) =
     toJSON_crs (Proxy :: Proxy crs) (unsafeCoerce g :: g v NoCrs)
@@ -265,55 +264,38 @@ instance (ToJSON (g v NoCrs), ToFeatureProperties a)
 
 
 toJSON_crs
-  :: forall o crs. (KnownSymbol crs, ToJSON o) => Proxy crs -> o -> Value
+  :: forall o crs. (KnownCrs crs, ToJSON o) => Proxy crs -> o -> Value
 toJSON_crs p o =
-  case (c, toJSON o) of
-    ("",z)         -> z
-    (_,Object hm) -> Object (HM.insert "crs" crsObject hm)
-    (_,z)         -> z
-  where
-    c = crs p
-    crsObject =
-      object [ "type"       .= ("name" :: Text)
-             , "properties" .=  object ["name" .= c]]
+  case toJSON o of
+    Object hm -> Object (HM.insert "crs" (toJSON (reflectCrs p)) hm)
+    z         -> z
+
 
 
 withParsedCrs
-  :: Value -> (forall crs. KnownSymbol crs => Proxy crs -> Parser a)
-  -> Parser a
-withParsedCrs v f =
-  case v of
-    Object o -> do
-      mCrs <- o .:? "crs"
-      case mCrs of
-        Just (Object o') -> do
-          mProperties <- o' .:? "properties"
-          case mProperties of
-            Just (Object p) -> do
-              mName <- p .:? "name"
-              case mName of
-                Just c -> withCrs c f
-                _ -> withCrs "" f
-            _ -> withCrs "" f
-        _ -> withCrs "" f
-    _ -> withCrs "" f
+  :: (forall crs. KnownCrs crs => Proxy crs -> Value -> Parser a)
+  -> Value -> Parser a
+withParsedCrs f =
+  withObject "geojson decode: expected and object" $ \o -> do
+    crs <- o .:? "crs" .!= noCrs
+    reifyCrs crs (flip f (Object o))
 
 instance FromJSON (ty v NoCrs) => FromJSON (SomeGeometry ty v) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+  parseJSON =
+    withParsedCrs $ \(Proxy :: Proxy crs) o -> do
       g :: ty v NoCrs <- parseJSON o
       return (SomeGeometry (unsafeCoerce g :: ty v crs))
 
-instance (FromJSON (FeatureT ty v NoCrs a))
+instance (FromJSON (ty v NoCrs), FromFeatureProperties a)
   => FromJSON (SomeFeatureT ty v a) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+  parseJSON =
+    withParsedCrs $ \(Proxy :: Proxy crs) o -> do
       f :: FeatureT ty v NoCrs a <- parseJSON o
       return (SomeFeature (unsafeCoerce f :: FeatureT ty v crs a))
 
-instance (FromJSON (FeatureCollectionT ty v NoCrs a))
+instance (FromJSON (ty v NoCrs), FromFeatureProperties a)
   => FromJSON (SomeFeatureCollectionT ty v a) where
-  parseJSON o =
-    withParsedCrs o $ \(Proxy :: Proxy crs) -> do
+  parseJSON =
+    withParsedCrs $ \(Proxy :: Proxy crs) o -> do
       f :: FeatureCollectionT ty v NoCrs a <- parseJSON o
       return (SomeFeatureCollection (unsafeCoerce f :: FeatureCollectionT ty v crs a))

@@ -17,7 +17,7 @@ spec = do
 
     describe "SomeGeometry V2" $ do
       prop "deserializes the same thing it serializes" $
-        \(g :: Geometry V2 "foo") ->
+        \(g :: Geometry V2 (Epsg 23030)) ->
           (eitherDecode . encode $ SomeGeometry g) == Right (SomeGeometry g)
 
     describe "Geometry V2" $ do

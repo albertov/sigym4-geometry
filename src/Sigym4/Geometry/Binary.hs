@@ -1,5 +1,9 @@
-{-# LANGUAGE CPP, LambdaCase, ScopedTypeVariables, FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Sigym4.Geometry.Binary (
     ByteOrder (..)
   , wkbEncode
@@ -21,7 +25,6 @@ import Data.Binary.Put
 import Data.Binary.Get
 import Data.Binary.IEEE754 ( getFloat64le, putFloat64le, getFloat64be
                            , putFloat64be)
-import Text.Printf (printf)
 
 data ByteOrder = BigEndian | LittleEndian deriving (Eq, Show, Enum)
 
@@ -32,13 +35,11 @@ nativeEndian = BigEndian
 nativeEndian = LittleEndian
 #endif
 
-wkbEncode :: (VectorSpace v, HasSrid crs)
-          => ByteOrder -> Geometry v crs -> ByteString
+wkbEncode :: BinaryBO a => ByteOrder -> a -> ByteString
 wkbEncode bo = runPut . flip runReaderT bo . putBO
 {-# INLINABLE wkbEncode #-}
 
-wkbDecode :: (VectorSpace v, HasSrid crs)
-          => ByteString -> Either String (Geometry v crs)
+wkbDecode :: Binary a => ByteString -> Either String a
 wkbDecode s = case decodeOrFail s of
                 Left  (_,_,e) -> Left e
                 Right (_,_,a) -> Right a
@@ -56,7 +57,14 @@ class BinaryBO a where
 -- Instances
 --
 --
-instance (VectorSpace v, HasSrid crs) => Binary (Geometry v crs) where
+instance (KnownCrs crs, VectorSpace v)
+  => Binary (Geometry v crs) where
+    put = put . SomeGeometry
+    get = justOrFail "wkbDecode: crs mismatch" =<< liftM unSomeGeometry get
+    {-# INLINABLE put #-}
+    {-# INLINABLE get #-}
+
+instance VectorSpace v => Binary (SomeGeometry Geometry v) where
     put = flip runReaderT nativeEndian . putBO
     get = get >>= runReaderT getBO
     {-# INLINABLE put #-}
@@ -67,12 +75,11 @@ sridFlag = 0x20000000
 zFlag = 0x80000000
 mFlag = 0x40000000
 
-geomType :: forall v crs. (VectorSpace v, HasSrid crs)
+geomType :: forall v crs. VectorSpace v
   => Geometry v crs -> Word32
 geomType g
   = let flags = (if dim (Proxy :: Proxy v) >= 3 then zFlag else 0)
               + (if dim (Proxy :: Proxy v) == 4 then mFlag else 0)
-              + (if hasCrs g then sridFlag else 0)
     in flags + case g of
                     GeoPoint _ -> 1
                     GeoLineString _ -> 2
@@ -85,14 +92,25 @@ geomType g
                     GeoPolyhedralSurface _ -> 15
                     GeoTIN _ -> 16
 
-instance forall v crs. (VectorSpace v, HasSrid crs)
+instance forall v crs. (KnownCrs crs, VectorSpace v)
   => BinaryBO (Geometry v crs) where
-    putBO g = do
+    putBO = putBO . SomeGeometry
+    getBO = justOrFail "wkbDecode: crs mismatch"
+              =<< liftM unSomeGeometry getBO
+    {-# INLINABLE putBO #-}
+    {-# INLINABLE getBO #-}
+
+instance forall v. VectorSpace v
+  => BinaryBO (SomeGeometry Geometry v) where
+    putBO (SomeGeometry (g :: Geometry v crs)) = do
         ask >>= lift . put
-        putBO $ geomType g
-        case (srid g) of
-          Just s -> putWord32bo $ fromIntegral s
-          Nothing -> return ()
+        case reflectCrs (Proxy :: Proxy crs) of
+          Epsg srid -> do
+            putBO $ geomType g + sridFlag
+            putWord32bo $ fromIntegral srid
+          NoCrs -> do
+            putBO $ geomType g
+          _ -> fail "Expected a Epsg crs or NoCrs"
         case g of
             GeoPoint g' -> putBO g'
             GeoLineString g' ->  putBO g'
@@ -107,40 +125,28 @@ instance forall v crs. (VectorSpace v, HasSrid crs)
 
     getBO = do
         type_ <- getWord32bo
-        let testFlag f = type_ .&. f /= 0
-        when (testFlag sridFlag) $ do
-            srid' <- fmap fromIntegral getWord32bo
-            case srid (undefined :: Geometry v crs) of
-              Just s | s==srid' -> return ()
-              Nothing           -> return ()
-              Just s            -> fail $
-                printf "getBO(Geometry): srid mismatch: %d /= %d" srid' s
-        case type_ .&. 0x000000ff of
-           1  -> geoPoint
-           2  -> geoLineString
-           3  -> geoPolygon
-           17 -> geoTriangle
-           4  -> geoMultiPoint
-           5  -> geoMultiLineString
-           6  -> geoMultiPolygon
-           7  -> geoCollection
-           15 -> geoPolyhedralSurface
-           16 -> geoTIN
-           _  -> fail "get(Geometry): wrong geometry type"
-      where
-        geoPoint = GeoPoint <$> getBO
-        geoLineString = GeoLineString <$> getBO
-        geoPolygon = GeoPolygon <$> getBO
-        geoTriangle = GeoTriangle <$> getBO
-        geoMultiPoint = GeoMultiPoint <$> getBO
-        geoMultiLineString = GeoMultiLineString <$> getBO
-        geoMultiPolygon = GeoMultiPolygon <$> getBO
-        geoCollection = GeoCollection <$> getBO
-        geoPolyhedralSurface = GeoPolyhedralSurface <$> getBO
-        geoTIN = GeoTIN <$> getBO
+        crs <- if type_ .&. sridFlag /= 0
+          then justOrFail "wkbDecode: invalid srid" =<<
+                  liftM (epsgCrs . fromIntegral) getWord32bo
+          else return noCrs
+        reifyCrs crs $ \(Proxy :: Proxy crs) -> do
+          geom :: Geometry v crs <-
+            case type_ .&. 0x000000ff of
+               1  -> GeoPoint <$> getBO
+               2  -> GeoLineString <$> getBO
+               3  -> GeoPolygon <$> getBO
+               17 -> GeoTriangle <$> getBO
+               4  -> GeoMultiPoint <$> getBO
+               5  -> GeoMultiLineString <$> getBO
+               6  -> GeoMultiPolygon <$> getBO
+               7  -> GeoCollection <$> getBO
+               15 -> GeoPolyhedralSurface <$> getBO
+               16 -> GeoTIN <$> getBO
+               _  -> fail "get(Geometry): wrong geometry type"
+          return (SomeGeometry geom)
 
 unwrapGeo
-  :: (HasSrid crs , VectorSpace v)
+  :: (KnownCrs crs, VectorSpace v)
   => String -> (Geometry v crs -> Maybe a) -> GetBO (V.Vector a)
 unwrapGeo msg f =
   justOrFail msg
@@ -152,39 +158,38 @@ instance forall v crs. VectorSpace v => BinaryBO (Point v crs) where
                        =<< replicateM (dim (Proxy :: Proxy v)) getBO)
     putBO = mapM_ putBO . coords . (^.vertex)
 
-instance forall v crs. (VectorSpace v, HasSrid crs)
+instance (KnownCrs crs, VectorSpace v)
   => BinaryBO (MultiPoint v crs) where
     getBO = MultiPoint  . G.convert <$> unwrapGeo "MultiPoint" (^?_GeoPoint)
     putBO = putVectorBo . V.map GeoPoint . V.convert . (^.points)
 
-instance forall v crs. (VectorSpace v, HasSrid crs)
+instance (KnownCrs crs, VectorSpace v)
   => BinaryBO (GeometryCollection v crs) where
     getBO = GeometryCollection  <$> getVector (lift get)
     putBO = putVectorBo . (^.geometries)
 
-instance forall v crs. VectorSpace v => BinaryBO (LineString v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (LineString v crs) where
     getBO = justOrFail "getBO(LineString)" . mkLineString =<< getListBo
     putBO = putVectorBo . (^.points)
 
-instance forall v crs. (VectorSpace v, HasSrid crs)
+instance (KnownCrs crs, VectorSpace v)
   => BinaryBO (MultiLineString v crs) where
     getBO = MultiLineString <$> unwrapGeo "MultiLineString" (^?_GeoLineString)
     putBO = putVectorBo . G.map GeoLineString . (^.lineStrings)
 
-instance forall v crs. VectorSpace v => BinaryBO (LinearRing v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (LinearRing v crs) where
     getBO = justOrFail "getBO(LinearRing)" . mkLinearRing =<< getListBo
     putBO = putVectorBo . (^.points)
 
-instance forall v crs. VectorSpace v => BinaryBO (Polygon v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (Polygon v crs) where
     getBO = justOrFail "getBO(Polygon)" . mkPolygon =<< getListBo
     putBO = putVectorBo . polygonRings
 
-instance forall v crs. (VectorSpace v, HasSrid crs)
-  => BinaryBO (MultiPolygon v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (MultiPolygon v crs) where
     getBO = MultiPolygon <$> unwrapGeo "MultiPolygon" (^?_GeoPolygon)
     putBO = putVectorBo . G.map GeoPolygon . (^.polygons)
 
-instance forall v crs. VectorSpace v => BinaryBO (Triangle v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (Triangle v crs) where
     getBO = do
         nRings <- getWord32bo
         when (nRings/=1) $ fail "getBO(Triangle): expected a single ring"
@@ -196,11 +201,12 @@ instance forall v crs. VectorSpace v => BinaryBO (Triangle v crs) where
     putBO (Triangle a b c) = putWord32bo 1 >> putWord32bo 4
                           >> putBO a >> putBO b >> putBO c >> putBO a
 
-instance forall v crs. VectorSpace v => BinaryBO (PolyhedralSurface v crs) where
+instance (KnownCrs crs, VectorSpace v)
+  => BinaryBO (PolyhedralSurface v crs) where
     getBO = PolyhedralSurface <$> getVector getBO
     putBO = putVectorBo . (^.polygons)
 
-instance forall v crs. VectorSpace v => BinaryBO (TIN v crs) where
+instance (KnownCrs crs, VectorSpace v) => BinaryBO (TIN v crs) where
     getBO = TIN <$> getVector getBO
     putBO = putVectorBo . (^.triangles)
 

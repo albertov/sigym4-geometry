@@ -70,12 +70,6 @@ module Sigym4.Geometry.Types (
   , polygonRings
   , convertRasterOffsetType
 
-  , HasSrid (..)
-  , crs
-  , hasCrs
-  , hasSrid
-  , withCrs
-
   , eSize
   , invertible
 
@@ -103,23 +97,26 @@ module Sigym4.Geometry.Types (
   , _GeoTIN
   , _GeoCollection
 
-  , NoCrs
-  , SomeFeature
-  , SomeFeatureCollection
   , SomeFeatureT (..)
+  , SomeFeature
+  , unSomeFeature
+
   , SomeFeatureCollectionT (..)
+  , SomeFeatureCollection
+  , unSomeFeatureCollection
+
   , SomeGeometry (..)
-  , HasSameCrs (..)
+  , unSomeGeometry
 
   -- re-exports
-  , KnownSymbol
-  , Symbol
+  , KnownNat
   , module V1
   , module V2
   , module V3
   , module V4
   , module VN
   , module Linear.Epsilon
+  , module SpatialReference
 ) where
 
 import Prelude hiding (product)
@@ -131,9 +128,7 @@ import Data.Hashable (Hashable)
 import Control.DeepSeq (NFData(rnf))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
-import Data.Maybe (fromMaybe, isJust)
-import Data.List (stripPrefix)
-import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
@@ -150,6 +145,7 @@ import Linear.Matrix ((!*), (*!), inv22, inv33, inv44, det22, det33, det44)
 import Linear.Metric (Metric)
 import GHC.TypeLits
 import Unsafe.Coerce (unsafeCoerce)
+import SpatialReference
 
 -- | A vertex
 type Vertex v = v Double
@@ -377,11 +373,8 @@ instance HasOffset V3 ColumnMajor where
             (py,pz) =  r `divMod` sz
     {-# INLINE unsafeFromOffset #-}
 
-type NoCrs = ""
-
-
 -- | An extent in v space is a pair of minimum and maximum vertices
-data Extent v (crs :: Symbol) = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
+data Extent v crs = Extent {eMin :: !(Vertex v), eMax :: !(Vertex v)}
 deriving instance VectorSpace v => Eq (Extent v crs)
 deriving instance VectorSpace v => Show (Extent v crs)
 
@@ -415,7 +408,7 @@ scalarSize = product . unSize
 -- A GeoTransform defines how we translate from geographic 'Vertex'es to
 -- 'Pixel' coordinates and back. gtMatrix *must* be invertible so smart
 -- constructors are provided
-data GeoTransform v (crs :: Symbol) = GeoTransform
+data GeoTransform v crs = GeoTransform
       { gtMatrix :: !(SqMatrix v)
       , gtOrigin :: !(Vertex v)
       }
@@ -489,7 +482,7 @@ grBackward gr = gtBackward (grTransform gr)
 mkGeoReference :: Extent V2 crs -> Size V2 -> Either String (GeoReference V2 crs)
 mkGeoReference e s = fmap (\gt -> GeoReference gt s) (northUpGeoTransform e s)
 
-newtype Point v (crs :: Symbol) = Point {_pointVertex:: Vertex v}
+newtype Point v crs = Point {_pointVertex:: Vertex v}
 deriving instance VectorSpace v          => Show (Point v crs)
 deriving instance VectorSpace v          => Eq (Point v crs)
 deriving instance VectorSpace v          => Ord (Point v crs)
@@ -594,7 +587,7 @@ makeFields ''TIN
 
 deriving instance VectorSpace v => NFData (TIN v crs)
 
-data Geometry v (crs::Symbol)
+data Geometry v crs
     = GeoPoint !(Point v crs)
     | GeoMultiPoint !(MultiPoint v crs)
     | GeoLineString !(LineString v crs)
@@ -627,32 +620,6 @@ makePrisms ''Geometry
 
 deriving instance VectorSpace v => NFData (GeometryCollection v crs)
 
-class KnownSymbol crs => HasSrid (crs :: Symbol) where
-  srid :: proxy crs -> Maybe Int
-  srid p = stripPrefix prefix (crs p) >>= readMaybe
-    where
-      prefix = "urn:ogc:def:crs:EPSG::"
-
-instance HasSrid "" where
-  srid _ = Nothing
-
-hasSrid :: HasSrid crs => proxy crs -> Bool
-hasSrid = isJust . srid
-
-crs :: KnownSymbol crs => proxy crs -> String
-crs = symbolVal
-{-# INLINE crs #-}
-
-withCrs
-  :: String
-  -> (forall crs. KnownSymbol crs => Proxy crs -> a)
-  -> a
-withCrs c f
-  = case someSymbolVal c of
-      SomeSymbol a -> f a
-
-hasCrs :: KnownSymbol crs => Geometry v crs -> Bool
-hasCrs = (/= "") . crs
 
 mkLineString :: VectorSpace v => [Point v crs] -> Maybe (LineString v crs)
 mkLineString ls
@@ -737,7 +704,7 @@ instance VectorSpace v
   {-# INLINE coordinates #-}
 
 -- | A feature of 'GeometryType' t, vertex type 'v' and associated data 'd'
-data FeatureT (g :: (* -> *) -> Symbol -> *) v (crs::Symbol) d = Feature {
+data FeatureT (g :: (* -> *) -> * -> *) v crs d = Feature {
     _featureTGeometry   :: g v crs
   , _featureTProperties :: d
   } deriving (Eq, Show, Functor)
@@ -754,7 +721,7 @@ derivingUnbox "UnboxFeature"
     [| \(Feature p v) -> (p,v) |]
     [| \(p,v) -> Feature p v|]
 
-newtype FeatureCollectionT (g :: (* -> *) -> Symbol -> *) v (crs::Symbol) d
+newtype FeatureCollectionT (g :: (* -> *) -> * -> *) v crs d
   = FeatureCollection {
     _featureCollectionTFeatures :: [FeatureT g v crs d]
   } deriving (Eq, Show, Functor)
@@ -769,35 +736,54 @@ instance Monoid (FeatureCollectionT g v crs d) where
 
 
 
-data SomeGeometry (g :: (* -> *) -> Symbol -> *) v
-  = forall crs. KnownSymbol crs => SomeGeometry (g v crs)
+data SomeGeometry (g :: (* -> *) -> * -> *) v
+  = forall crs. KnownCrs crs => SomeGeometry (g v crs)
 
+unSomeGeometry
+  :: forall g v crs. KnownCrs crs => SomeGeometry g v -> Maybe (g v crs)
+unSomeGeometry (SomeGeometry (g :: g v crs1)) =
+  case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
+    Just Refl -> Just g
+    _         -> Nothing
 
 instance Show (g v NoCrs) => Show (SomeGeometry g v) where
   show (SomeGeometry g) = show (unsafeCoerce g :: g v NoCrs)
   showsPrec i (SomeGeometry g) = showsPrec i (unsafeCoerce g :: g v NoCrs)
 
 instance Eq (g v NoCrs) => Eq (SomeGeometry g v) where
-  sa@(SomeGeometry a) == sb@(SomeGeometry b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: g v NoCrs) == (unsafeCoerce b :: g v NoCrs)
+  SomeGeometry (a :: g v crs) == SomeGeometry (b :: g v crs2) =
+    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
+      Just Refl -> (==) (unsafeCoerce a :: g v NoCrs)
+                        (unsafeCoerce b :: g v NoCrs)
+      _         -> False
 
 instance HasVertex (SomeGeometry Point v) (Vertex v) where
   vertex = lens (\(SomeGeometry v) -> v^.vertex)
                 (\(SomeGeometry v) a -> SomeGeometry (v & vertex .~ a))
 
 data SomeFeatureT g v a
-  = forall crs. KnownSymbol crs => SomeFeature (FeatureT g v crs a)
+  = forall crs. KnownCrs crs => SomeFeature (FeatureT g v crs a)
+
+unSomeFeature
+  :: forall g v crs a. KnownCrs crs
+  => SomeFeatureT g v a -> Maybe (FeatureT g v crs a)
+unSomeFeature (SomeFeature (f :: FeatureT g v crs1 a)) =
+  case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
+    Just Refl -> Just f
+    _         -> Nothing
 
 instance (Show (g v NoCrs), Show a) => Show (SomeFeatureT g v a) where
   show (SomeFeature g) = show (unsafeCoerce g :: FeatureT g v NoCrs a)
   showsPrec i (SomeFeature g)
     = showsPrec i (unsafeCoerce g :: FeatureT g v NoCrs a)
 
-instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureT g v a) where
-  sa@(SomeFeature a) == sb@(SomeFeature b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: FeatureT g v NoCrs a) == (unsafeCoerce b :: FeatureT g v NoCrs a)
+instance Eq (FeatureT g v NoCrs a) => Eq (SomeFeatureT g v a) where
+  (==) (SomeFeature (a :: FeatureT g v crs a))
+       (SomeFeature (b :: FeatureT g v crs2 a)) =
+    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
+      Just Refl -> (==) (unsafeCoerce a :: FeatureT g v NoCrs a)
+                        (unsafeCoerce b :: FeatureT g v NoCrs a)
+      _         -> False
 
 instance HasProperties (SomeFeatureT g v a) a where
   properties = lens (\(SomeFeature f) -> f^.properties)
@@ -810,8 +796,17 @@ instance HasGeometry (SomeFeatureT g v a) (SomeGeometry g v) where
             SomeFeature (Feature g p))
 
 data SomeFeatureCollectionT g v a
-  = forall crs. KnownSymbol crs
+  = forall crs. KnownCrs crs
   => SomeFeatureCollection (FeatureCollectionT g v crs a)
+
+unSomeFeatureCollection
+  :: forall g v crs a. KnownCrs crs
+  => SomeFeatureCollectionT g v a -> Maybe (FeatureCollectionT g v crs a)
+unSomeFeatureCollection
+  (SomeFeatureCollection (f :: FeatureCollectionT g v crs1 a)) =
+    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs1) of
+      Just Refl -> Just f
+      _         -> Nothing
 
 instance (Show (g v NoCrs), Show a)
   => Show (SomeFeatureCollectionT g v a) where
@@ -820,37 +815,19 @@ instance (Show (g v NoCrs), Show a)
   showsPrec i (SomeFeatureCollection g)
     = showsPrec i (unsafeCoerce g :: FeatureCollectionT g v NoCrs a)
 
-instance (Eq a, Eq (g v NoCrs)) => Eq (SomeFeatureCollectionT g v a) where
-  sa@(SomeFeatureCollection a) == sb@(SomeFeatureCollection b) =
-    sameCrs sa sb &&
-        (unsafeCoerce a :: FeatureCollectionT g v NoCrs a) == (unsafeCoerce b :: FeatureCollectionT g v NoCrs a)
+instance Eq (FeatureCollectionT g v NoCrs a)
+  => Eq (SomeFeatureCollectionT g v a) where
+  (==) (SomeFeatureCollection (a :: FeatureCollectionT g v crs a))
+       (SomeFeatureCollection (b :: FeatureCollectionT g v crs2 a)) =
+    case sameCrs (Proxy :: Proxy crs) (Proxy :: Proxy crs2) of
+      Just Refl -> (==) (unsafeCoerce a :: FeatureCollectionT g v NoCrs a)
+                        (unsafeCoerce b :: FeatureCollectionT g v NoCrs a)
+      _         -> False
+
 
 type SomeFeatureCollection v a = SomeFeatureCollectionT Geometry
 type SomeFeature v a = SomeFeatureT Geometry
 
-class HasSameCrs o where
-  sameCrs :: o -> o -> Bool
-
-instance HasSameCrs (SomeGeometry g v) where
-  sameCrs (SomeGeometry (_ :: g v c1))
-          (SomeGeometry (_ :: g v c2)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureT g v a) where
-  sameCrs (SomeFeature (_ :: FeatureT g v c1 a))
-          (SomeFeature (_ :: FeatureT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
-
-instance HasSameCrs (SomeFeatureCollectionT g v a) where
-  sameCrs (SomeFeatureCollection (_ :: FeatureCollectionT g v c1 a))
-          (SomeFeatureCollection (_ :: FeatureCollectionT g v c2 a)) =
-    case sameSymbol (Proxy :: Proxy c1) (Proxy :: Proxy c2) of
-      Just _  -> True
-      Nothing -> False
 
 data Raster vs (t :: OffsetType) crs v a
   = Raster {
