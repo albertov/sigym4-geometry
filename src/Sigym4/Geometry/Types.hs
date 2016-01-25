@@ -481,6 +481,11 @@ instance HasVertex (Point v crs) (Vertex v) where
   vertex = lens coerce (const coerce)
   {-# INLINE vertex #-}
 
+instance HasVertex (WithSomeCrs (Point v)) (Vertex v) where
+  vertex = lens (\(WithSomeCrs (Point v)) -> v)
+                (\(WithSomeCrs p) v -> WithSomeCrs (p&vertex.~v))
+  {-# INLINE vertex #-}
+
 
 derivingUnbox "Point"
     [t| forall v crs. VectorSpace v => Point v crs -> Vertex v |]
