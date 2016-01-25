@@ -82,6 +82,10 @@ module Sigym4.Geometry.Types (
   , HasGeometries (..)
   , HasVertex (..)
 
+  , featureCollectionFeatures
+  , featureGeometry
+  , featureProperties
+
   , _GeoPoint
   , _GeoMultiPoint
   , _GeoLineString
@@ -701,6 +705,8 @@ data Feature (g :: * -> *) d crs = Feature {
   , _featureProperties :: d
   } deriving (Eq, Show)
 makeFields ''Feature
+makeLenses ''Feature
+
 
 instance HasProperties (WithSomeCrs (Feature g d)) d where
   properties = lens (\(WithSomeCrs f) -> f^.properties)
@@ -727,6 +733,8 @@ newtype FeatureCollection (g :: * -> *) d crs
     _featureCollectionFeatures :: [Feature g d crs]
   } deriving (Eq, Show)
 makeFields ''FeatureCollection
+makeLenses ''FeatureCollection
+
 
 instance Monoid (FeatureCollection g d crs) where
     mempty = FeatureCollection mempty
