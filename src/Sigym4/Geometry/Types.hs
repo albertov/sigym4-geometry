@@ -67,6 +67,7 @@ module Sigym4.Geometry.Types (
   , convertRasterOffsetType
 
   , eSize
+  , rasterSize
   , invertible
 
   -- lenses & prisms
@@ -749,6 +750,9 @@ data Raster vs (t :: OffsetType) crs v a
     } deriving (Eq, Show)
 
 
+rasterSize :: VectorSpace v => Extent v crs -> Vertex v -> Size v
+rasterSize e pxSize = Size $ fmap ceiling (eSize e / pxSize)
+{-# INLINE rasterSize #-}
 
 
 rasterIndex

@@ -1,5 +1,5 @@
 {-# LANGUAGE UndecidableInstances
-           , MultiParamTypeClasses
+           , FunctionalDependencies
            , TypeFamilies
            , FlexibleContexts
            , FlexibleInstances
@@ -187,54 +187,56 @@ instance HasDistance Point Point where
     distance (Point a) (Point b) = M.distance a b
     {-# INLINE distance #-}
 
-class HasExtent a where
-    extent :: (VectorSpace v) => a v crs -> Extent v crs
+class HasExtent o e | o -> e where
+    extent :: o -> e
 
-instance HasExtent Point where
+instance VectorSpace v => HasExtent (Point v crs) (Extent v crs) where
     extent (Point v) = Extent v v
     {-# INLINE extent #-}
 
-instance HasExtent MultiPoint where
-    extent = views points (extentFromVector . G.convert)
+instance VectorSpace v => HasExtent (MultiPoint v crs) (Extent v crs) where
+    extent = views points extent
     {-# INLINE extent #-}
 
 
-instance HasExtent LinearRing where
-    extent = views points (extentFromVector . G.convert)
+instance VectorSpace v => HasExtent (LinearRing v crs) (Extent v crs) where
+    extent = views points extent
     {-# INLINE extent #-}
 
-instance HasExtent LineString where
-    extent = views points (extentFromVector . G.convert)
+instance VectorSpace v => HasExtent (LineString v crs) (Extent v crs) where
+    extent = views points extent
     {-# INLINE extent #-}
 
-instance HasExtent MultiLineString where
-    extent = views lineStrings extentFromVector
+instance VectorSpace v => HasExtent (MultiLineString v crs) (Extent v crs)
+  where
+    extent = views lineStrings extent
     {-# INLINE extent #-}
 
-instance HasExtent Polygon where
+instance VectorSpace v => HasExtent (Polygon v crs) (Extent v crs) where
     extent = views outerRing extent
     {-# INLINE extent #-}
 
-instance HasExtent Triangle where
+instance VectorSpace v => HasExtent (Triangle v crs) (Extent v crs) where
     extent (Triangle a b c) = a' SG.<> b' SG.<> c'
         where a' = extent a
               b' = extent b
               c' = extent c
     {-# INLINE extent #-}
 
-instance HasExtent MultiPolygon where
-    extent = views polygons extentFromVector
+instance VectorSpace v => HasExtent (MultiPolygon v crs) (Extent v crs) where
+    extent = views polygons extent
     {-# INLINE extent #-}
 
-instance HasExtent PolyhedralSurface where
-    extent = views polygons extentFromVector
+instance VectorSpace v => HasExtent (PolyhedralSurface v crs) (Extent v crs)
+  where
+    extent = views polygons extent
     {-# INLINE extent #-}
 
-instance HasExtent TIN where
-    extent = views triangles (extentFromVector . G.convert)
+instance VectorSpace v => HasExtent (TIN v crs) (Extent v crs) where
+    extent = views triangles extent
     {-# INLINE extent #-}
 
-instance HasExtent Geometry where
+instance VectorSpace v => HasExtent (Geometry v crs) (Extent v crs) where
     extent (GeoPoint g) = extent g
     extent (GeoMultiPoint g) = extent g
     extent (GeoLineString g) = extent g
@@ -247,16 +249,32 @@ instance HasExtent Geometry where
     extent (GeoCollection g) = extent g
     {-# INLINE extent #-}
 
-instance HasExtent GeometryCollection where
-    extent = views geometries extentFromVector
+instance VectorSpace v => HasExtent (GeometryCollection v crs) (Extent v crs)
+  where
+    extent = views geometries extent
     {-# INLINE extent #-}
 
-extentFromVector
-  :: (HasExtent a, VectorSpace v)
-  => V.Vector (a v crs) -> Extent v crs
-extentFromVector v = G.foldl' (SG.<>) (G.head es) (G.tail es)
-  where es = G.map extent v
-{-# INLINE extentFromVector #-}
+instance HasExtent (g crs) e => HasExtent (Feature g a crs) e where
+  extent = views geometry extent
+  {-# INLINE extent #-}
+
+instance (SG.Semigroup e, HasExtent (Feature g a crs) e)
+  => HasExtent (FeatureCollection g a crs) e where
+  extent = views features (extent . V.fromList)
+  {-# INLINE extent #-}
+
+instance (SG.Semigroup e, HasExtent o e) => HasExtent (V.Vector o) e where
+  -- FIXME: This is partial!
+  extent v = G.foldl' (SG.<>) (G.head es) (G.tail es)
+    where es = G.map extent v
+  {-# INLINE extent #-}
+
+instance (SG.Semigroup e, HasExtent o e, U.Unbox o, U.Unbox e)
+  => HasExtent (U.Vector o) e where
+  -- FIXME: This is partial!
+  extent v = G.foldl' (SG.<>) (G.head es) (G.tail es)
+    where es = G.map extent v
+  {-# INLINE extent #-}
 
 liftBinBool
   :: VectorSpace v
