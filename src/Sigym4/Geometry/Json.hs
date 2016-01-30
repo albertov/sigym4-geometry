@@ -191,6 +191,8 @@ class ToFeatureProperties o where
       Object o' -> o'
       o'        -> HM.singleton "value" o'
 
+instance {-# OVERLAPPABLE #-} ToJSON o => ToFeatureProperties o
+
 
 class FromFeatureProperties o where
   fromFeatureProperties :: Object -> Parser o
@@ -199,6 +201,8 @@ class FromFeatureProperties o where
     case parseMaybe parseJSON (Object o) of
       Just o'  -> return o'
       Nothing -> o .: "value"
+
+instance {-# OVERLAPPABLE #-} FromJSON o => FromFeatureProperties o
 
 instance {-# OVERLAPPABLE #-} FromFeatureProperties o
   => FromFeatureProperties (Maybe o) where
