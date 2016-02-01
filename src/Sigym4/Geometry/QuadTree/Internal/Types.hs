@@ -32,6 +32,7 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
   , generate
   , generate2
   , grow
+  , empty
   , qtMinBox
 
   , calculateMinBox
@@ -77,6 +78,9 @@ data QuadTree (v :: * -> *) crs a
     , qtExtent :: {-# UNPACK #-} !(Extent v crs)
     , qtLevel  :: {-# UNPACK #-} !Level
   }
+
+empty :: Extent v crs -> a -> QuadTree v crs a
+empty e a = QuadTree (QLeaf rootParent a) e (Level 0)
 
 instance VectorSpace v => Traversable (QuadTree v crs) where
   {-# INLINE traverse #-}
