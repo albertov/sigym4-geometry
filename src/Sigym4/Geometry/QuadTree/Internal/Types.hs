@@ -79,8 +79,9 @@ data QuadTree (v :: * -> *) crs a
     , qtLevel  :: {-# UNPACK #-} !Level
   }
 
-empty :: Extent v crs -> a -> QuadTree v crs a
-empty e a = QuadTree (QLeaf rootParent a) e (Level 0)
+empty :: VectorSpace v => a -> Point v crs -> Box v -> QuadTree v crs a
+empty a (Point c) minBox = QuadTree (QLeaf rootParent a) ext (Level 0)
+  where ext = Extent (c - minBox/2) (c + minBox/2)
 
 instance VectorSpace v => Traversable (QuadTree v crs) where
   {-# INLINE traverse #-}
@@ -407,12 +408,16 @@ generate
   => Node m v crs a -> Extent v crs -> Box v
   -> m (Either QtError (QuadTree v crs a))
 generate build ext minBox = generate2 build effectiveExt level
+  where (effectiveExt, level) = effectiveExtAndLevel ext minBox
+
+effectiveExtAndLevel
+  :: VectorSpace v => Extent v crs -> Box v -> (Extent v crs, Level)
+effectiveExtAndLevel ext minBox = (effectiveExt, level)
   where effectiveExt = Extent (eMin ext) (eMin ext + delta)
         delta  = fmap (* maxVal) minBox
         maxVal = fromIntegral (maxValue level)
         level  = Level (ceiling (logBase 2 nCells))
         nCells = maximum (eSize ext / minBox)
-
 
 genNode
   :: (MonadFix m, VectorSpace v)
