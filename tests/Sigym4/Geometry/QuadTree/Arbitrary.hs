@@ -10,7 +10,7 @@
 module Sigym4.Geometry.QuadTree.Arbitrary where
 
 import Control.Monad.Fix
-import Control.Monad (replicateM, zipWithM)
+import Control.Monad (replicateM, zipWithM, liftM)
 import Control.DeepSeq (NFData(..))
 import Data.Foldable (toList)
 
@@ -67,32 +67,43 @@ instance VectorSpace v => Arbitrary (LocCode v) where
 randomQtOfLevel :: VectorSpace v => Level -> Gen (Either QtError (RandomQT v))
 randomQtOfLevel level = do
   ext <- arbitrary
-  eQt <- generate2 build ext level
+  eQt <- generate2 (randomBuild 0.3) ext level
   case eQt of
     Right qt -> do
-      p  <- genPointInside qt
-      p1  <- genPointInside qt
+      p  <- randomPointInside (qtExtent qt)
+      p1  <- randomPointInside (qtExtent qt)
       return (Right (RandomQT (qt, p,p1)))
     Left e -> return (Left e)
   where
 
-    build = Node $ \ext -> do
-      doLeaf <- fmap (> 30) (choose (0,100) :: Gen Int)
+randomBuild :: VectorSpace v => Double -> Node Gen v crs (Extent v crs)
+randomBuild nodeProbability
+  | not (0 <= nodeProbability && nodeProbability <= 1) =
+    error "randomBuild: nodeProbability must be between 0 and 1"
+randomBuild nodeProbability = Node build
+  where
+    build ext = do
+      doLeaf <- fmap (>= nodeProbability) (choose (0,1))
       if doLeaf
         then return (ext, Leaf ext)
-        else return (ext, build)
+        else return (ext, Node build)
 
-    genPointInside qt@QuadTree{qtExtent=Extent lo hi} = do
-      p <- fmap (Point . unsafeFromCoords)
-             (zipWithM (\a b -> choose (a,b)) (coords lo) (coords hi))
-      if qtContainsPoint qt p
-        then return p
-        else genPointInside qt
+randomSuperExtent
+  :: forall v crs. VectorSpace v => Extent v crs -> Gen (Extent v crs)
+randomSuperExtent ext = go ext =<< choose (1,5)
+  where
+    go :: Extent v crs -> Int -> Gen (Extent v crs)
+    go e n | n<=0 = return e
+    go e n        = arbitrary >>= \q -> go (outerExtent q e) (n-1)
+
+
+randomPointInside :: VectorSpace v => Extent v crs -> Gen (Point v crs)
+randomPointInside (Extent lo hi) =
+  liftM (Point . unsafeFromCoords)
+        (zipWithM (\a b -> choose (a,b)) (coords lo) (coords hi))
 
 instance VectorSpace v => Arbitrary (RandomQT v) where
-  arbitrary = do
-    level <- Level <$> choose (unLevel minBound, unLevel maxBound)
-    either (const arbitrary) return =<< randomQtOfLevel level
+  arbitrary = either (const arbitrary) return =<< randomQtOfLevel =<< arbitrary
 
 instance VectorSpace v => Arbitrary (DelicateQT v) where
   arbitrary = do

@@ -31,7 +31,6 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
 
   , generate
   , generate2
-  , grow
   , empty
   , qtMinBox
 
@@ -46,6 +45,11 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
 
   , mkNeighbors
   , machineEpsilonAndLevel
+  , genQNode
+  , genNode
+  , rootParent
+  , innerExtent
+  , outerExtent
 ) where
 
 import Control.Monad (liftM, replicateM, guard)
@@ -436,23 +440,6 @@ genQNode
   => QNode v crs a -> (Quadrant v -> m (QNode v crs a))
   -> m (QNode v crs a)
 genQNode parent f = liftM (QNode parent) (generateChildren (f . toEnum))
-
-grow
-  :: (MonadFix m, VectorSpace v)
-  => Node m v crs a -> Quadrant v -> QuadTree v crs a
-  -> m (Either QtError (QuadTree v crs a))
-grow build dir (QuadTree oldRoot ext oldLevel)
-  | newLevel > maxBound = return (Left QtCannotGrow)
-  | otherwise
-  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
-  where
-    newLevel = Level (unLevel oldLevel + 1)
-    newRoot
-      = mfix (\node -> genQNode rootParent $ \q ->
-              if q == dir
-                then (return oldRoot {qParent=node})
-                else genNode node (innerExtent q newExt) oldLevel build)
-    newExt = outerExtent dir ext
 
 
 maxValue :: Level -> Int

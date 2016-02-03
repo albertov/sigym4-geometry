@@ -18,9 +18,12 @@ module Sigym4.Geometry.QuadTree.Internal.Algorithms (
     traceRay
   , lookupByPoint
   , qtContainsPoint
+  , grow
+  , growToInclude
 ) where
 
 import Control.Applicative (liftA2, liftA3)
+import Control.Monad.Fix (MonadFix(mfix))
 import Data.Strict.Maybe (Maybe(..), isJust, isNothing, fromJust)
 import Data.Strict.Tuple (Pair ((:!:)))
 import Data.Proxy (Proxy(..))
@@ -348,6 +351,40 @@ commonAncestorLevel (LocCode a) (LocCode b)
     componentLevel d = finiteBitSize (undefined :: Int) - countLeadingZeros d
     diff             = liftA2 xor a b
 {-# INLINE commonAncestorLevel #-}
+
+
+grow
+  :: (MonadFix m, VectorSpace v)
+  => Node m v crs a -> Quadrant v -> QuadTree v crs a
+  -> m (Either QtError (QuadTree v crs a))
+grow build dir (QuadTree oldRoot ext oldLevel)
+  | newLevel > maxBound = return (Left QtCannotGrow)
+  | otherwise
+  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
+  where
+    newLevel = Level (unLevel oldLevel + 1)
+    newRoot
+      = mfix (\node -> genQNode rootParent $ \q ->
+              if q == dir
+                then (return oldRoot {qParent=node})
+                else genNode node (innerExtent q newExt) oldLevel build)
+    newExt = outerExtent dir ext
+
+growToInclude
+  :: (MonadFix m, VectorSpace v)
+  => Node m v crs a -> Point v crs -> QuadTree v crs a
+  -> m (Either QtError (QuadTree v crs a))
+growToInclude build p@(Point vx) = go
+  where
+    go qt | qt `qtContainsPoint` p = return (Right qt)
+    go qt = do
+      let Extent lo hi = qtExtent qt
+      eQt <- grow build (Quadrant (liftA3 findHalf vx lo hi)) qt
+      either (return . Left) go eQt
+    findHalf v lo hi
+      | v < lo+hi = Second
+      | otherwise = First
+
 
 catMaybes :: [Maybe a] -> [a]
 catMaybes = map fromJust . filter isJust

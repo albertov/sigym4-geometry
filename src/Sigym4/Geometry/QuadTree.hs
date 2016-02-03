@@ -8,6 +8,7 @@ module Sigym4.Geometry.QuadTree (
 
   , generate
   , grow
+  , growToInclude
   , empty
 
   , lookupByPoint

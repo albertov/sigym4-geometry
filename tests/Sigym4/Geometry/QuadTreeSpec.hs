@@ -123,6 +123,23 @@ quadTreeSpec msg _ = describe ("QuadTree " ++ msg) $ do
           Nothing  -> not (qtExtent qt `contains` p)
           Just e   -> e `contains` p
 
+  describe "growToInclude" $ do
+    let qtAndPointOutside = do
+          e :: Extent v NoCrs <- arbitrary
+          se <- randomSuperExtent e
+          p <- randomPointInside se
+          if e `contains` p then qtAndPointOutside else do
+            level <- arbitrary
+            eQt <- generate2 (randomBuild 0.3) e level
+            case eQt of
+              Right qt -> return (qt,p)
+              Left _   -> qtAndPointOutside
+    prop "if it grows it includes point" $
+      forAll qtAndPointOutside $ \(qt, p) ->
+        let eQt = runIdentity (growToInclude build p qt)
+            build = Node (\e -> return (e, Leaf e))
+        in isRight eQt ==> let Right qt2 = eQt in qt2 `qtContainsPoint` p
+
   when (dim (Proxy :: Proxy v) <= 4) $
 
     describe "traceRay" $ do
