@@ -377,10 +377,8 @@ growToInclude
 growToInclude build p@(Point vx) = go
   where
     go qt | qt `qtContainsPoint` p = return (Right qt)
-    go qt = do
-      let Extent lo hi = qtExtent qt
-      eQt <- grow build (Quadrant (liftA3 findHalf vx lo hi)) qt
-      either (return . Left) go eQt
+    go qt = either (return . Left) go =<< grow build (findQ (qtExtent qt)) qt
+    findQ (Extent lo hi) = Quadrant (liftA3 findHalf vx lo hi)
     findHalf v lo hi
       | v < lo+hi = Second
       | otherwise = First
