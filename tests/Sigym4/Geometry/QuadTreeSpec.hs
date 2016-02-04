@@ -139,6 +139,17 @@ quadTreeSpec msg proxy = describe ("QuadTree " ++ msg) $ do
         traceRaySpec proxy qtAndPointsCloseToEdges
       describe "points on edges" $
         traceRaySpec proxy qtAndPointsOnEdges
+      describe "points inside after growing" $ do
+        let gen = do
+              (qt, p, _) <- qtAndPointsOutsideButNear
+              eQt <- growToInclude (randomBuild 0.5) p qt
+              case eQt of
+                Right qt2 -> do
+                  p1 <- oneof [ pointOnEdges qt2
+                              , pointCloseToEdges qt2]
+                  return (qt2, p, p1)
+                Left _ -> gen
+        traceRaySpec proxy gen
 
 
 
