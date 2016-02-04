@@ -11,7 +11,6 @@ module Sigym4.Geometry.QuadTree.Arbitrary where
 
 import Control.Monad.Fix
 import Control.Monad (replicateM, zipWithM, liftM)
-import Control.DeepSeq (NFData(..))
 import Data.Foldable (toList)
 
 import Data.Bits (finiteBitSize)
@@ -35,46 +34,80 @@ instance Arbitrary Level where
     where lo = fromIntegral (unLevel minBound)
           hi = fromIntegral (unLevel maxBound)
 
-type ExtentAndPoints v =
-  (QuadTree v NoCrs (Extent v NoCrs), Point v NoCrs, Point v NoCrs)
-
-newtype RandomQT v = RandomQT {unRQt :: ExtentAndPoints v} deriving Show
-
-deriving instance VectorSpace v => NFData (RandomQT v)
-
-newtype DelicateQT v = DelicateQT {unDelQt :: ExtentAndPoints v} deriving Show
-
-deriving instance VectorSpace v => NFData (DelicateQT v)
-
-newtype ProbablyInvalidPointsQT v
-  = ProbablyInvalidPointsQT {unPiQt :: ExtentAndPoints v} deriving Show
-
-deriving instance VectorSpace v => NFData (ProbablyInvalidPointsQT v)
-
-randomOrDelicate
-  :: Either (RandomQT v) (DelicateQT v) -> ExtentAndPoints v
-randomOrDelicate = either unRQt unDelQt
-
-randomOrDelicateOrProbablyInvalid
-  :: Either (RandomQT v) (Either (DelicateQT v) (ProbablyInvalidPointsQT v))
-  -> ExtentAndPoints v
-randomOrDelicateOrProbablyInvalid = either unRQt (either unDelQt unPiQt)
-
 instance VectorSpace v => Arbitrary (LocCode v) where
   arbitrary = (LocCode . unsafeFromCoords) <$> replicateM n arbitrary
     where n = dim (Proxy :: Proxy v)
 
-randomQtOfLevel :: VectorSpace v => Level -> Gen (Either QtError (RandomQT v))
-randomQtOfLevel level = do
-  ext <- arbitrary
-  eQt <- generate2 (randomBuild 0.3) ext level
-  case eQt of
-    Right qt -> do
-      p  <- randomPointInside (qtExtent qt)
-      p1  <- randomPointInside (qtExtent qt)
-      return (Right (RandomQT (qt, p,p1)))
-    Left e -> return (Left e)
+type QtAndPoints v =
+  (QuadTree v NoCrs (Extent v NoCrs), Point v NoCrs, Point v NoCrs)
+
+qtAndPointsInside :: VectorSpace v => Gen (QtAndPoints v)
+qtAndPointsInside = do
+  qt <- randomQt
+  (,,) <$> pure qt
+       <*> randomPointInside (qtExtent qt)
+       <*> randomPointInside (qtExtent qt)
+
+qtAndPointsOutsideButNear :: VectorSpace v => Gen (QtAndPoints v)
+qtAndPointsOutsideButNear = do
+  qt <- randomQt
+  (,,) <$> pure qt
+       <*> randomPointOutsideButNear (qtExtent qt)
+       <*> randomPointOutsideButNear (qtExtent qt)
+
+
+qtAndPointsCloseToEdges :: VectorSpace v => Gen (QtAndPoints v)
+qtAndPointsCloseToEdges = do
+  qt <- randomQt
+  (,,) <$> pure qt
+       <*> pointCloseToEdges qt
+       <*> pointCloseToEdges qt
+
+pointCloseToEdges
+  :: VectorSpace v
+  => QuadTree v crs (Extent v crs)
+  -> Gen (Point v crs)
+pointCloseToEdges qt
+  = elements
+  . take 100
+  . map Point
+  . concat
+  . map (extentCorners . ensureInQt)
+  $ qtExtent qt : toList qt
   where
+    ensureInQt (Extent lo hi) = go (finiteBitSize (undefined :: Word))
+        where go !l | qtContainsPoint qt (Point v) = Extent lo v
+                    | Level l > qtLevel qt = go (l-1)
+                    | otherwise            = error "calculating effectiveMax"
+                where v = hi - calculateMinBox (qtExtent qt) (Level l)
+
+qtAndPointsOnEdges :: VectorSpace v => Gen (QtAndPoints v)
+qtAndPointsOnEdges = do
+  qt <- randomQt
+  (,,) <$> pure qt
+       <*> pointOnEdges qt
+       <*> pointOnEdges qt
+
+pointOnEdges
+  :: VectorSpace v
+  => QuadTree v crs (Extent v crs)
+  -> Gen (Point v crs)
+pointOnEdges qt
+  = elements
+  . take 100
+  . map Point
+  . concat
+  . map extentCorners
+  $ qtExtent qt : toList qt
+
+randomQt :: VectorSpace v => Gen (QuadTree v crs (Extent v crs))
+randomQt = do
+  ext <- arbitrary
+  either (const randomQt) return =<< generate2 build ext =<< arbitrary
+  where build = randomBuild defaultNodeProbability
+
+defaultNodeProbability :: Double
+defaultNodeProbability = 0.3
 
 randomBuild :: VectorSpace v => Double -> Node Gen v crs (Extent v crs)
 randomBuild nodeProbability
@@ -102,38 +135,11 @@ randomPointInside (Extent lo hi) =
   liftM (Point . unsafeFromCoords)
         (zipWithM (\a b -> choose (a,b)) (coords lo) (coords hi))
 
-instance VectorSpace v => Arbitrary (RandomQT v) where
-  arbitrary = either (const arbitrary) return =<< randomQtOfLevel =<< arbitrary
-
-instance VectorSpace v => Arbitrary (DelicateQT v) where
-  arbitrary = do
-    RandomQT (qt,_,_) <- arbitrary
-
-    let candidates = take 100
-                   . map Point
-                   . concat
-                   . map (extentCorners . ensureInQt)
-                   $ qtExtent qt : toList qt
-        ensureInQt (Extent lo hi) = go (finiteBitSize (undefined :: Word))
-          where go !l | qtContainsPoint qt (Point v) = Extent lo v
-                      | Level l > qtLevel qt = go (l-1)
-                      | otherwise            = error "calculating effectiveMax"
-                  where v = hi - calculateMinBox (qtExtent qt) (Level l)
-    p1 <- elements candidates
-    p2 <- elements candidates
-    return (DelicateQT (qt, p1, p2))
-
-instance VectorSpace v => Arbitrary (ProbablyInvalidPointsQT v) where
-  arbitrary = do
-    RandomQT (qt,_,_) <- arbitrary
-    let candidates = take 100
-                   . map Point
-                   . concat
-                   . map extentCorners
-                   $ qtExtent qt : toList qt
-    p1 <- elements candidates
-    p2 <- elements candidates
-    return (ProbablyInvalidPointsQT (qt, p1, p2))
+randomPointOutsideButNear :: VectorSpace v => Extent v crs -> Gen (Point v crs)
+randomPointOutsideButNear e = do
+  se <- randomSuperExtent e
+  p <- randomPointInside se
+  if e `contains` p then randomPointOutsideButNear e else return p
 
 epsilon :: Double
 epsilon = 1e-6
