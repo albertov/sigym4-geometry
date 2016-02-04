@@ -362,13 +362,17 @@ grow build dir (QuadTree oldRoot ext oldLevel)
   | otherwise
   = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
   where
+    newExt   = outerExtent dir ext
     newLevel = Level (unLevel oldLevel + 1)
-    newRoot
-      = mfix (\node -> genQNode rootParent $ \q ->
-              if q == dir
-                then (return oldRoot {qParent=node})
-                else genNode node (innerExtent q newExt) oldLevel build)
-    newExt = outerExtent dir ext
+    newRoot  = mfix $ \node -> genQNode rootParent $ \q ->
+        if q == dir
+          then updateOldTree node oldRoot
+          else do genNode node (innerExtent q newExt) oldLevel build
+
+    updateOldTree parent (QNode _ cs) = mfix $ \node ->
+      genQNode parent $ updateOldTree node . getChild cs
+    updateOldTree parent (QLeaf _ v) = return (QLeaf parent v)
+
 
 growToInclude
   :: (MonadFix m, VectorSpace v)
@@ -380,8 +384,8 @@ growToInclude build p@(Point vx) = go
     go qt = either (return . Left) go =<< grow build (findQ (qtExtent qt)) qt
     findQ (Extent lo hi) = Quadrant (liftA3 findHalf vx lo hi)
     findHalf v lo hi
-      | v > lo + ((hi-lo)/2) = First
-      | otherwise            = Second
+      | v > (lo + hi)/2 = First
+      | otherwise       = Second
 
 
 catMaybes :: [Maybe a] -> [a]

@@ -142,7 +142,7 @@ quadTreeSpec msg proxy = describe ("QuadTree " ++ msg) $ do
       describe "points inside after growing" $ do
         let gen = do
               (qt, p, _) <- qtAndPointsOutsideButNear
-              eQt <- growToInclude (randomBuild 0.5) p qt
+              eQt <- growToInclude (randomBuild 0.3) p qt
               case eQt of
                 Right qt2 -> do
                   p1 <- oneof [ pointOnEdges qt2
