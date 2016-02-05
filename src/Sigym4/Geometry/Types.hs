@@ -280,11 +280,11 @@ instance HasOffset V2 RowMajor where
       , 0<=py && py < sy = Just (unsafeToOffset s p)
       | otherwise        = Nothing
       where V2 sx sy = unSize s
-            V2 px py = fmap floor $ unPx p
+            V2 px py = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p = Offset $ py * sx + px
       where V2 sx _  = unSize s
-            V2 px py = fmap floor $ unPx p
+            V2 px py = fmap truncate $ unPx p
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V2 sx sy)) o@(Offset o')
       | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
@@ -301,11 +301,11 @@ instance HasOffset V2 ColumnMajor where
       , 0<=py && py < sy = Just (unsafeToOffset s p)
       | otherwise        = Nothing
       where V2 sx sy = unSize s
-            V2 px py = fmap floor $ unPx p
+            V2 px py = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p  = Offset $ px * sy + py
       where V2 _ sy  = unSize s
-            V2 px py = fmap floor $ unPx p
+            V2 px py = fmap truncate $ unPx p
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V2 sx sy)) o@(Offset o')
       | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
@@ -323,11 +323,11 @@ instance HasOffset V3 RowMajor where
       , 0<=pz && pz < sz = Just (unsafeToOffset s p)
       | otherwise        = Nothing
       where V3 sx sy sz = unSize s
-            V3 px py pz = fmap floor $ unPx p
+            V3 px py pz = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p  = Offset $ (pz * sx * sy) + (py * sx) + px
       where V3 sx sy _  = unSize s
-            V3 px py pz = fmap floor $ unPx p
+            V3 px py pz = fmap truncate $ unPx p
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V3 sx sy sz)) o@(Offset o')
       | 0<=o' && o'<sx*sy*sz = Just (unsafeFromOffset  s o)
@@ -346,11 +346,11 @@ instance HasOffset V3 ColumnMajor where
       , 0<=pz && pz < sz = Just (unsafeToOffset s p)
       | otherwise        = Nothing
       where V3 sx sy sz = unSize s
-            V3 px py pz = fmap floor $ unPx p
+            V3 px py pz = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
     unsafeToOffset s p = Offset $ (px * sz * sy) + (py * sz) + pz
       where V3 _  sy sz = unSize s
-            V3 px py pz = fmap floor $ unPx p
+            V3 px py pz = fmap truncate $ unPx p
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V3 sx sy sz)) o@(Offset o')
       | 0<=o' && o'<sx*sy*sz = Just (unsafeFromOffset  s o)

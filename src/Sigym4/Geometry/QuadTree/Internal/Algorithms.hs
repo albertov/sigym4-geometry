@@ -372,6 +372,7 @@ grow build dir (QuadTree oldRoot ext oldLevel)
     updateOldTree parent (QNode _ cs) = mfix $ \node ->
       genQNode parent $ updateOldTree node . getChild cs
     updateOldTree parent (QLeaf _ v) = return (QLeaf parent v)
+{-# INLINABLE grow #-}
 
 
 growToInclude
@@ -386,6 +387,7 @@ growToInclude build p@(Point vx) = go
     findHalf v lo hi
       | v > (lo + hi)/2 = First
       | otherwise       = Second
+{-# INLINABLE growToInclude #-}
 
 
 catMaybes :: [Maybe a] -> [a]
