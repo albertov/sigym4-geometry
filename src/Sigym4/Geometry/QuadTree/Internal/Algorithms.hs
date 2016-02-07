@@ -278,8 +278,8 @@ traceRay qt@QuadTree{..} from to
       where
         isValid = inRange vx && inRayBounds vx
 
-        vx = lineHyperplaneIntersection
-                    (unQtVertex lineDir) (unQtVertex fromV) (ngPlanes ng) origin
+        vx = lineHyperplaneIntersection (ngPlanes ng)
+                    (unQtVertex lineDir) (unQtVertex fromV) origin
 
         origin = liftA3 origin' (ngPosition ng) lo hi
           where

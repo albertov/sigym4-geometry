@@ -154,7 +154,7 @@ instance HasIntersects Extent LineString where
         where
           inRange v = vBetweenC lo hi v && not (any (almostEqVertex v) corners)
           planeIntersections = catMaybes
-                                [ lineHyperplaneMaybeIntersection (b-a) a p o
+                                [ lineHyperplaneMaybeIntersection p (b-a) a o
                                 | p<-planes, o<-[lo,hi]]
   {-# INLINE intersects #-}
 
@@ -313,27 +313,28 @@ class ( VectorSpace v
   type VPlanes v :: * -> *
 
   lineHyperplaneMaybeIntersection
-    :: Direction v -> Vertex v -> HyperPlaneDirections v -> Vertex v
+    :: HyperPlaneDirections v -> Direction v -> Vertex v -> Vertex v
     -> Maybe (Vertex v)
 
   lineHyperplaneIntersection
-    :: Direction v -> Vertex v -> HyperPlaneDirections v -> Vertex v -> Vertex v
+    :: HyperPlaneDirections v -> Direction v -> Vertex v -> Vertex v
+    -> Vertex v
 
-  lineHyperplaneMaybeIntersection lDirection lOrigin pVectors pOrigin
+  lineHyperplaneMaybeIntersection pVectors lDirection lOrigin pOrigin
     | invertible a = Just (lOrigin + fmap (*lineDelta) lDirection)
     | otherwise    = Nothing
     where
-      x           = inv a !* (lOrigin - pOrigin)
-      a           = transpose (extendedMatrix lDirection pVectors)
-      lineDelta   = negate (head (coords x))
+      !x           = inv a !* (lOrigin - pOrigin)
+      !a           = transpose (extendedMatrix lDirection pVectors)
+      !lineDelta   = negate (head (coords x))
   {-# INLINE lineHyperplaneMaybeIntersection #-}
 
-  lineHyperplaneIntersection lDirection lOrigin pVectors pOrigin
+  lineHyperplaneIntersection pVectors lDirection lOrigin pOrigin
     = lOrigin + fmap (*lineDelta) lDirection
     where
-      x           = inv a !* (lOrigin - pOrigin)
-      a           = transpose (extendedMatrix lDirection pVectors)
-      lineDelta   = negate (head (coords x))
+      !x           = invA  !* (lOrigin - pOrigin)
+      !invA        = inv (transpose (extendedMatrix lDirection pVectors))
+      !lineDelta   = negate (head (coords x))
   {-# INLINE lineHyperplaneIntersection #-}
 
   extendedMatrix :: Vertex v -> HyperPlaneDirections v -> SqMatrix v
