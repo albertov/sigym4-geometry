@@ -15,6 +15,7 @@
            , ScopedTypeVariables
            , FunctionalDependencies
            , UndecidableInstances
+           , BangPatterns
            #-}
 module Sigym4.Geometry.Types (
     Geometry (..)
@@ -48,6 +49,7 @@ module Sigym4.Geometry.Types (
   , rasterIndex
   , unsafeRasterIndex
   , northUpGeoTransform
+  , generateMRaster
   , GeoReference (..)
   , mkGeoReference
   , pointOffset
@@ -114,8 +116,9 @@ import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
-import Data.Hashable (Hashable)
+import Data.Hashable (Hashable(..))
 import Control.DeepSeq (NFData(rnf))
+import Control.Monad.Primitive (PrimMonad(..))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
 import Data.Maybe (fromMaybe)
@@ -123,6 +126,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Generic as G
 import qualified Data.Vector.Unboxed as U
 import Foreign.Storable (Storable)
+import qualified Data.Vector.Generic.Mutable as GM
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import Language.Haskell.TH.Syntax
 import Linear.V1 as V1
@@ -370,6 +374,8 @@ deriving instance VectorSpace v => Show (Extent v crs)
 instance NFData (Vertex v) => NFData (Extent v crs) where
   rnf (Extent lo hi) = rnf lo `seq` rnf hi `seq` ()
 
+instance Hashable (Vertex v) => Hashable (Extent v crs) where
+  hashWithSalt i (Extent l h) = hashWithSalt i l + hashWithSalt i h
 
 eSize :: VectorSpace v => Extent v crs -> Vertex v
 eSize e = eMax e - eMin e
@@ -754,6 +760,23 @@ rasterSize :: VectorSpace v => Extent v crs -> Vertex v -> Size v
 rasterSize e pxSize = Size $ fmap ceiling (eSize e / pxSize)
 {-# INLINE rasterSize #-}
 
+generateMRaster
+  :: forall m v a vs t crs. (PrimMonad m, GM.MVector v a, HasOffset vs t)
+  => GeoReference vs crs
+  -> (Point vs crs -> a)
+  -> m (Raster vs t crs (v (PrimState m)) a)
+generateMRaster geoRef fun = do
+  v <- GM.new sz
+  loop v (sz-1)
+  return (Raster geoRef v)
+  where
+    sz = grScalarSize geoRef
+    loop v !i | i<0 = return ()
+    loop v !i =
+      let !px = unsafeFromOffset (grSize geoRef) (Offset i :: Offset t)
+          !p  = grBackward geoRef px
+      in GM.unsafeWrite v i (fun p) >> loop v (i-1)
+{-# INLINE generateMRaster #-}
 
 rasterIndex
   :: forall vs t crs v a. (HasOffset vs t)
