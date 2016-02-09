@@ -31,6 +31,7 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
 
   , generate
   , generate2
+  , generate3
   , empty
   , qtMinBox
 
@@ -413,6 +414,13 @@ generate
   -> m (Either QtError (QuadTree v crs a))
 generate build ext minBox = generate2 build effectiveExt level
   where (effectiveExt, level) = effectiveExtAndLevel ext minBox
+
+generate3
+  :: (MonadFix m, VectorSpace v)
+  => (Extent v crs -> Node m v crs a)
+  -> Extent v crs -> Box v
+  -> m (Either QtError (QuadTree v crs a))
+generate3 build ext = generate (build ext) ext
 
 effectiveExtAndLevel
   :: VectorSpace v => Extent v crs -> Box v -> (Extent v crs, Level)
