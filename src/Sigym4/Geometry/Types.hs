@@ -149,8 +149,8 @@ type SqMatrix v = v (Vertex v)
 -- | A vector space
 class ( KnownNat (VsDim v), Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), Ord (Vertex v), Epsilon (Vertex v)
-      , U.Unbox (Vertex v), NFData (Vertex v)
-      , Show (v Int), Eq (v Int)
+      , U.Unbox (Vertex v), NFData (Vertex v), NFData (SqMatrix v)
+      , NFData (v Int) , Show (v Int), Eq (v Int)
       , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
       , Metric v, Applicative v, Foldable v, Traversable v, Distributive v)
   => VectorSpace (v :: * -> *) where
@@ -394,6 +394,7 @@ deriving instance VectorSpace v => Eq (Pixel v)
 newtype Size v = Size {unSize :: v Int}
 deriving instance VectorSpace v => Eq (Size v)
 deriving instance VectorSpace v => Show (Size v)
+deriving instance VectorSpace v => NFData (Size v)
 
 scalarSize :: VectorSpace v => Size v -> Int
 scalarSize = product . unSize
@@ -409,6 +410,9 @@ data GeoTransform v crs = GeoTransform
       }
 deriving instance VectorSpace v => Eq (GeoTransform v crs)
 deriving instance VectorSpace v => Show (GeoTransform v crs)
+
+instance VectorSpace v => NFData (GeoTransform v crs) where
+  rnf (GeoTransform gr s) = rnf gr `seq` rnf s `seq` ()
 
 northUpGeoTransform :: Extent V2 crs -> Size V2
                     -> Either String (GeoTransform V2 crs)
@@ -448,6 +452,8 @@ data GeoReference v crs = GeoReference
 deriving instance VectorSpace v => Eq (GeoReference v crs)
 deriving instance VectorSpace v => Show (GeoReference v crs)
 
+instance VectorSpace v => NFData (GeoReference v crs) where
+  rnf (GeoReference gr s) = rnf gr `seq` rnf s `seq` ()
 
 grScalarSize :: VectorSpace v => GeoReference v crs -> Int
 grScalarSize = scalarSize . grSize
@@ -754,6 +760,9 @@ data Raster vs (t :: OffsetType) crs v a
       rGeoReference :: !(GeoReference vs crs)
     , rData         :: !(v a)
     } deriving (Eq, Show)
+
+instance (NFData (v a), VectorSpace vs) => NFData (Raster vs t crs v a) where
+  rnf (Raster a b) = rnf a `seq` rnf b `seq` ()
 
 
 rasterSize :: VectorSpace v => Extent v crs -> Vertex v -> Size v
