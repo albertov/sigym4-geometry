@@ -13,6 +13,7 @@ module Sigym4.Geometry.QuadTree (
 
   , lookupByPoint
   , traceRay
+  , traceRay2
 
   , qtExtent
   , qtLevel

@@ -16,6 +16,7 @@
 
 module Sigym4.Geometry.QuadTree.Internal.Algorithms (
     traceRay
+  , traceRay2
   , lookupByPoint
   , qtContainsPoint
   , grow
@@ -173,13 +174,17 @@ quadrantsTouching pos
     match Down First  = True
     match _    _      = False
 
-
-
 traceRay :: forall v srid a. (HasHyperplanes v, Eq (v Int), Num (v Int))
   => QuadTree v srid a -> Point v srid -> Point v srid -> [a]
-traceRay qt@QuadTree{..} from to
-  | isJust mCodeFrom && isJust mCodeTo = go [tNodeFrom] maxIterations
-  | otherwise                          = []
+traceRay qt from = map snd . traceRay2 qt from
+
+traceRay2 :: forall v srid a. (HasHyperplanes v, Eq (v Int), Num (v Int))
+  => QuadTree v srid a -> Point v srid -> Point v srid
+  -> [(Point v srid, a)]
+traceRay2 qt@QuadTree{..} from to
+  | isJust mCodeFrom && isJust mCodeTo =
+      go [(from,tNodeFrom)] maxIterations
+  | otherwise = []
   where
     -- maxIterations makes sure we don't end up in an infinite loop if there
     -- is a problem with the implementation. We absolutely shouldn't cross
@@ -198,7 +203,7 @@ traceRay qt@QuadTree{..} from to
     go _  !0 = []
 #endif
 
-    go (!cur:rest) !n
+    go (!(isec,cur):rest) !n
       -- We reached our destination, stop the tracing
       | tCellCode cur == cellCodeTo = [value]
 
@@ -220,7 +225,7 @@ traceRay qt@QuadTree{..} from to
 
         cellCodeTo = qtCellCode (tLevel cur) codeTo
 
-        value      = leafData (tNode cur)
+        value      = (isec,leafData (tNode cur))
 
         cellExt    = calculateExtent qt (tLevel cur) (tCellCode cur)
 
@@ -242,10 +247,11 @@ traceRay qt@QuadTree{..} from to
         -- subtract 1 to it
         mkNext !(isec :!: pos)
           | all qtNearZero (unQtVertex isec - unQtVertex toV)
-          = Just (traverseViaAncestor qt cur minBound codeTo)
+          = Just (isecPt, traverseViaAncestor qt cur minBound codeTo)
           | any isNothing mNext = Nothing
-          | otherwise = Just (traverseViaAncestor qt cur minBound next')
+          | otherwise = Just (isecPt, traverseViaAncestor qt cur minBound next')
           where
+            isecPt = qtForward qt isec
             mNext = liftA3 mkNextCode pos (unLocCode (qtVertex2LocCode qt isec))
                                           (unLocCode (tCellCode cur))
             next' = LocCode (fmap fromJust mNext)
@@ -299,13 +305,16 @@ traceRay qt@QuadTree{..} from to
         !hi = liftA2 max (unQtVertex fromV) (unQtVertex toV)
 
 
-{-# INLINABLE traceRay #-}
-{-# SPECIALISE traceRay ::
-      QuadTree V2 srid a -> Point V2 srid -> Point V2 srid -> [a] #-}
-{-# SPECIALISE traceRay ::
-      QuadTree V3 srid a -> Point V3 srid -> Point V3 srid -> [a] #-}
-{-# SPECIALISE traceRay ::
-      QuadTree V4 srid a -> Point V4 srid -> Point V4 srid -> [a] #-}
+{-# INLINABLE traceRay2 #-}
+{-# SPECIALISE traceRay2 ::
+      QuadTree V2 srid a -> Point V2 srid -> Point V2 srid
+                         -> [(Point V2 srid, a)] #-}
+{-# SPECIALISE traceRay2 ::
+      QuadTree V3 srid a -> Point V3 srid -> Point V3 srid
+                         -> [(Point V3 srid, a)] #-}
+{-# SPECIALISE traceRay2 ::
+      QuadTree V4 srid a -> Point V4 srid -> Point V4 srid
+                         -> [(Point V4 srid, a)] #-}
 
 -- Calculates whether we need to check an intersection with a given neighbor
 -- given the origin and destination of a ray. For example, we don't need to
