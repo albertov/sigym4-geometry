@@ -118,6 +118,7 @@ import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
 import Data.Hashable (Hashable(..))
 import Control.DeepSeq (NFData(rnf))
+import Control.Exception (assert)
 import Control.Monad.Primitive (PrimMonad(..))
 import qualified Data.Semigroup as SG
 import Data.Foldable (product)
@@ -150,8 +151,8 @@ type SqMatrix v = v (Vertex v)
 class ( KnownNat (VsDim v), Num (Vertex v), Fractional (Vertex v)
       , Show (Vertex v), Eq (Vertex v), Ord (Vertex v), Epsilon (Vertex v)
       , U.Unbox (Vertex v), NFData (Vertex v), NFData (SqMatrix v)
-      , NFData (v Int) , Show (v Int), Eq (v Int)
-      , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v)
+      , NFData (v Int) , Show (v Int), Eq (v Int), Ord (v Int)
+      , Num (SqMatrix v), Show (SqMatrix v), Eq (SqMatrix v), Ord (SqMatrix v)
       , Metric v, Applicative v, Foldable v, Traversable v, Distributive v)
   => VectorSpace (v :: * -> *) where
     type VsDim v :: Nat
@@ -286,17 +287,18 @@ instance HasOffset V2 RowMajor where
       where V2 sx sy = unSize s
             V2 px py = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
-    unsafeToOffset s p = Offset $ py * sx + px
-      where V2 sx _  = unSize s
+    unsafeToOffset s p = Offset off
+      where V2 sx sy = unSize s
             V2 px py = fmap truncate $ unPx p
+            off      = assert (0<=px && px<sx && 0<=py && py<sy) (py * sx + px)
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V2 sx sy)) o@(Offset o')
-      | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
+      | 0<=o' && o'<sx*sy = Just (unsafeFromOffset s o)
       | otherwise        = Nothing
     {-# INLINE fromOffset #-}
-    unsafeFromOffset (Size (V2 sx _)) (Offset o)
+    unsafeFromOffset (Size (V2 sx sy)) (Offset o)
       = Pixel (V2 (fromIntegral px) (fromIntegral py))
-      where (py,px) =  o `divMod` sx
+      where (py,px) =  assert (0<=o && o<(sx*sy)) (o `divMod` sx)
     {-# INLINE unsafeFromOffset #-}
 
 instance HasOffset V2 ColumnMajor where
@@ -307,17 +309,18 @@ instance HasOffset V2 ColumnMajor where
       where V2 sx sy = unSize s
             V2 px py = fmap truncate $ unPx p
     {-# INLINE toOffset #-}
-    unsafeToOffset s p  = Offset $ px * sy + py
-      where V2 _ sy  = unSize s
+    unsafeToOffset s p  = Offset off
+      where V2 sx sy  = unSize s
             V2 px py = fmap truncate $ unPx p
+            off      = assert (0<=px && px<sx && 0<=py && py<sy) (px * sy + py)
     {-# INLINE unsafeToOffset #-}
     fromOffset s@(Size (V2 sx sy)) o@(Offset o')
       | 0<=o' && o'<sx*sy = Just (unsafeFromOffset  s o)
       | otherwise        = Nothing
     {-# INLINE fromOffset #-}
-    unsafeFromOffset (Size (V2 _ sy)) (Offset o)
+    unsafeFromOffset (Size (V2 sx sy)) (Offset o)
       = Pixel (V2 (fromIntegral px) (fromIntegral py))
-      where (px,py) =  o `divMod` sy
+      where (px,py) = assert (0<=o && o<(sx*sy)) (o `divMod` sy)
     {-# INLINE unsafeFromOffset #-}
 
 instance HasOffset V3 RowMajor where
@@ -393,6 +396,7 @@ deriving instance VectorSpace v => Eq (Pixel v)
 
 newtype Size v = Size {unSize :: v Int}
 deriving instance VectorSpace v => Eq (Size v)
+deriving instance VectorSpace v => Ord(Size v)
 deriving instance VectorSpace v => Show (Size v)
 deriving instance VectorSpace v => NFData (Size v)
 
@@ -408,6 +412,7 @@ data GeoTransform v crs = GeoTransform
       { gtMatrix :: !(SqMatrix v)
       , gtOrigin :: !(Vertex v)
       }
+deriving instance VectorSpace v => Ord (GeoTransform v crs)
 deriving instance VectorSpace v => Eq (GeoTransform v crs)
 deriving instance VectorSpace v => Show (GeoTransform v crs)
 
@@ -450,6 +455,7 @@ data GeoReference v crs = GeoReference
       , grSize      :: !(Size v)
       }
 deriving instance VectorSpace v => Eq (GeoReference v crs)
+deriving instance VectorSpace v => Ord (GeoReference v crs)
 deriving instance VectorSpace v => Show (GeoReference v crs)
 
 instance VectorSpace v => NFData (GeoReference v crs) where
