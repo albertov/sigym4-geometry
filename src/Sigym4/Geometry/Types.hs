@@ -74,6 +74,7 @@ module Sigym4.Geometry.Types (
 
   -- lenses & prisms
   , HasGeometry (..)
+  , HasVertices (..)
   , HasProperties (..)
   , HasFeatures (..)
   , HasPoints (..)
@@ -500,6 +501,11 @@ deriving instance Storable    (Vertex v) => Storable (Point v crs)
 class HasVertex o a | o->a where
   vertex :: Lens' o a
 
+class VectorSpace v => HasVertices a v | a->v where
+  vertices :: Traversal a a (Vertex v) (Vertex v)
+
+
+
 instance HasVertex (Point v crs) (Vertex v) where
   vertex = lens coerce (const coerce)
   {-# INLINE vertex #-}
@@ -760,6 +766,8 @@ instance Monoid (FeatureCollection g d crs) where
     (FeatureCollection as) `mappend` (FeatureCollection bs)
         = FeatureCollection $ as `mappend` bs
 
+instance VectorSpace v => HasVertices (FeatureCollection (Point v) d crs) v
+  where vertices = features.traverse.geometry.vertex
 
 data Raster vs (t :: OffsetType) crs v a
   = Raster {
