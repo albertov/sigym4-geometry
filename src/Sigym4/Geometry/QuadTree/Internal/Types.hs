@@ -89,11 +89,18 @@ data QuadTree (v :: * -> *) crs a
 
 qtExtent :: VectorSpace v => QuadTree v crs a -> Extent v crs
 qtExtent qt = extentForLevel (qtMinRadius qt) (qtCenter qt) (qtLevel qt)
+{-# INLINE qtExtent #-}
 
 extentForLevel
   :: VectorSpace v => Radius v -> Point v crs -> Level -> Extent v crs
-extentForLevel box (Point c) (Level l) = Extent (c - off) (c + off)
-  where off = box * pure (fromIntegral ((2::Int)^l))
+extentForLevel minRadius (Point c) l = Extent (c - off) (c + off)
+  where off = radiusForLevel l minRadius
+{-# INLINE extentForLevel #-}
+
+
+radiusForLevel :: Num a => Level -> a -> a
+radiusForLevel (Level l) = (* (fromIntegral ((1::Int) `unsafeShiftL` l)))
+{-# INLINE radiusForLevel #-}
 
 empty :: VectorSpace v => a -> Point v crs -> Radius v -> QuadTree v crs a
 empty a c minRadius = QuadTree (QLeaf rootParent a) c minRadius (Level 0)
@@ -389,22 +396,21 @@ instance Show (LocCode v) => Show (TraversedNode v crs a) where
 childCenter
   :: VectorSpace v
   => Radius v -> Point v crs -> Level -> Quadrant v -> Point v crs
-childCenter minRadius (Point myCenter) (Level childLevel)
-           (Quadrant childQuadrant)
+childCenter minRadius (Point myCenter) childLevel (Quadrant childQuadrant)
   = Point (liftA3 mkCenter childQuadrant minRadius myCenter)
   where
-    mkCenter First  r c = c - r * (2^childLevel)
-    mkCenter Second r c = c + r * (2^childLevel)
+    mkCenter First  r c = c - radiusForLevel childLevel r
+    mkCenter Second r c = c + radiusForLevel childLevel r
 {-# INLINE childCenter #-}
 
 parentCenter
   :: VectorSpace v
   => Radius v -> Point v crs -> Level -> Quadrant v -> Point v crs
-parentCenter minRadius (Point myCenter) (Level myLevel) (Quadrant myQuadrant)
+parentCenter minRadius (Point myCenter) myLevel (Quadrant myQuadrant)
   = Point (liftA3 mkCenter myQuadrant minRadius myCenter)
   where
-    mkCenter First  r c = c + r * (2^myLevel)
-    mkCenter Second r c = c - r * (2^myLevel)
+    mkCenter First  r c = c + radiusForLevel myLevel r
+    mkCenter Second r c = c - radiusForLevel myLevel r
 {-# INLINE parentCenter #-}
 
 
