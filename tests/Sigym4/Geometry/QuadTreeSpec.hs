@@ -93,7 +93,7 @@ quadTreeSpec msg proxy = describe ("QuadTree " ++ msg) $ do
     prop "qtMinBox == eSize qtExtent for level 0" $ \(ext :: Extent v srid) ->
       let eq      = runIdentity (generate2 (Leaf ()) ext minBound)
           Right q = eq
-      in isRight eq ==> qtMinBox q == eSize (qtExtent q)
+      in isRight eq ==> nearZero (qtMinBox q - eSize (qtExtent q))
 
     prop "qtMinBox is constant after grows" $ \( dirs :: [Quadrant v]
                                                , ext  :: Extent v srid

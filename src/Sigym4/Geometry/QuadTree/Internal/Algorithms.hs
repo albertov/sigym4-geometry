@@ -13,6 +13,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Sigym4.Geometry.QuadTree.Internal.Algorithms (
     traceRay
@@ -42,7 +43,7 @@ import qualified Prelude as P
 -- to round the coordinates to the highest resolution we can safely calculate
 -- intersections with traceRay
 qtBackward :: VectorSpace v => QuadTree v srid a -> Point v srid -> QtVertex v
-qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
+qtBackward (qtExtent -> Extent lo hi) (Point v)
   = QtVertex $ (fmap ((/absMax) . trunc . (*absMax)) ratio)
   where !ratio   = (v/(hi-lo) - (lo/(hi-lo)))
         !trunc   = (fromIntegral :: Int -> Double) . truncate
@@ -51,7 +52,7 @@ qtBackward QuadTree{qtExtent=Extent lo hi} (Point v)
 {-# INLINE qtBackward #-}
 
 qtForward :: VectorSpace v => QuadTree v srid a -> QtVertex v -> Point v srid
-qtForward QuadTree{qtExtent=Extent lo hi} (QtVertex v)
+qtForward (qtExtent -> Extent lo hi) (QtVertex v)
   = Point (lo + v*(hi-lo))
 {-# INLINE qtForward #-}
 
@@ -366,17 +367,19 @@ grow
   :: (MonadFix m, VectorSpace v)
   => Node m v crs a -> Quadrant v -> QuadTree v crs a
   -> m (Either QtError (QuadTree v crs a))
-grow build dir (QuadTree oldRoot ext oldLevel)
+grow build dir (QuadTree oldRoot oldCenter minRadius oldLevel)
   | newLevel > maxBound = return (Left QtCannotGrow)
   | otherwise
-  = Right <$> (QuadTree <$> newRoot <*> pure newExt <*> pure newLevel)
+  = Right <$> (QuadTree <$> newRoot <*> pure newCenter
+                        <*> pure minRadius <*> pure newLevel)
   where
-    newExt   = outerExtent dir ext
+    newCenter   = parentCenter minRadius oldCenter oldLevel dir
     newLevel = Level (unLevel oldLevel + 1)
     newRoot  = mfix $ \node -> genQNode rootParent $ \q ->
         if q == dir
           then updateOldTree node oldRoot
-          else do genNode node (innerExtent q newExt) oldLevel build
+          else do genNode minRadius node
+                    (childCenter minRadius newCenter oldLevel q) oldLevel build
 
     updateOldTree parent (QNode _ cs) = mfix $ \node ->
       genQNode parent $ updateOldTree node . getChild cs
@@ -391,11 +394,11 @@ growToInclude
 growToInclude build p@(Point vx) = go
   where
     go qt | qt `qtContainsPoint` p = return (Right qt)
-    go qt = either (return . Left) go =<< grow build (findQ (qtExtent qt)) qt
-    findQ (Extent lo hi) = Quadrant (liftA3 findHalf vx lo hi)
-    findHalf v lo hi
-      | v > (lo + hi)/2 = First
-      | otherwise       = Second
+    go qt = either (return . Left) go =<< grow build (findQ (qtCenter qt)) qt
+    findQ (Point c) = Quadrant (liftA2 findHalf vx c)
+    findHalf v c
+      | v > c       = First
+      | otherwise   = Second
 {-# INLINABLE growToInclude #-}
 
 

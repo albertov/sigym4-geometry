@@ -10,6 +10,7 @@
 module Sigym4.Geometry.QuadTree.Arbitrary where
 
 import Control.Monad.Fix
+import Control.Applicative (liftA3)
 import Control.Monad (replicateM, zipWithM, liftM)
 import Data.Foldable (toList)
 
@@ -81,6 +82,10 @@ pointCloseToEdges qt
                     | otherwise            = error "calculating effectiveMax"
                 where v = hi - calculateMinBox (qtExtent qt) (Level l)
 
+calculateMinBox :: VectorSpace v => Extent v crs -> Level -> Box v
+calculateMinBox e (Level l)
+  = fmap (/ (fromIntegral (2^l))) (eSize e)
+
 qtAndPointsOnEdges :: VectorSpace v => Gen (QtAndPoints v)
 qtAndPointsOnEdges = do
   qt <- randomQt
@@ -128,6 +133,16 @@ randomSuperExtent ext = go ext =<< choose (1,5)
     go :: Extent v crs -> Int -> Gen (Extent v crs)
     go e n | n<=0 = return e
     go e n        = arbitrary >>= \q -> go (outerExtent q e) (n-1)
+
+outerExtent :: VectorSpace v => Quadrant v -> Extent v crs -> Extent v crs
+outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
+  where
+    lo'             = liftA3 mkLo qv lo hi
+    hi'             = liftA3 mkHi qv lo hi
+    mkLo First  l _ = l
+    mkLo Second l h = 2*l - h
+    mkHi First  l h = 2*h - l
+    mkHi Second _ h = h
 
 
 randomPointInside :: VectorSpace v => Extent v crs -> Gen (Point v crs)

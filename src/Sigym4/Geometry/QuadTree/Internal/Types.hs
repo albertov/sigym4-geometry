@@ -28,14 +28,16 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
   , Neighbors
   , NeighborPosition
   , Box
+  , Radius
 
   , generate
   , generate2
   , generate3
+  , generate4
   , empty
+  , qtExtent
   , qtMinBox
 
-  , calculateMinBox
   , getChild
   , getChildAtLevel
   , quadrantAtLevel
@@ -49,8 +51,8 @@ module Sigym4.Geometry.QuadTree.Internal.Types (
   , genQNode
   , genNode
   , rootParent
-  , innerExtent
-  , outerExtent
+  , parentCenter
+  , childCenter
 ) where
 
 import Control.Monad (liftM, replicateM, guard)
@@ -79,19 +81,28 @@ data QtError
 
 data QuadTree (v :: * -> *) crs a
   = QuadTree {
-      qtRoot   :: QNode v crs a
-    , qtExtent :: {-# UNPACK #-} !(Extent v crs)
-    , qtLevel  :: {-# UNPACK #-} !Level
+      qtRoot      :: QNode v crs a
+    , qtCenter    :: {-# UNPACK #-} !(Point v crs)
+    , qtMinRadius :: {-# UNPACK #-} !(Radius v)
+    , qtLevel     :: {-# UNPACK #-} !Level
   }
 
-empty :: VectorSpace v => a -> Point v crs -> Box v -> QuadTree v crs a
-empty a (Point c) minBox = QuadTree (QLeaf rootParent a) ext (Level 0)
-  where ext = Extent (c - minBox/2) (c + minBox/2)
+qtExtent :: VectorSpace v => QuadTree v crs a -> Extent v crs
+qtExtent qt = extentForLevel (qtMinRadius qt) (qtCenter qt) (qtLevel qt)
+
+extentForLevel
+  :: VectorSpace v => Radius v -> Point v crs -> Level -> Extent v crs
+extentForLevel box (Point c) (Level l) = Extent (c - off) (c + off)
+  where off = box * pure (fromIntegral ((2::Int)^l))
+
+empty :: VectorSpace v => a -> Point v crs -> Radius v -> QuadTree v crs a
+empty a c minRadius = QuadTree (QLeaf rootParent a) c minRadius (Level 0)
 
 instance VectorSpace v => Traversable (QuadTree v crs) where
   {-# INLINE traverse #-}
   traverse f qt = QuadTree <$> go rootParent (qtRoot qt)
-                           <*> pure (qtExtent qt)
+                           <*> pure (qtCenter qt)
+                           <*> pure (qtMinRadius qt)
                            <*> pure (qtLevel qt)
     where
       go p !QLeaf{qData=a} = QLeaf <$> pure p <*> f a
@@ -116,11 +127,12 @@ instance VectorSpace v => Foldable (QuadTree v crs) where
   foldl' f z = foldl' f z . qtRoot
 
 instance (VectorSpace v, NFData a) => NFData (QuadTree v crs a) where
-  rnf (QuadTree r e l) = rnf r `seq` rnf e `seq` rnf l `seq` ()
+  rnf (QuadTree a b c d) = rnf a `seq` rnf b `seq` rnf c `seq` rnf d `seq` ()
 
 instance (VectorSpace v, Eq a) => Eq (QuadTree v crs a) where
-  (==) a b = qtExtent a == qtExtent b
+  (==) a b = qtCenter a == qtCenter b
           && qtLevel  a == qtLevel b
+          && qtMinRadius  a == qtMinRadius b
           && toList   a == toList b
 
 instance VectorSpace v => Functor (QuadTree v crs) where
@@ -177,11 +189,12 @@ rootParent = error "QuadTree: should not happen, tried to get root's parent"
 
 
 instance VectorSpace v => Show (QuadTree v crs a) where
-  show QuadTree{..} = concat ([
-     "QuadTree { qtExtent = ", show qtExtent, ","
-    ,          " qtLevel = ", show qtLevel, " }"] :: [String])
+  show qt = concat ([
+     "QuadTree { qtExtent = ", show (qtExtent qt), ","
+    ,          " qtLevel = ", show (qtLevel qt), " }"] :: [String])
 
 type Box v = Vertex v
+type Radius v = Vertex v
 
 data QNode (v :: * -> *) crs a
   = QLeaf { qParent   :: QNode v crs a   -- undefined if root
@@ -373,47 +386,56 @@ instance Show (LocCode v) => Show (TraversedNode v crs a) where
                            ,      ", tCellCode = ", show tCellCode, " }"])
 
 
-innerExtent :: VectorSpace v => Quadrant v -> Extent v crs -> Extent v crs
-innerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
+childCenter
+  :: VectorSpace v
+  => Radius v -> Point v crs -> Level -> Quadrant v -> Point v crs
+childCenter minRadius (Point myCenter) (Level childLevel)
+           (Quadrant childQuadrant)
+  = Point (liftA3 mkCenter childQuadrant minRadius myCenter)
   where
-    lo'             = liftA3 mkLo qv lo hi
-    hi'             = liftA3 mkHi qv lo hi
-    mkLo First  l _ = l
-    mkLo Second l h = (l+h) / 2
-    mkHi First  l h = (l+h) / 2
-    mkHi Second _ h = h
-{-# INLINE innerExtent #-}
+    mkCenter First  r c = c - r * (2^childLevel)
+    mkCenter Second r c = c + r * (2^childLevel)
+{-# INLINE childCenter #-}
 
-
-outerExtent :: VectorSpace v => Quadrant v -> Extent v crs -> Extent v crs
-outerExtent (Quadrant qv) (Extent lo hi) = Extent lo' hi'
+parentCenter
+  :: VectorSpace v
+  => Radius v -> Point v crs -> Level -> Quadrant v -> Point v crs
+parentCenter minRadius (Point myCenter) (Level myLevel) (Quadrant myQuadrant)
+  = Point (liftA3 mkCenter myQuadrant minRadius myCenter)
   where
-    lo'             = liftA3 mkLo qv lo hi
-    hi'             = liftA3 mkHi qv lo hi
-    mkLo First  l _ = l
-    mkLo Second l h = 2*l - h
-    mkHi First  l h = 2*h - l
-    mkHi Second _ h = h
-{-# INLINE outerExtent #-}
+    mkCenter First  r c = c + r * (2^myLevel)
+    mkCenter Second r c = c - r * (2^myLevel)
+{-# INLINE parentCenter #-}
 
+
+generate4
+  :: (MonadFix m, VectorSpace v)
+  => Node m v crs a -> Point v crs -> Radius v -> Level
+  -> m (Either QtError (QuadTree v crs a))
+generate4 build c r level
+  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
+  | otherwise
+  = Right <$> (QuadTree <$> genNode r rootParent c level build
+                        <*> pure c
+                        <*> pure r
+                        <*> pure level)
 
 generate2
   :: (MonadFix m, VectorSpace v)
   => Node m v crs a -> Extent v crs -> Level
   -> m (Either QtError (QuadTree v crs a))
-generate2 build ext level
-  | level > maxBound || level < minBound = return (Left QtInvalidLevel)
-  | otherwise
-  = Right <$> (QuadTree <$> genNode rootParent ext level build
-                        <*> pure ext
-                        <*> pure level)
+generate2 build ext level@(Level l) = generate4 build c r level
+  where c = Point ((eMin ext + eMax ext) / 2)
+        r = eSize ext / fromInteger (2^(l+1))
 
 generate
   :: (MonadFix m, VectorSpace v)
   => Node m v crs a -> Extent v crs -> Box v
   -> m (Either QtError (QuadTree v crs a))
-generate build ext minBox = generate2 build effectiveExt level
-  where (effectiveExt, level) = effectiveExtAndLevel ext minBox
+generate build ext box = generate4 build c (box/2) level
+  where c      = Point ((eMin ext + eMax ext) / 2)
+        level  = Level (ceiling (logBase 2 nCells) )
+        nCells = maximum (eSize ext / box)
 
 generate3
   :: (MonadFix m, VectorSpace v)
@@ -422,26 +444,19 @@ generate3
   -> m (Either QtError (QuadTree v crs a))
 generate3 build ext = generate (build ext) ext
 
-effectiveExtAndLevel
-  :: VectorSpace v => Extent v crs -> Box v -> (Extent v crs, Level)
-effectiveExtAndLevel ext minBox = (effectiveExt, level)
-  where effectiveExt = Extent (eMin ext) (eMin ext + delta)
-        delta  = fmap (* maxVal) minBox
-        maxVal = fromIntegral (maxValue level)
-        level  = Level (ceiling (logBase 2 nCells))
-        nCells = maximum (eSize ext / minBox)
-
 genNode
   :: (MonadFix m, VectorSpace v)
-  => QNode v crs a -> Extent v crs -> Level -> Node m v crs a
+  => Radius v -> QNode v crs a -> Point v crs -> Level -> Node m v crs a
   -> m (QNode v crs a)
-genNode parent _   _ (Leaf v) = return (QLeaf parent v)
-genNode parent ext level (Node f)
+genNode _   parent _  _    (Leaf v) = return (QLeaf parent v)
+genNode rad parent c level (Node f)
   | level > minBound = mfix (\node -> genQNode parent $ \q -> do
-                               next <- liftM snd (f (innerExtent q ext))
                                let level' = Level (unLevel level - 1)
-                               genNode node (innerExtent q ext) level' next)
-  | otherwise        = liftM (QLeaf parent . fst) (f ext)
+                                   c' = childCenter rad c level' q
+                                   ext = extentForLevel rad c' level'
+                               next <- liftM snd (f ext)
+                               genNode rad node c' level' next)
+  | otherwise = liftM (QLeaf parent . fst) (f (extentForLevel rad c level))
 
 genQNode
   :: forall m v crs a. (MonadFix m, VectorSpace v)
@@ -450,17 +465,13 @@ genQNode
 genQNode parent f = liftM (QNode parent) (generateChildren (f . toEnum))
 
 
+
 maxValue :: Level -> Int
 maxValue (Level l) = 1 `unsafeShiftL` l
 {-# INLINE maxValue #-}
 
 qtMinBox :: VectorSpace v => QuadTree v crs a -> Box v
-qtMinBox QuadTree{qtLevel=l, qtExtent=e} = calculateMinBox e l
-
-calculateMinBox :: VectorSpace v => Extent v crs -> Level -> Box v
-calculateMinBox e l
-  = fmap (/ (fromIntegral (maxValue l))) (eSize e)
-{-# INLINE calculateMinBox #-}
+qtMinBox QuadTree{qtMinRadius=r} = r*2
 
 
 calculatedEpsilonAndLevel :: (Ord a, Fractional a) => (Int,a)
