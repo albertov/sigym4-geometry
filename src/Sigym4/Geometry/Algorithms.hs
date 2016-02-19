@@ -190,6 +190,10 @@ instance HasDistance Point Point where
 class HasExtent o e | o -> e where
     extent :: o -> e
 
+instance VectorSpace v => HasExtent (Extent v crs) (Extent v crs) where
+    extent = id
+    {-# INLINE extent #-}
+
 instance VectorSpace v => HasExtent (Point v crs) (Maybe (Extent v crs)) where
     extent (Point v) = Just $ Extent v v
     {-# INLINE extent #-}
