@@ -7,12 +7,12 @@ synopsis:            Geometry types for GIS applications.
 description:         Geometry types for GIS applications, algorithms and
                      de/serialization from/into well-known formats.
                      Includes WKB and Geojson de/serializers.
-homepage:            https://github.com/meteogrid/sigym4-geometry
+homepage:            https://github.com/albertov/sigym4-geometry
 license:             BSD3
 license-file:        LICENSE
 author:              Alberto Valverde
-maintainer:          alberto@meteogrid.com
-copyright:           2014-2015 Meteogrid
+maintainer:          alberto@toscat.net
+copyright:           2014-2016 Meteogrid, Alberto Valverde González
 category:            Data
 build-type:          Simple
 extra-source-files:  README.md
@@ -20,7 +20,7 @@ cabal-version:       >=1.10
 
 source-repository head
   type:              git
-  location:          https://github.com/meteogrid/sigym4-geometry
+  location:          https://github.com/albertov/sigym4-geometry
 
 flag herbie
   description: Enable `herbie`.

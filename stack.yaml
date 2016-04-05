@@ -1,4 +1,4 @@
-resolver: lts-3.9
+resolver: lts-5.11
 packages:
 - '.'
 - location:
@@ -6,6 +6,5 @@ packages:
     commit: de83fe1319e14937c71e82baeca3f5f3411d1a49
   extra-dep: true
 extra-deps:
-  - linear-1.20.2
   - vector-0.11.0.0
   - vector-th-unbox-0.2.1.3
