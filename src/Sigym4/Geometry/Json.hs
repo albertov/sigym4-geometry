@@ -17,6 +17,7 @@ module Sigym4.Geometry.Json (
   ) where
 
 import Data.Aeson
+import Data.Proxy (Proxy(..))
 import Data.Text (Text, unpack)
 import Data.Aeson.Types (Parser, Pair, parseMaybe)
 import Sigym4.Geometry.Types
@@ -244,3 +245,16 @@ instance (FromFeatureProperties d, FromJSON (g crs))
   where
     parseJSON (Object o) = FeatureCollection <$> o.: "features"
     parseJSON _ = fail "parseJSON(FeatureCollection): Expected an object"
+
+
+instance VectorSpace v => ToJSON (Extent v crs) where
+  toJSON e = typedObject "Extent" [
+      "min" .= coords (eMin e)
+    , "max" .= coords (eMax e)
+    ]
+
+instance VectorSpace v => FromJSON (Extent v crs) where
+  parseJSON = withObject "expected an object for Extent" $ \o -> do
+    lo <- maybe (fail "invalid coords") return =<< fromCoords <$> (o.:"min")
+    hi <- maybe (fail "invalid coords") return =<< fromCoords <$> (o.:"max")
+    return (Extent lo hi)
