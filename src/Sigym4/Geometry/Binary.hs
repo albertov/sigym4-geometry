@@ -8,6 +8,7 @@ module Sigym4.Geometry.Binary (
     ByteOrder (..)
   , wkbEncode
   , wkbDecode
+  , nativeEndian
 ) where
 
 #include "MachDeps.h"
