@@ -432,7 +432,7 @@ qtEpsLevel = fst ($$(machineEpsilonAndLevel 1) :: (Int, Double))
 {-# INLINE qtEpsLevel #-}
 
 qtEpsilon  :: Double
-qtEpsilon = snd $$(machineEpsilonAndLevel 1)
+qtEpsilon = snd ($$(machineEpsilonAndLevel 1) :: (Int, Double))
 {-# INLINE qtEpsilon #-}
 
 nearZeroBits :: Int
