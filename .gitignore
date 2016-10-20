@@ -8,3 +8,5 @@ cabal-dev
 .cabal-sandbox
 .*.sw?
 cabal.sandbox.config
+.stack-work
+dist-newstyle
