@@ -49,7 +49,7 @@ library
                     , Sigym4.Geometry.QuadTree.Internal.Types
                     , Sigym4.Geometry.QuadTree.Internal.Algorithms
   build-depends:      base                 >= 4.8    && < 5
-                    , aeson                >= 0.9    && < 0.12
+                    , aeson                >= 0.9    && < 1.1
                     , bytestring           >= 0.10   && < 0.11
                     , deepseq              >= 1.4    && < 1.5
                     , binary               >= 0.7    && < 0.9
