@@ -1,4 +1,4 @@
-{ mkDerivation, aeson, base, binary, bytestring
+{ lib, mkDerivation, aeson, base, binary, bytestring
 , data-binary-ieee754, deepseq, distributive, hashable, hspec, lens
 , linear, mtl, primitive, QuickCheck, semigroups, spatial-reference
 , stdenv, strict, template-haskell, text, transformers
@@ -7,7 +7,7 @@
 mkDerivation {
   pname = "sigym4-geometry";
   version = "0.4.3";
-  src = ./.;
+  src = lib.cleanSource ./.;
   libraryHaskellDepends = [
     aeson base binary bytestring data-binary-ieee754 deepseq
     distributive hashable lens linear mtl primitive semigroups
