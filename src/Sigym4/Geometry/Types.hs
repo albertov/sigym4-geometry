@@ -117,6 +117,7 @@ import Control.Lens hiding (coerce)
 import Data.Coerce (coerce)
 import Data.Distributive (Distributive)
 import Data.Proxy (Proxy(..))
+import Data.Semigroup (Semigroup(..))
 import Data.Hashable (Hashable(..))
 import Control.DeepSeq (NFData(rnf))
 import Control.Exception (assert)
@@ -763,8 +764,10 @@ makeLenses ''FeatureCollection
 
 instance Monoid (FeatureCollection g d crs) where
     mempty = FeatureCollection mempty
-    (FeatureCollection as) `mappend` (FeatureCollection bs)
-        = FeatureCollection $ as `mappend` bs
+    mappend = (<>)
+
+instance Semigroup (FeatureCollection g d crs) where
+  FeatureCollection as <> FeatureCollection bs = FeatureCollection (as <> bs)
 
 instance VectorSpace v => HasVertices (FeatureCollection (Point v) d crs) v
   where vertices = features.traverse.geometry.vertex
